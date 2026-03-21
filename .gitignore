@@ -1,0 +1,11 @@
+node_modules/
+*.tgz
+.vscode/
+.idea/
+*.log
+.DS_Store
+Thumbs.db
+*.swp
+*.bak
+*~
+package-lock.json

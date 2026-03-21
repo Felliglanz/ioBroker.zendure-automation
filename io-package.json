@@ -1,0 +1,194 @@
+{
+  "common": {
+    "name": "zendure-automation",
+    "title": "Zendure Automation",
+    "version": "0.1.0",
+    "news": {
+      "0.1.0": {
+        "en": "Initial release: Automatic charge/discharge control with zero grid target",
+        "de": "Erste Version: Automatische Lade-/Entlade-Steuerung mit Null-Netzbezug Ziel"
+      }
+    },
+    "desc": {
+      "en": "Automatic battery control for Zendure Solarflow with ZenSDK support (1600AC+, 2400AC+). Targets zero grid feed-in/draw by dynamically adjusting charge/discharge power.",
+      "de": "Automatische Batteriesteuerung für Zendure Solarflow mit ZenSDK Unterstützung (1600AC+, 2400AC+). Zielt auf Null-Netzbezug durch dynamische Anpassung der Lade-/Entladeleistung."
+    },
+    "platform": "Javascript/Node.js",
+    "mode": "daemon",
+    "icon": "zendure-automation.png",
+    "enabled": true,
+    "extIcon": "https://raw.githubusercontent.com/Felliglanz/iobroker.zendure-automation/main/admin/zendure-automation.png",
+    "readme": "https://github.com/Felliglanz/iobroker.zendure-automation/blob/main/README.md",
+    "loglevel": "info",
+    "adminUI": {
+      "config": "json"
+    },
+    "type": "energy",
+    "connectionType": "local",
+    "dataSource": "poll",
+    "compact": true,
+    "dependencies": [
+      {
+        "js-controller": ">=5.0.0"
+      }
+    ]
+  },
+  "native": {
+    "zendureSolarflowInstance": "zendure-solarflow.0",
+    "deviceProductKey": "",
+    "deviceKey": "",
+    "powerMeterDp": "",
+    "updateIntervalSec": 5,
+    "targetGridPowerW": 0,
+    "maxChargePowerW": 1600,
+    "maxDischargePowerW": 1600,
+    "minBatterySoc": 10,
+    "maxBatterySoc": 100,
+    "minBatteryVoltageMv": 3000,
+    "enableDischarge": true,
+    "enableCharge": true,
+    "hysteresisW": 50,
+    "rampUpWPerCycle": 200,
+    "rampDownWPerCycle": 100,
+    "useLowVoltageBlock": true,
+    "useFullChargeNeeded": true,
+    "logLevel": "info"
+  },
+  "objects": [],
+  "instanceObjects": [
+    {
+      "_id": "info",
+      "type": "channel",
+      "common": {
+        "name": "Information"
+      },
+      "native": {}
+    },
+    {
+      "_id": "info.connection",
+      "type": "state",
+      "common": {
+        "name": "Connected to Zendure device",
+        "type": "boolean",
+        "role": "indicator.connected",
+        "read": true,
+        "write": false,
+        "def": false
+      },
+      "native": {}
+    },
+    {
+      "_id": "control",
+      "type": "channel",
+      "common": {
+        "name": "Control"
+      },
+      "native": {}
+    },
+    {
+      "_id": "control.enabled",
+      "type": "state",
+      "common": {
+        "name": "Automation enabled",
+        "type": "boolean",
+        "role": "switch.enable",
+        "read": true,
+        "write": true,
+        "def": true
+      },
+      "native": {}
+    },
+    {
+      "_id": "control.targetGridPowerW",
+      "type": "state",
+      "common": {
+        "name": "Target grid power (W)",
+        "type": "number",
+        "role": "value.power",
+        "read": true,
+        "write": true,
+        "def": 0,
+        "unit": "W"
+      },
+      "native": {}
+    },
+    {
+      "_id": "status",
+      "type": "channel",
+      "common": {
+        "name": "Status"
+      },
+      "native": {}
+    },
+    {
+      "_id": "status.mode",
+      "type": "state",
+      "common": {
+        "name": "Current mode",
+        "type": "string",
+        "role": "text",
+        "read": true,
+        "write": false,
+        "states": {
+          "idle": "Idle",
+          "charging": "Charging",
+          "discharging": "Discharging",
+          "standby": "Standby",
+          "error": "Error"
+        }
+      },
+      "native": {}
+    },
+    {
+      "_id": "status.currentPowerW",
+      "type": "state",
+      "common": {
+        "name": "Current battery power (W, negative=charge)",
+        "type": "number",
+        "role": "value.power",
+        "read": true,
+        "write": false,
+        "unit": "W"
+      },
+      "native": {}
+    },
+    {
+      "_id": "status.gridPowerW",
+      "type": "state",
+      "common": {
+        "name": "Current grid power (W)",
+        "type": "number",
+        "role": "value.power",
+        "read": true,
+        "write": false,
+        "unit": "W"
+      },
+      "native": {}
+    },
+    {
+      "_id": "status.batterySoc",
+      "type": "state",
+      "common": {
+        "name": "Battery SOC (%)",
+        "type": "number",
+        "role": "value.battery",
+        "read": true,
+        "write": false,
+        "unit": "%"
+      },
+      "native": {}
+    },
+    {
+      "_id": "status.lastUpdate",
+      "type": "state",
+      "common": {
+        "name": "Last update timestamp",
+        "type": "number",
+        "role": "value.time",
+        "read": true,
+        "write": false
+      },
+      "native": {}
+    }
+  ]
+}

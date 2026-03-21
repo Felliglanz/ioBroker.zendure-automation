@@ -1,0 +1,32 @@
+{
+  "name": "iobroker.zendure-automation",
+  "version": "0.1.0",
+  "description": "Automatic Zendure Solarflow control with zero grid feed/draw target",
+  "main": "main.js",
+  "keywords": [
+    "iobroker",
+    "adapter",
+    "zendure",
+    "solarflow",
+    "automation",
+    "battery",
+    "pv",
+    "solar"
+  ],
+  "author": "private",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@iobroker/adapter-core": "^3.1.0"
+  },
+  "devDependencies": {},
+  "bugs": {
+    "url": "https://github.com/Felliglanz/iobroker.zendure-automation/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Felliglanz/iobroker.zendure-automation.git"
+  }
+}

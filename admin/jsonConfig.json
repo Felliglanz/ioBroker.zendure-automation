@@ -1,0 +1,229 @@
+{
+  "type": "panel",
+  "i18n": false,
+  "items": {
+    "_header": {
+      "type": "header",
+      "text": "Zendure Automation - Automatic Battery Control",
+      "size": 2
+    },
+    "_info": {
+      "type": "staticText",
+      "text": "This adapter automatically controls your Zendure Solarflow battery to achieve zero grid feed-in/draw. It reads grid power and adjusts battery charge/discharge accordingly.",
+      "sm": 12,
+      "style": {
+        "backgroundColor": "#e3f2fd",
+        "padding": "10px",
+        "borderRadius": "4px"
+      }
+    },
+    "_deviceSettings": {
+      "type": "divider",
+      "label": "Device Settings"
+    },
+    "zendureSolarflowInstance": {
+      "type": "text",
+      "label": "Zendure Solarflow adapter instance",
+      "placeholder": "zendure-solarflow.0",
+      "sm": 12,
+      "help": "The instance name of the nograx zendure-solarflow adapter"
+    },
+    "deviceProductKey": {
+      "type": "text",
+      "label": "Device ProductKey",
+      "sm": 6,
+      "help": "The ProductKey of your Zendure device (e.g., for 1600AC+)"
+    },
+    "deviceKey": {
+      "type": "text",
+      "label": "Device Key",
+      "sm": 6,
+      "help": "The DeviceKey of your Zendure device"
+    },
+    "_deviceHint": {
+      "type": "staticText",
+      "text": "💡 You can find ProductKey and DeviceKey in the zendure-solarflow adapter object tree. Look for the device path structure.",
+      "sm": 12,
+      "style": {
+        "fontSize": "0.9em",
+        "fontStyle": "italic",
+        "color": "#666"
+      }
+    },
+    "_gridSettings": {
+      "type": "divider",
+      "label": "Grid Power Meter"
+    },
+    "powerMeterDp": {
+      "type": "objectId",
+      "label": "Grid power meter datapoint",
+      "sm": 12,
+      "types": ["state"],
+      "help": "Select the datapoint that provides current grid power (positive = drawing from grid, negative = feeding to grid)"
+    },
+    "_automation": {
+      "type": "divider",
+      "label": "Automation Settings"
+    },
+    "targetGridPowerW": {
+      "type": "number",
+      "label": "Target grid power (W)",
+      "sm": 6,
+      "min": -5000,
+      "max": 5000,
+      "def": 0,
+      "help": "Target grid power in watts. 0 = zero grid draw/feed, positive = allow some grid draw, negative = allow some grid feed"
+    },
+    "updateIntervalSec": {
+      "type": "number",
+      "label": "Update interval (seconds)",
+      "sm": 6,
+      "min": 1,
+      "max": 300,
+      "def": 5,
+      "help": "How often to update battery power (recommended: 5 seconds)"
+    },
+    "_powerLimits": {
+      "type": "divider",
+      "label": "Power Limits"
+    },
+    "maxChargePowerW": {
+      "type": "number",
+      "label": "Max charge power (W)",
+      "sm": 6,
+      "min": 0,
+      "max": 3000,
+      "def": 1600,
+      "help": "Maximum charging power in watts"
+    },
+    "maxDischargePowerW": {
+      "type": "number",
+      "label": "Max discharge power (W)",
+      "sm": 6,
+      "min": 0,
+      "max": 3000,
+      "def": 1600,
+      "help": "Maximum discharging power in watts"
+    },
+    "_batteryLimits": {
+      "type": "divider",
+      "label": "Battery Protection"
+    },
+    "minBatterySoc": {
+      "type": "number",
+      "label": "Minimum battery SOC (%)",
+      "sm": 6,
+      "min": 0,
+      "max": 100,
+      "def": 10,
+      "help": "Stop discharging when SOC falls below this value"
+    },
+    "maxBatterySoc": {
+      "type": "number",
+      "label": "Maximum battery SOC (%)",
+      "sm": 6,
+      "min": 0,
+      "max": 100,
+      "def": 100,
+      "help": "Stop charging when SOC reaches this value"
+    },
+    "minBatteryVoltageMv": {
+      "type": "number",
+      "label": "Minimum battery voltage (mV)",
+      "sm": 6,
+      "min": 2500,
+      "max": 3500,
+      "def": 3000,
+      "help": "Stop discharging when voltage falls below this value"
+    },
+    "_features": {
+      "type": "divider",
+      "label": "Features"
+    },
+    "enableCharge": {
+      "type": "checkbox",
+      "label": "Enable charging",
+      "sm": 6,
+      "def": true,
+      "help": "Allow the adapter to charge the battery"
+    },
+    "enableDischarge": {
+      "type": "checkbox",
+      "label": "Enable discharging",
+      "sm": 6,
+      "def": true,
+      "help": "Allow the adapter to discharge the battery"
+    },
+    "useLowVoltageBlock": {
+      "type": "checkbox",
+      "label": "Use low voltage block",
+      "sm": 6,
+      "def": true,
+      "help": "Honor the lowVoltageBlock flag from the Zendure device"
+    },
+    "useFullChargeNeeded": {
+      "type": "checkbox",
+      "label": "Use full charge needed",
+      "sm": 6,
+      "def": true,
+      "help": "Honor the fullChargeNeeded flag from the Zendure device"
+    },
+    "_tuning": {
+      "type": "divider",
+      "label": "Tuning / Advanced"
+    },
+    "hysteresisW": {
+      "type": "number",
+      "label": "Hysteresis (W)",
+      "sm": 4,
+      "min": 0,
+      "max": 500,
+      "def": 50,
+      "help": "Minimum power change required to update (avoids frequent small adjustments)"
+    },
+    "rampUpWPerCycle": {
+      "type": "number",
+      "label": "Ramp-up limit (W/cycle)",
+      "sm": 4,
+      "min": 0,
+      "max": 2000,
+      "def": 200,
+      "help": "Maximum power increase per cycle (0 = unlimited)"
+    },
+    "rampDownWPerCycle": {
+      "type": "number",
+      "label": "Ramp-down limit (W/cycle)",
+      "sm": 4,
+      "min": 0,
+      "max": 2000,
+      "def": 100,
+      "help": "Maximum power decrease per cycle (0 = unlimited)"
+    },
+    "_tuningHint": {
+      "type": "staticText",
+      "text": "⚙️ Ramp rates control how quickly the battery power can change. Higher values = faster response but more aggressive. Lower values = smoother but slower response.",
+      "sm": 12,
+      "style": {
+        "fontSize": "0.9em",
+        "fontStyle": "italic",
+        "color": "#666"
+      }
+    },
+    "_logging": {
+      "type": "divider",
+      "label": "Logging"
+    },
+    "logLevel": {
+      "type": "select",
+      "label": "Log level",
+      "sm": 12,
+      "def": "info",
+      "options": [
+        { "label": "Error", "value": "error" },
+        { "label": "Warn", "value": "warn" },
+        { "label": "Info", "value": "info" },
+        { "label": "Debug", "value": "debug" }
+      ]
+    }
+  }
+}

@@ -1,0 +1,428 @@
+'use strict';
+
+const utils = require('@iobroker/adapter-core');
+
+/**
+ * Battery Automation Engine
+ * 
+ * This module handles the automatic battery charge/discharge control
+ * to achieve zero grid feed-in/draw.
+ * 
+ * Algorithm inspired by OpenDTU-OnBattery Dynamic Power Limiter:
+ * - Reads current grid power
+ * - Reads current battery power (charge/discharge)
+ * - Calculates new battery power to achieve target grid power
+ * - Formula: newBatteryPower = currentBatteryPower + (targetGridPower - actualGridPower)
+ * - Applies limits, hysteresis, and ramp rates
+ */
+
+class ZendureAutomation extends utils.Adapter {
+    constructor(options = {}) {
+        super({
+            ...options,
+            name: 'zendure-automation'
+        });
+
+        this.on('ready', this.onReady.bind(this));
+        this.on('stateChange', this.onStateChange.bind(this));
+        this.on('unload', this.onUnload.bind(this));
+
+        // Runtime state
+        this._updateTimer = null;
+        this._lastBatteryPowerW = 0; // negative = charging, positive = discharging
+        this._lastWrittenLimit = null;
+        this._isRunning = false;
+        this._deviceBasePath = null;
+    }
+
+    /**
+     * Called when adapter is initialized
+     */
+    async onReady() {
+        this.log.info('Zendure Automation Adapter starting...');
+
+        // Validate configuration
+        if (!this.validateConfig()) {
+            this.log.error('Configuration invalid, adapter will not start');
+            return;
+        }
+
+        // Build device base path
+        const instance = this.config.zendureSolarflowInstance || 'zendure-solarflow.0';
+        const productKey = this.config.deviceProductKey || '';
+        const deviceKey = this.config.deviceKey || '';
+
+        if (!productKey || !deviceKey) {
+            this.log.error('Device ProductKey and DeviceKey must be configured!');
+            return;
+        }
+
+        this._deviceBasePath = `${instance}.${productKey}.${deviceKey}`;
+        this.log.info(`Using device path: ${this._deviceBasePath}`);
+
+        // Initialize control states
+        await this.setStateAsync('control.enabled', true, true);
+        await this.setStateAsync('control.targetGridPowerW', this.config.targetGridPowerW || 0, true);
+        await this.setStateAsync('status.mode', 'idle', true);
+        await this.setStateAsync('info.connection', true, true);
+
+        // Subscribe to control states
+        this.subscribeStates('control.*');
+
+        // Subscribe to foreign states (grid power and battery power)
+        if (this.config.powerMeterDp) {
+            await this.subscribeForeignStatesAsync(this.config.powerMeterDp);
+        }
+
+        // Subscribe to device states to track current power
+        await this.subscribeForeignStatesAsync(`${this._deviceBasePath}.outputPower`);
+        await this.subscribeForeignStatesAsync(`${this._deviceBasePath}.inputPower`);
+        await this.subscribeForeignStatesAsync(`${this._deviceBasePath}.electricLevel`);
+
+        // Start automation loop
+        this.startAutomation();
+    }
+
+    /**
+     * Validate adapter configuration
+     */
+    validateConfig() {
+        if (!this.config.powerMeterDp) {
+            this.log.error('Power meter datapoint must be configured!');
+            return false;
+        }
+
+        if (!this.config.deviceProductKey || !this.config.deviceKey) {
+            this.log.error('Device ProductKey and DeviceKey must be configured!');
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * Start the automation control loop
+     */
+    startAutomation() {
+        this.log.info(`Starting automation with ${this.config.updateIntervalSec}s interval`);
+        this._isRunning = true;
+
+        // Run first cycle immediately
+        this.runAutomationCycle().catch(err => {
+            this.log.error(`Automation cycle failed: ${err.message}`);
+        });
+
+        // Schedule periodic updates
+        const intervalMs = (this.config.updateIntervalSec || 5) * 1000;
+        this._updateTimer = this.setInterval(() => {
+            this.runAutomationCycle().catch(err => {
+                this.log.error(`Automation cycle failed: ${err.message}`);
+            });
+        }, intervalMs);
+    }
+
+    /**
+     * Main automation cycle - runs periodically
+     */
+    async runAutomationCycle() {
+        try {
+            // Check if automation is enabled
+            const enabledState = await this.getStateAsync('control.enabled');
+            if (!enabledState || !enabledState.val) {
+                await this.setStateAsync('status.mode', 'idle', true);
+                return;
+            }
+
+            // Read current values
+            const gridPowerW = await this.getGridPowerW();
+            const batterySoc = await this.getBatterySoc();
+            const currentBatteryPowerW = await this.getCurrentBatteryPowerW();
+            const targetGridPowerW = await this.getTargetGridPowerW();
+
+            if (gridPowerW === null || batterySoc === null || currentBatteryPowerW === null) {
+                this.log.warn('Could not read all required values, skipping cycle');
+                await this.setStateAsync('status.mode', 'error', true);
+                return;
+            }
+
+            // Update status states
+            await this.setStateAsync('status.gridPowerW', gridPowerW, true);
+            await this.setStateAsync('status.batterySoc', batterySoc, true);
+            await this.setStateAsync('status.currentPowerW', currentBatteryPowerW, true);
+            await this.setStateAsync('status.lastUpdate', Date.now(), true);
+
+            this.log.debug(
+                `Cycle: Grid=${gridPowerW}W, Battery=${currentBatteryPowerW}W, SOC=${batterySoc}%, Target=${targetGridPowerW}W`
+            );
+
+            // Calculate new battery power target
+            // Formula: newPower = currentBatteryPower + (targetGrid - actualGrid)
+            // Example: Grid=+300W (drawing), Target=0W, Battery=0W
+            //   => newPower = 0 + (0 - 300) = -300W (discharge 300W)
+            // Example: Grid=-200W (feeding), Target=0W, Battery=0W  
+            //   => newPower = 0 + (0 - (-200)) = +200W (charge 200W)
+            
+            let newBatteryPowerW = currentBatteryPowerW + (targetGridPowerW - gridPowerW);
+
+            this.log.debug(`Calculated new battery power: ${newBatteryPowerW}W (before limits)`);
+
+            // Apply battery SOC limits
+            if (batterySoc <= this.config.minBatterySoc && newBatteryPowerW > 0) {
+                this.log.info(`Battery SOC low (${batterySoc}%), preventing discharge`);
+                newBatteryPowerW = 0;
+            }
+
+            if (batterySoc >= this.config.maxBatterySoc && newBatteryPowerW < 0) {
+                this.log.info(`Battery SOC high (${batterySoc}%), preventing charge`);
+                newBatteryPowerW = 0;
+            }
+
+            // Check charge/discharge enable flags
+            if (newBatteryPowerW < 0 && !this.config.enableCharge) {
+                this.log.debug('Charging disabled by configuration');
+                newBatteryPowerW = 0;
+            }
+
+            if (newBatteryPowerW > 0 && !this.config.enableDischarge) {
+                this.log.debug('Discharging disabled by configuration');
+                newBatteryPowerW = 0;
+            }
+
+            // Apply hysteresis (avoid frequent small changes)
+            const powerDelta = Math.abs(newBatteryPowerW - currentBatteryPowerW);
+            if (powerDelta < (this.config.hysteresisW || 50)) {
+                this.log.debug(`Power delta ${powerDelta}W below hysteresis, keeping current power`);
+                newBatteryPowerW = currentBatteryPowerW;
+            }
+
+            // Apply ramp rate limits
+            const rampUpLimit = this.config.rampUpWPerCycle || 200;
+            const rampDownLimit = this.config.rampDownWPerCycle || 100;
+
+            if (newBatteryPowerW > currentBatteryPowerW) {
+                // Increasing power (slower discharge or faster charge)
+                const maxChange = Math.abs(currentBatteryPowerW) > 0 ? rampUpLimit : 9999;
+                if ((newBatteryPowerW - currentBatteryPowerW) > maxChange) {
+                    newBatteryPowerW = currentBatteryPowerW + maxChange;
+                    this.log.debug(`Ramp-up limited to ${maxChange}W/cycle`);
+                }
+            } else if (newBatteryPowerW < currentBatteryPowerW) {
+                // Decreasing power (slower charge or faster discharge)
+                const maxChange = Math.abs(currentBatteryPowerW) > 0 ? rampDownLimit : 9999;
+                if ((currentBatteryPowerW - newBatteryPowerW) > maxChange) {
+                    newBatteryPowerW = currentBatteryPowerW - maxChange;
+                    this.log.debug(`Ramp-down limited to ${maxChange}W/cycle`);
+                }
+            }
+
+            // Apply absolute power limits
+            const maxCharge = -(this.config.maxChargePowerW || 1600);
+            const maxDischarge = this.config.maxDischargePowerW || 1600;
+
+            if (newBatteryPowerW < maxCharge) {
+                this.log.debug(`Limiting charge to ${maxCharge}W`);
+                newBatteryPowerW = maxCharge;
+            }
+
+            if (newBatteryPowerW > maxDischarge) {
+                this.log.debug(`Limiting discharge to ${maxDischarge}W`);
+                newBatteryPowerW = maxDischarge;
+            }
+
+            // Round to nearest 10W
+            newBatteryPowerW = Math.round(newBatteryPowerW / 10) * 10;
+
+            this.log.info(
+                `Setting battery power: ${newBatteryPowerW}W (Grid: ${gridPowerW}W → ${targetGridPowerW}W)`
+            );
+
+            // Write to device (only if changed)
+            await this.setBatteryPower(newBatteryPowerW);
+
+            // Update mode status
+            let mode = 'standby';
+            if (newBatteryPowerW < -10) {
+                mode = 'charging';
+            } else if (newBatteryPowerW > 10) {
+                mode = 'discharging';
+            }
+            await this.setStateAsync('status.mode', mode, true);
+
+        } catch (err) {
+            this.log.error(`Automation cycle error: ${err.message}`);
+            await this.setStateAsync('status.mode', 'error', true);
+        }
+    }
+
+    /**
+     * Read grid power from configured datapoint
+     */
+    async getGridPowerW() {
+        try {
+            const state = await this.getForeignStateAsync(this.config.powerMeterDp);
+            if (state && state.val !== null && state.val !== undefined) {
+                return Number(state.val);
+            }
+        } catch (err) {
+            this.log.warn(`Could not read grid power: ${err.message}`);
+        }
+        return null;
+    }
+
+    /**
+     * Read battery SOC from Zendure device
+     */
+    async getBatterySoc() {
+        try {
+            const state = await this.getForeignStateAsync(`${this._deviceBasePath}.electricLevel`);
+            if (state && state.val !== null && state.val !== undefined) {
+                return Number(state.val);
+            }
+        } catch (err) {
+            this.log.warn(`Could not read battery SOC: ${err.message}`);
+        }
+        return null;
+    }
+
+    /**
+     * Read current battery power from Zendure device
+     * Returns: negative = charging, positive = discharging
+     */
+    async getCurrentBatteryPowerW() {
+        try {
+            // Read both input and output power
+            const outputState = await this.getForeignStateAsync(`${this._deviceBasePath}.outputPower`);
+            const inputState = await this.getForeignStateAsync(`${this._deviceBasePath}.inputPower`);
+
+            let outputPower = 0;
+            let inputPower = 0;
+
+            if (outputState && outputState.val !== null) {
+                outputPower = Number(outputState.val);
+            }
+
+            if (inputState && inputState.val !== null) {
+                inputPower = Number(inputState.val);
+            }
+
+            // Net power: positive = discharging, negative = charging
+            const netPower = outputPower - inputPower;
+            
+            this._lastBatteryPowerW = netPower;
+            return netPower;
+
+        } catch (err) {
+            this.log.warn(`Could not read battery power: ${err.message}`);
+        }
+        return this._lastBatteryPowerW; // Return last known value
+    }
+
+    /**
+     * Get target grid power from control state
+     */
+    async getTargetGridPowerW() {
+        try {
+            const state = await this.getStateAsync('control.targetGridPowerW');
+            if (state && state.val !== null && state.val !== undefined) {
+                return Number(state.val);
+            }
+        } catch (err) {
+            this.log.warn(`Could not read target grid power: ${err.message}`);
+        }
+        return this.config.targetGridPowerW || 0;
+    }
+
+    /**
+     * Set battery power by writing to setDeviceAutomationInOutLimit
+     * @param {number} powerW - Target power (negative=charge, positive=discharge)
+     */
+    async setBatteryPower(powerW) {
+        try {
+            // Avoid unnecessary writes
+            if (this._lastWrittenLimit === powerW) {
+                this.log.debug('Power unchanged, skipping write');
+                return;
+            }
+
+            // The setDeviceAutomationInOutLimit uses:
+            // - negative values for charging
+            // - positive values for discharging
+            // Which matches our convention
+            
+            const limitPath = `${this._deviceBasePath}.control.setDeviceAutomationInOutLimit`;
+            
+            await this.setForeignStateAsync(limitPath, powerW, false);
+            
+            this._lastWrittenLimit = powerW;
+            this.log.info(`✓ Wrote battery limit: ${powerW}W to ${limitPath}`);
+
+        } catch (err) {
+            this.log.error(`Failed to set battery power: ${err.message}`);
+        }
+    }
+
+    /**
+     * Handle state changes
+     */
+    async onStateChange(id, state) {
+        if (!state || state.ack) return;
+
+        // Handle control state changes
+        if (id.endsWith('.control.enabled')) {
+            this.log.info(`Automation ${state.val ? 'enabled' : 'disabled'}`);
+            if (!state.val) {
+                // Stop battery when disabled
+                await this.setBatteryPower(0);
+                await this.setStateAsync('status.mode', 'idle', true);
+            }
+        }
+
+        if (id.endsWith('.control.targetGridPowerW')) {
+            this.log.info(`Target grid power changed to ${state.val}W`);
+            // Trigger immediate cycle
+            this.runAutomationCycle().catch(err => {
+                this.log.error(`Automation cycle failed: ${err.message}`);
+            });
+        }
+
+        // React to grid power changes (faster response)
+        if (id === this.config.powerMeterDp) {
+            this.log.debug(`Grid power changed to ${state.val}W, triggering cycle`);
+            this.runAutomationCycle().catch(err => {
+                this.log.error(`Automation cycle failed: ${err.message}`);
+            });
+        }
+    }
+
+    /**
+     * Called when adapter is stopped
+     */
+    async onUnload(callback) {
+        try {
+            this.log.info('Stopping Zendure Automation...');
+            this._isRunning = false;
+
+            if (this._updateTimer) {
+                this.clearInterval(this._updateTimer);
+                this._updateTimer = null;
+            }
+
+            // Set battery to standby
+            await this.setBatteryPower(0);
+            await this.setStateAsync('status.mode', 'idle', true);
+            await this.setStateAsync('info.connection', false, true);
+
+            callback();
+        } catch (e) {
+            callback();
+        }
+    }
+}
+
+if (require.main !== module) {
+    // Export for testing
+    module.exports = (options) => new ZendureAutomation(options);
+} else {
+    // Start adapter instance
+    new ZendureAutomation();
+}
