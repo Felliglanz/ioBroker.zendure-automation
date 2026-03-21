@@ -2,8 +2,12 @@
   "common": {
     "name": "zendure-automation",
     "title": "Zendure Automation",
-    "version": "0.2.0",
+    "version": "0.3.0",
     "news": {
+      "0.3.0": {
+        "en": "Added emergency charging: Honors device protection flags (lowVoltageBlock, fullChargeNeeded) and critical voltage thresholds",
+        "de": "Notladen hinzugefügt: Berücksichtigt Geräte-Schutzflags (lowVoltageBlock, fullChargeNeeded) und kritische Spannungsschwellen"
+      },
       "0.2.0": {
         "en": "Added voltage-based discharge protection with multi-pack support",
         "de": "Spannungsbasierter Entladeschutz mit Multi-Pack Unterstützung hinzugefügt"
@@ -57,6 +61,8 @@
     "rampDownWPerCycle": 100,
     "useLowVoltageBlock": true,
     "useFullChargeNeeded": true,
+    "emergencyChargeVoltageV": 2.8,
+    "emergencyChargePowerW": 800,
     "logLevel": "info"
   },
   "objects": [],
@@ -139,6 +145,7 @@
           "charging": "Charging",
           "discharging": "Discharging",
           "standby": "Standby",
+          "emergency-charging": "Emergency Charging",
           "error": "Error"
         }
       },
@@ -193,6 +200,19 @@
         "read": true,
         "write": false,
         "unit": "V"
+      },
+      "native": {}
+    },
+    {
+      "_id": "status.emergencyReason",
+      "type": "state",
+      "common": {
+        "name": "Emergency mode reason",
+        "type": "string",
+        "role": "text",
+        "read": true,
+        "write": false,
+        "def": ""
       },
       "native": {}
     },

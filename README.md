@@ -12,6 +12,8 @@ This adapter automatically controls your Zendure Solarflow battery to achieve **
 - ✅ **Dynamic Power Limiter**: Algorithm inspired by OpenDTU-OnBattery
 - ✅ **Fast Response**: Updates every 5 seconds (configurable)
 - ✅ **Smart Battery Protection**: Respects SOC limits, voltage limits, and device flags
+- ✅ **Emergency Charging**: Honors device protection flags (lowVoltageBlock, fullChargeNeeded) and critical voltage thresholds
+- ✅ **Multi-Pack Support**: Monitors voltage across all battery packs independently
 - ✅ **Smooth Operation**: Configurable hysteresis and ramp rates
 - ✅ **Traffic Optimization**: Only writes when values actually change
 
@@ -86,6 +88,22 @@ Example sources:
 **💡 Multi-Pack Voltage Monitoring:**  
 For systems with multiple battery packs (e.g., AB1000 + AB2000 stack), voltage mode reads each pack's `minVol` independently and uses the **lowest value** across all packs. This ensures the weakest pack is protected from deep discharge.
 
+### Emergency Charging
+
+The adapter monitors critical battery conditions and can force emergency charging when needed:
+
+- **Device Protection Flags**:
+  - `lowVoltageBlock`: Device signals critical low voltage → Stop discharging immediately
+  - `fullChargeNeeded`: Device requests full charge cycle (calibration) → Force charging to 100%
+  
+- **Critical Voltage Protection**:
+  - If ANY pack drops below `emergencyChargeVoltageV` (default: 2.8V) → Force emergency charging
+  - Uses `emergencyChargePowerW` (default: 800W) for emergency charging
+  - **Highest priority**: Overrides all other automation logic
+  
+**🚨 Winter Scenario Example:**  
+During dark winter days, if a pack voltage drops critically low (e.g., 2.7V from cold temperatures + no solar), the adapter immediately switches to emergency charging mode, ignoring grid power targets to protect the battery from damage.
+
 ### Tuning
 
 - **Hysteresis**: Minimum power change to react (reduces frequent small adjustments)
@@ -127,11 +145,12 @@ The adapter creates these states under `zendure-automation.0.*`:
 - `control.targetGridPowerW`: Target grid power (changeable on the fly)
 
 ### Status States
-- `status.mode`: Current mode (idle/charging/discharging/standby/error)
+- `status.mode`: Current mode (idle/charging/discharging/standby/emergency-charging/error)
 - `status.currentPowerW`: Current battery power
 - `status.gridPowerW`: Current grid power
 - `status.batterySoc`: Current battery SOC
 - `status.minPackVoltageV`: Minimum pack cell voltage (when using voltage protection mode)
+- `status.emergencyReason`: Reason for emergency mode (if active)
 - `status.lastUpdate`: Last update timestamp
 
 ## 🔧 Development
@@ -180,7 +199,17 @@ iobroker.zendure-automation/
 - Check grid power meter is providing correct values (negative = surplus)
 
 ## 📝 Changelog
-2.0 (2026-03-22)
+
+### 0.3.0 (2026-03-22)
+- **NEW**: Emergency charging mode with highest priority
+- **NEW**: Honors device protection flags: `lowVoltageBlock` and `fullChargeNeeded`
+- **NEW**: Critical voltage protection (force charge below configurable threshold)
+- **NEW**: Config options: `emergencyChargeVoltageV` and `emergencyChargePowerW`
+- **NEW**: Status states: `status.emergencyReason` to display emergency condition
+- Improved: Battery protection now includes device-level signals
+- Improved: Winter/darkness scenarios with automatic emergency charging
+
+### 0.2.0 (2026-03-22)
 - **NEW**: Voltage-based discharge protection mode
 - **NEW**: Multi-pack voltage monitoring (reads minVol from all packs)
 - **NEW**: Status state `minPackVoltageV` for monitoring
@@ -188,7 +217,6 @@ iobroker.zendure-automation/
 - **CHANGED**: MaxVol is explicitly ignored (full charge = SOC 100%)
 - Improved: User can choose between SOC or voltage-based discharge protection
 
-### 0.
 ### 0.1.0 (2026-03-21)
 - Initial release
 - Automatic charge/discharge control

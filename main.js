@@ -82,6 +82,10 @@ class ZendureAutomation extends utils.Adapter {
         // Subscribe to pack voltage states (for all packs)
         await this.subscribeForeignStatesAsync(`${this._deviceBasePath}.packData.*.minVol`);
 
+        // Subscribe to device protection flags
+        await this.subscribeForeignStatesAsync(`${this._deviceBasePath}.control.lowVoltageBlock`);
+        await this.subscribeForeignStatesAsync(`${this._deviceBasePath}.control.fullChargeNeeded`);
+
         // Start automation loop
         this.startAutomation();
     }
@@ -166,6 +170,27 @@ class ZendureAutomation extends utils.Adapter {
             
             await this.setStateAsync('status.lastUpdate', Date.now(), true);
 
+            // ========== EMERGENCY CHARGE CHECK (HIGHEST PRIORITY) ==========
+            // Check device protection flags and critical voltage BEFORE normal automation
+            const emergencyState = await this.checkEmergencyConditions();
+            
+            if (emergencyState.isEmergency) {
+                this.log.warn(`🚨 EMERGENCY MODE ACTIVE: ${emergencyState.reason}`);
+                await this.setStateAsync('status.mode', 'emergency-charging', true);
+                await this.setStateAsync('status.emergencyReason', emergencyState.reason, true);
+                
+                // Force emergency charging (negative = charge)
+                const emergencyChargePower = -(this.config.emergencyChargePowerW || 800);
+                this.log.warn(`⚡ Forcing emergency charge at ${Math.abs(emergencyChargePower)}W`);
+                
+                await this.setBatteryPower(emergencyChargePower);
+                return; // Skip normal automation cycle
+            }
+            
+            // Clear emergency reason when not in emergency
+            await this.setStateAsync('status.emergencyReason', '', true);
+            // ================================================================
+
             this.log.debug(
                 `Cycle: Grid=${gridPowerW}W, Battery=${currentBatteryPowerW}W, SOC=${batterySoc}%, Target=${targetGridPowerW}W`
             );
@@ -183,6 +208,17 @@ class ZendureAutomation extends utils.Adapter {
 
             // Apply discharge protection based on selected mode
             if (newBatteryPowerW > 0) { // Only when discharging
+                // Check device lowVoltageBlock flag (even if not critical enough for emergency)
+                if (this.config.useLowVoltageBlock) {
+                    const lowVoltageState = await this.getForeignStateAsync(
+                        `${this._deviceBasePath}.control.lowVoltageBlock`
+                    );
+                    if (lowVoltageState && lowVoltageState.val === true) {
+                        this.log.info('Device lowVoltageBlock active, preventing discharge');
+                        newBatteryPowerW = 0;
+                    }
+                }
+                
                 if (protectionMode === 'soc') {
                     // SOC-based protection
                     if (batterySoc <= this.config.minBatterySoc) {
@@ -355,6 +391,57 @@ class ZendureAutomation extends utils.Adapter {
             this.log.warn(`Could not read pack voltages: ${err.message}`);
             return null;
         }
+    }
+
+    /**
+     * Check for emergency conditions that require immediate charging
+     * Returns object with isEmergency flag and reason
+     * @returns {Promise<{isEmergency: boolean, reason: string}>}
+     */
+    async checkEmergencyConditions() {
+        const result = { isEmergency: false, reason: '' };
+
+        try {
+            // 1. Check device lowVoltageBlock flag
+            if (this.config.useLowVoltageBlock) {
+                const lowVoltageState = await this.getForeignStateAsync(
+                    `${this._deviceBasePath}.control.lowVoltageBlock`
+                );
+                if (lowVoltageState && lowVoltageState.val === true) {
+                    result.isEmergency = true;
+                    result.reason = 'Device lowVoltageBlock flag active';
+                    return result;
+                }
+            }
+
+            // 2. Check device fullChargeNeeded flag
+            if (this.config.useFullChargeNeeded) {
+                const fullChargeState = await this.getForeignStateAsync(
+                    `${this._deviceBasePath}.control.fullChargeNeeded`
+                );
+                if (fullChargeState && fullChargeState.val === true) {
+                    result.isEmergency = true;
+                    result.reason = 'Device requests full charge (calibration needed)';
+                    return result;
+                }
+            }
+
+            // 3. Check critical pack voltage
+            const minPackVoltageV = await this.getMinimumPackVoltageV();
+            if (minPackVoltageV !== null) {
+                const emergencyVoltageLimit = this.config.emergencyChargeVoltageV || 2.8;
+                if (minPackVoltageV <= emergencyVoltageLimit) {
+                    result.isEmergency = true;
+                    result.reason = `Critical pack voltage: ${minPackVoltageV.toFixed(2)}V <= ${emergencyVoltageLimit}V`;
+                    return result;
+                }
+            }
+
+        } catch (err) {
+            this.log.warn(`Error checking emergency conditions: ${err.message}`);
+        }
+
+        return result;
     }
 
     /**
