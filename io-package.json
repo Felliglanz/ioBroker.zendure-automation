@@ -2,8 +2,12 @@
   "common": {
     "name": "zendure-automation",
     "title": "Zendure Automation",
-    "version": "0.1.0",
+    "version": "0.2.0",
     "news": {
+      "0.2.0": {
+        "en": "Added voltage-based discharge protection with multi-pack support",
+        "de": "Spannungsbasierter Entladeschutz mit Multi-Pack Unterstützung hinzugefügt"
+      },
       "0.1.0": {
         "en": "Initial release: Automatic charge/discharge control with zero grid target",
         "de": "Erste Version: Automatische Lade-/Entlade-Steuerung mit Null-Netzbezug Ziel"
@@ -44,7 +48,8 @@
     "maxDischargePowerW": 1600,
     "minBatterySoc": 10,
     "maxBatterySoc": 100,
-    "minBatteryVoltageMv": 3000,
+    "dischargeProtectionMode": "soc",
+    "minBatteryVoltageV": 3.0,
     "enableDischarge": true,
     "enableCharge": true,
     "hysteresisW": 50,
@@ -175,6 +180,19 @@
         "read": true,
         "write": false,
         "unit": "%"
+      },
+      "native": {}
+    },
+    {
+      "_id": "status.minPackVoltageV",
+      "type": "state",
+      "common": {
+        "name": "Minimum pack cell voltage (V)",
+        "type": "number",
+        "role": "value.voltage",
+        "read": true,
+        "write": false,
+        "unit": "V"
       },
       "native": {}
     },

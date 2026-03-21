@@ -77,7 +77,14 @@ Example sources:
 ### Battery Protection
 
 - **Min SOC**: Stop discharging below this percentage (e.g., 10%)
-- **Max SOC**: Stop charging above this percentage (e.g., 100%)
+- **Max SOC**: Stop charging above this percentage (e.g., 100% - maxVol is NOT considered, full charge = 100% SOC)
+- **Discharge Protection Mode**: Choose between:
+  - **By SOC (%)**: Traditional SOC-based protection (simpler, default)
+  - **By Pack Voltage (V)**: Monitors minimum cell voltage across ALL battery packs
+- **Min Pack Cell Voltage**: When using voltage mode, stop discharging if ANY pack's minVol drops below this (typical: 3.0V for LFP cells)
+
+**💡 Multi-Pack Voltage Monitoring:**  
+For systems with multiple battery packs (e.g., AB1000 + AB2000 stack), voltage mode reads each pack's `minVol` independently and uses the **lowest value** across all packs. This ensures the weakest pack is protected from deep discharge.
 
 ### Tuning
 
@@ -124,6 +131,7 @@ The adapter creates these states under `zendure-automation.0.*`:
 - `status.currentPowerW`: Current battery power
 - `status.gridPowerW`: Current grid power
 - `status.batterySoc`: Current battery SOC
+- `status.minPackVoltageV`: Minimum pack cell voltage (when using voltage protection mode)
 - `status.lastUpdate`: Last update timestamp
 
 ## 🔧 Development
@@ -172,7 +180,15 @@ iobroker.zendure-automation/
 - Check grid power meter is providing correct values (negative = surplus)
 
 ## 📝 Changelog
+2.0 (2026-03-22)
+- **NEW**: Voltage-based discharge protection mode
+- **NEW**: Multi-pack voltage monitoring (reads minVol from all packs)
+- **NEW**: Status state `minPackVoltageV` for monitoring
+- **CHANGED**: Config option `minBatteryVoltageMv` renamed to `minBatteryVoltageV` (now in Volts)
+- **CHANGED**: MaxVol is explicitly ignored (full charge = SOC 100%)
+- Improved: User can choose between SOC or voltage-based discharge protection
 
+### 0.
 ### 0.1.0 (2026-03-21)
 - Initial release
 - Automatic charge/discharge control

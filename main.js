@@ -79,6 +79,9 @@ class ZendureAutomation extends utils.Adapter {
         await this.subscribeForeignStatesAsync(`${this._deviceBasePath}.inputPower`);
         await this.subscribeForeignStatesAsync(`${this._deviceBasePath}.electricLevel`);
 
+        // Subscribe to pack voltage states (for all packs)
+        await this.subscribeForeignStatesAsync(`${this._deviceBasePath}.packData.*.minVol`);
+
         // Start automation loop
         this.startAutomation();
     }
@@ -145,10 +148,22 @@ class ZendureAutomation extends utils.Adapter {
                 return;
             }
 
+            // Determine protection mode once
+            const protectionMode = this.config.dischargeProtectionMode || 'soc';
+
             // Update status states
             await this.setStateAsync('status.gridPowerW', gridPowerW, true);
             await this.setStateAsync('status.batterySoc', batterySoc, true);
             await this.setStateAsync('status.currentPowerW', currentBatteryPowerW, true);
+            
+            // Read and update pack voltage if in voltage mode
+            if (protectionMode === 'voltage') {
+                const minPackVoltageV = await this.getMinimumPackVoltageV();
+                if (minPackVoltageV !== null) {
+                    await this.setStateAsync('status.minPackVoltageV', minPackVoltageV, true);
+                }
+            }
+            
             await this.setStateAsync('status.lastUpdate', Date.now(), true);
 
             this.log.debug(
@@ -166,10 +181,25 @@ class ZendureAutomation extends utils.Adapter {
 
             this.log.debug(`Calculated new battery power: ${newBatteryPowerW}W (before limits)`);
 
-            // Apply battery SOC limits
-            if (batterySoc <= this.config.minBatterySoc && newBatteryPowerW > 0) {
-                this.log.info(`Battery SOC low (${batterySoc}%), preventing discharge`);
-                newBatteryPowerW = 0;
+            // Apply discharge protection based on selected mode
+            if (newBatteryPowerW > 0) { // Only when discharging
+                if (protectionMode === 'soc') {
+                    // SOC-based protection
+                    if (batterySoc <= this.config.minBatterySoc) {
+                        this.log.info(`Battery SOC low (${batterySoc}%), preventing discharge`);
+                        newBatteryPowerW = 0;
+                    }
+                } else if (protectionMode === 'voltage') {
+                    // Voltage-based protection
+                    const minPackVoltageV = await this.getMinimumPackVoltageV();
+                    if (minPackVoltageV !== null) {
+                        const minVoltageLimit = this.config.minBatteryVoltageV || 3.0;
+                        if (minPackVoltageV <= minVoltageLimit) {
+                            this.log.info(`Pack voltage low (${minPackVoltageV.toFixed(2)}V <= ${minVoltageLimit}V), preventing discharge`);
+                            newBatteryPowerW = 0;
+                        }
+                    }
+                }
             }
 
             if (batterySoc >= this.config.maxBatterySoc && newBatteryPowerW < 0) {
@@ -282,6 +312,49 @@ class ZendureAutomation extends utils.Adapter {
             this.log.warn(`Could not read battery SOC: ${err.message}`);
         }
         return null;
+    }
+
+    /**
+     * Get minimum cell voltage across all battery packs
+     * Reads all packData.{sn}.minVol states and returns the lowest value
+     * @returns {number|null} Minimum voltage in Volts, or null if no packs found
+     */
+    async getMinimumPackVoltageV() {
+        try {
+            // Find all pack minVol states
+            const packDataPattern = `${this._deviceBasePath}.packData.`;
+            const allStates = await this.getForeignObjectsAsync(packDataPattern + '*', 'state');
+            
+            let minVoltage = null;
+            let packCount = 0;
+
+            for (const [id, obj] of Object.entries(allStates)) {
+                if (id.endsWith('.minVol')) {
+                    const state = await this.getForeignStateAsync(id);
+                    if (state && state.val !== null && state.val !== undefined) {
+                        const voltage = Number(state.val);
+                        packCount++;
+                        
+                        if (minVoltage === null || voltage < minVoltage) {
+                            minVoltage = voltage;
+                        }
+                        
+                        this.log.debug(`Pack ${id.split('.')[4]}: minVol = ${voltage.toFixed(2)}V`);
+                    }
+                }
+            }
+
+            if (packCount > 0) {
+                this.log.debug(`Found ${packCount} pack(s), minimum voltage: ${minVoltage?.toFixed(2)}V`);
+                return minVoltage;
+            } else {
+                this.log.warn('No battery packs found for voltage monitoring');
+                return null;
+            }
+        } catch (err) {
+            this.log.warn(`Could not read pack voltages: ${err.message}`);
+            return null;
+        }
     }
 
     /**

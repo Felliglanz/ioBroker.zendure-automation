@@ -116,7 +116,7 @@
       "min": 0,
       "max": 100,
       "def": 10,
-      "help": "Stop discharging when SOC falls below this value"
+      "help": "Stop discharging when SOC falls below this value (when using SOC protection mode)"
     },
     "maxBatterySoc": {
       "type": "number",
@@ -125,16 +125,28 @@
       "min": 0,
       "max": 100,
       "def": 100,
-      "help": "Stop charging when SOC reaches this value"
+      "help": "Stop charging when SOC reaches this value (maxVol is ignored, full charge = 100% SOC)"
     },
-    "minBatteryVoltageMv": {
-      "type": "number",
-      "label": "Minimum battery voltage (mV)",
+    "dischargeProtectionMode": {
+      "type": "select",
+      "label": "Discharge protection mode",
       "sm": 6,
-      "min": 2500,
-      "max": 3500,
-      "def": 3000,
-      "help": "Stop discharging when voltage falls below this value"
+      "def": "soc",
+      "options": [
+        { "label": "By SOC (%)", "value": "soc" },
+        { "label": "By Pack Voltage (V)", "value": "voltage" }
+      ],
+      "help": "Choose how to protect battery from deep discharge: by SOC percentage or by minimum pack cell voltage"
+    },
+    "minBatteryVoltageV": {
+      "type": "number",
+      "label": "Minimum pack cell voltage (V)",
+      "sm": 6,
+      "min": 2.5,
+      "max": 3.5,
+      "step": 0.01,
+      "def": 3.0,
+      "help": "Stop discharging when ANY pack's minVol falls below this value (when using voltage protection mode). Typical: 3.0V for LFP"
     },
     "_features": {
       "type": "divider",
