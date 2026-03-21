@@ -2,8 +2,12 @@
   "common": {
     "name": "zendure-automation",
     "title": "Zendure Automation",
-    "version": "0.3.0",
+    "version": "0.4.0",
     "news": {
+      "0.4.0": {
+        "en": "Added recovery mode: Prevents discharge loop after emergency charging. i18n support for admin UI (DE/EN)",
+        "de": "Recovery-Modus hinzugefügt: Verhindert Entlade-Schleife nach Notladen. i18n Unterstützung für Admin UI (DE/EN)"
+      },
       "0.3.0": {
         "en": "Added emergency charging: Honors device protection flags (lowVoltageBlock, fullChargeNeeded) and critical voltage thresholds",
         "de": "Notladen hinzugefügt: Berücksichtigt Geräte-Schutzflags (lowVoltageBlock, fullChargeNeeded) und kritische Spannungsschwellen"
@@ -63,6 +67,8 @@
     "useFullChargeNeeded": true,
     "emergencyChargeVoltageV": 2.8,
     "emergencyChargePowerW": 800,
+    "emergencyExitSoc": 20,
+    "emergencyRecoverySoc": 30,
     "logLevel": "info"
   },
   "objects": [],
@@ -146,6 +152,7 @@
           "discharging": "Discharging",
           "standby": "Standby",
           "emergency-charging": "Emergency Charging",
+          "recovery": "Recovery Mode",
           "error": "Error"
         }
       },

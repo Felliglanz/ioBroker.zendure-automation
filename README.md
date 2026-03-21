@@ -104,6 +104,14 @@ The adapter monitors critical battery conditions and can force emergency chargin
 **🚨 Winter Scenario Example:**  
 During dark winter days, if a pack voltage drops critically low (e.g., 2.7V from cold temperatures + no solar), the adapter immediately switches to emergency charging mode, ignoring grid power targets to protect the battery from damage.
 
+**🔄 Recovery Mode:**  
+After emergency charging ends (at `emergencyExitSoc`, default 20%), the adapter enters **recovery mode**:
+- Continues charging with **normal grid automation** (e.g., only when surplus available)
+- **Discharge is blocked** until `emergencyRecoverySoc` is reached (default: 30%)
+- Prevents endless emergency-discharge-emergency loops
+- Can take 1-2 days in winter to complete (waits for solar surplus)
+- Once recovery SOC reached: Normal operation resumes (including discharge)
+
 ### Tuning
 
 - **Hysteresis**: Minimum power change to react (reduces frequent small adjustments)
@@ -145,7 +153,7 @@ The adapter creates these states under `zendure-automation.0.*`:
 - `control.targetGridPowerW`: Target grid power (changeable on the fly)
 
 ### Status States
-- `status.mode`: Current mode (idle/charging/discharging/standby/emergency-charging/error)
+- `status.mode`: Current mode (idle/charging/discharging/standby/emergency-charging/recovery/error)
 - `status.currentPowerW`: Current battery power
 - `status.gridPowerW`: Current grid power
 - `status.batterySoc`: Current battery SOC
@@ -199,6 +207,15 @@ iobroker.zendure-automation/
 - Check grid power meter is providing correct values (negative = surplus)
 
 ## 📝 Changelog
+
+### 0.4.0 (2026-03-22)
+- **NEW**: Recovery mode after emergency charging
+- **NEW**: `emergencyExitSoc` - SOC at which emergency charging ends (default: 20%)
+- **NEW**: `emergencyRecoverySoc` - SOC until which discharge is blocked after emergency (default: 30%)
+- **NEW**: i18n support for admin UI (German & English)
+- **CHANGED**: Admin UI restructured with better grouping and hints
+- Improved: Prevents endless emergency-discharge-emergency loops
+- Improved: Recovery charges only with surplus/solar, waiting for natural recovery
 
 ### 0.3.0 (2026-03-22)
 - **NEW**: Emergency charging mode with highest priority

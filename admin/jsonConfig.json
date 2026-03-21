@@ -1,6 +1,6 @@
 {
   "type": "panel",
-  "i18n": false,
+  "i18n": true,
   "items": {
     "_header": {
       "type": "header",
@@ -107,7 +107,10 @@
     },
     "_batteryLimits": {
       "type": "divider",
-      "label": "Battery Protection"
+      "label": {
+        "en": "Battery Protection",
+        "de": "Akku-Schutz"
+      }
     },
     "minBatterySoc": {
       "type": "number",
@@ -129,24 +132,48 @@
     },
     "dischargeProtectionMode": {
       "type": "select",
-      "label": "Discharge protection mode",
+      "label": {
+        "en": "dischargeProtectionMode_label",
+        "de": "dischargeProtectionMode_label"
+      },
       "sm": 6,
       "def": "soc",
       "options": [
-        { "label": "By SOC (%)", "value": "soc" },
-        { "label": "By Pack Voltage (V)", "value": "voltage" }
+        { 
+          "label": {
+            "en": "dischargeProtectionMode_soc",
+            "de": "dischargeProtectionMode_soc"
+          }, 
+          "value": "soc" 
+        },
+        { 
+          "label": {
+            "en": "dischargeProtectionMode_voltage",
+            "de": "dischargeProtectionMode_voltage"
+          }, 
+          "value": "voltage" 
+        }
       ],
-      "help": "Choose how to protect battery from deep discharge: by SOC percentage or by minimum pack cell voltage"
+      "help": {
+        "en": "dischargeProtectionMode_help",
+        "de": "dischargeProtectionMode_help"
+      }
     },
     "minBatteryVoltageV": {
       "type": "number",
-      "label": "Minimum pack cell voltage (V)",
+      "label": {
+        "en": "minBatteryVoltageV_label",
+        "de": "minBatteryVoltageV_label"
+      },
       "sm": 6,
       "min": 2.5,
       "max": 3.5,
       "step": 0.01,
       "def": 3.0,
-      "help": "Stop discharging when ANY pack's minVol falls below this value (when using voltage protection mode). Typical: 3.0V for LFP"
+      "help": {
+        "en": "minBatteryVoltageV_help",
+        "de": "minBatteryVoltageV_help"
+      }
     },
     "_features": {
       "type": "divider",
@@ -166,38 +193,127 @@
       "def": true,
       "help": "Allow the adapter to discharge the battery"
     },
+    "_emergencyCharging": {
+      "type": "divider",
+      "label": {
+        "en": "emergencyCharging_divider",
+        "de": "emergencyCharging_divider"
+      }
+    },
+    "_emergencyHint": {
+      "type": "staticText",
+      "text": {
+        "en": "emergencyCharging_hint",
+        "de": "emergencyCharging_hint"
+      },
+      "sm": 12,
+      "style": {
+        "backgroundColor": "#fff3e0",
+        "padding": "10px",
+        "borderRadius": "4px",
+        "fontSize": "0.9em"
+      }
+    },
     "useLowVoltageBlock": {
       "type": "checkbox",
-      "label": "Honor device low voltage block",
+      "label": {
+        "en": "useLowVoltageBlock_label",
+        "de": "useLowVoltageBlock_label"
+      },
       "sm": 6,
       "def": true,
-      "help": "When device signals lowVoltageBlock=true, stop discharging immediately (device protection)"
+      "help": {
+        "en": "useLowVoltageBlock_help",
+        "de": "useLowVoltageBlock_help"
+      }
     },
     "useFullChargeNeeded": {
       "type": "checkbox",
-      "label": "Honor device full charge request",
+      "label": {
+        "en": "useFullChargeNeeded_label",
+        "de": "useFullChargeNeeded_label"
+      },
       "sm": 6,
       "def": true,
-      "help": "When device signals fullChargeNeeded=true, force full charge cycle (battery calibration)"
+      "help": {
+        "en": "useFullChargeNeeded_help",
+        "de": "useFullChargeNeeded_help"
+      }
     },
     "emergencyChargeVoltageV": {
       "type": "number",
-      "label": "Emergency charge voltage (V)",
+      "label": {
+        "en": "emergencyChargeVoltageV_label",
+        "de": "emergencyChargeVoltageV_label"
+      },
       "sm": 6,
       "min": 2.5,
       "max": 3.0,
       "step": 0.1,
       "def": 2.8,
-      "help": "If ANY pack drops below this critical voltage, force emergency charging (ignore grid power). Typ: 2.8V for LFP"
+      "help": {
+        "en": "emergencyChargeVoltageV_help",
+        "de": "emergencyChargeVoltageV_help"
+      }
     },
     "emergencyChargePowerW": {
       "type": "number",
-      "label": "Emergency charge power (W)",
+      "label": {
+        "en": "emergencyChargePowerW_label",
+        "de": "emergencyChargePowerW_label"
+      },
       "sm": 6,
       "min": 0,
       "max": 3000,
       "def": 800,
-      "help": "Charging power to use in emergency mode (when voltage critically low)"
+      "help": {
+        "en": "emergencyChargePowerW_help",
+        "de": "emergencyChargePowerW_help"
+      }
+    },
+    "emergencyExitSoc": {
+      "type": "number",
+      "label": {
+        "en": "emergencyExitSoc_label",
+        "de": "emergencyExitSoc_label"
+      },
+      "sm": 6,
+      "min": 5,
+      "max": 50,
+      "def": 20,
+      "help": {
+        "en": "emergencyExitSoc_help",
+        "de": "emergencyExitSoc_help"
+      }
+    },
+    "emergencyRecoverySoc": {
+      "type": "number",
+      "label": {
+        "en": "emergencyRecoverySoc_label",
+        "de": "emergencyRecoverySoc_label"
+      },
+      "sm": 6,
+      "min": 10,
+      "max": 80,
+      "def": 30,
+      "help": {
+        "en": "emergencyRecoverySoc_help",
+        "de": "emergencyRecoverySoc_help"
+      }
+    },
+    "_recoveryHint": {
+      "type": "staticText",
+      "text": {
+        "en": "emergencyRecovery_hint",
+        "de": "emergencyRecovery_hint"
+      },
+      "sm": 12,
+      "style": {
+        "backgroundColor": "#e8f5e9",
+        "padding": "10px",
+        "borderRadius": "4px",
+        "fontSize": "0.9em"
+      }
     },
     "_tuning": {
       "type": "divider",

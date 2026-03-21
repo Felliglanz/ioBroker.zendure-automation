@@ -33,6 +33,7 @@ class ZendureAutomation extends utils.Adapter {
         this._lastWrittenLimit = null;
         this._isRunning = false;
         this._deviceBasePath = null;
+        this._inRecoveryMode = false; // Recovery mode after emergency charging
     }
 
     /**
@@ -170,25 +171,47 @@ class ZendureAutomation extends utils.Adapter {
             
             await this.setStateAsync('status.lastUpdate', Date.now(), true);
 
-            // ========== EMERGENCY CHARGE CHECK (HIGHEST PRIORITY) ==========
+            // ========== EMERGENCY & RECOVERY CHECK (HIGHEST PRIORITY) ==========
             // Check device protection flags and critical voltage BEFORE normal automation
-            const emergencyState = await this.checkEmergencyConditions();
+            const emergencyState = await this.checkEmergencyConditions(batterySoc);
             
             if (emergencyState.isEmergency) {
                 this.log.warn(`🚨 EMERGENCY MODE ACTIVE: ${emergencyState.reason}`);
                 await this.setStateAsync('status.mode', 'emergency-charging', true);
                 await this.setStateAsync('status.emergencyReason', emergencyState.reason, true);
                 
-                // Force emergency charging (negative = charge)
-                const emergencyChargePower = -(this.config.emergencyChargePowerW || 800);
-                this.log.warn(`⚡ Forcing emergency charge at ${Math.abs(emergencyChargePower)}W`);
-                
-                await this.setBatteryPower(emergencyChargePower);
-                return; // Skip normal automation cycle
+                // Check if we should exit emergency and enter recovery
+                const emergencyExitSoc = this.config.emergencyExitSoc || 20;
+                if (batterySoc >= emergencyExitSoc) {
+                    this.log.info(`✓ Emergency exit SOC reached (${batterySoc}% >= ${emergencyExitSoc}%), entering recovery mode`);
+                    this._inRecoveryMode = true;
+                    await this.setStateAsync('status.mode', 'recovery', true);
+                    await this.setStateAsync('status.emergencyReason', '', true);
+                    // Continue to normal automation (but discharge will be blocked)
+                } else {
+                    // Continue emergency charging
+                    const emergencyChargePower = -(this.config.emergencyChargePowerW || 800);
+                    this.log.warn(`⚡ Forcing emergency charge at ${Math.abs(emergencyChargePower)}W (SOC: ${batterySoc}%)`);
+                    await this.setBatteryPower(emergencyChargePower);
+                    return; // Skip normal automation cycle
+                }
+            } else {
+                // Clear emergency reason when not in emergency
+                await this.setStateAsync('status.emergencyReason', '', true);
             }
-            
-            // Clear emergency reason when not in emergency
-            await this.setStateAsync('status.emergencyReason', '', true);
+
+            // Check recovery mode status
+            if (this._inRecoveryMode) {
+                const recoverySoc = this.config.emergencyRecoverySoc || 30;
+                if (batterySoc >= recoverySoc) {
+                    this.log.info(`✓ Recovery complete (${batterySoc}% >= ${recoverySoc}%), resuming normal operation`);
+                    this._inRecoveryMode = false;
+                    await this.setStateAsync('status.mode', 'standby', true);
+                } else {
+                    this.log.debug(`Recovery mode active (${batterySoc}% < ${recoverySoc}%), discharge blocked`);
+                    await this.setStateAsync('status.mode', 'recovery', true);
+                }
+            }
             // ================================================================
 
             this.log.debug(
@@ -208,6 +231,12 @@ class ZendureAutomation extends utils.Adapter {
 
             // Apply discharge protection based on selected mode
             if (newBatteryPowerW > 0) { // Only when discharging
+                // RECOVERY MODE: Block all discharging
+                if (this._inRecoveryMode) {
+                    this.log.info(`Recovery mode active, preventing discharge until ${this.config.emergencyRecoverySoc || 30}% SOC`);
+                    newBatteryPowerW = 0;
+                }
+                
                 // Check device lowVoltageBlock flag (even if not critical enough for emergency)
                 if (this.config.useLowVoltageBlock) {
                     const lowVoltageState = await this.getForeignStateAsync(
@@ -396,9 +425,10 @@ class ZendureAutomation extends utils.Adapter {
     /**
      * Check for emergency conditions that require immediate charging
      * Returns object with isEmergency flag and reason
+     * @param {number} batterySoc - Current battery SOC percentage
      * @returns {Promise<{isEmergency: boolean, reason: string}>}
      */
-    async checkEmergencyConditions() {
+    async checkEmergencyConditions(batterySoc) {
         const result = { isEmergency: false, reason: '' };
 
         try {
