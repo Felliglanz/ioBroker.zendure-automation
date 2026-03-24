@@ -219,13 +219,14 @@ class ZendureAutomation extends utils.Adapter {
             );
 
             // Calculate new battery power target
-            // Formula: newPower = currentBatteryPower + (targetGrid - actualGrid)
+            // Formula: newPower = currentBatteryPower + (actualGrid - targetGrid)
+            // Convention: positive = discharge, negative = charge
             // Example: Grid=+300W (drawing), Target=0W, Battery=0W
-            //   => newPower = 0 + (0 - 300) = -300W (discharge 300W)
+            //   => newPower = 0 + (300 - 0) = +300W (discharge 300W to compensate grid draw)
             // Example: Grid=-200W (feeding), Target=0W, Battery=0W  
-            //   => newPower = 0 + (0 - (-200)) = +200W (charge 200W)
+            //   => newPower = 0 + (-200 - 0) = -200W (charge 200W to use excess power)
             
-            let newBatteryPowerW = currentBatteryPowerW + (targetGridPowerW - gridPowerW);
+            let newBatteryPowerW = currentBatteryPowerW + (gridPowerW - targetGridPowerW);
 
             this.log.debug(`Calculated new battery power: ${newBatteryPowerW}W (before limits)`);
 
