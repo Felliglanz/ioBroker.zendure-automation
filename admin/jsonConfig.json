@@ -289,7 +289,6 @@
         "de": "enableDischarge_help"
       }
     },
-    },
     "_emergencyCharging": {
       "type": "divider",
       "label": {
