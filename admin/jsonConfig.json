@@ -177,8 +177,8 @@
     "_batteryLimits": {
       "type": "divider",
       "label": {
-        "en": "Battery Protection",
-        "de": "Akku-Schutz"
+        "en": "batteryProtection_divider",
+        "de": "batteryProtection_divider"
       }
     },
     "minBatterySoc": {
@@ -258,7 +258,10 @@
     },
     "_features": {
       "type": "divider",
-      "label": "Features"
+      "label": {
+        "en": "Features",
+        "de": "Funktionen"
+      }
     },
     "enableCharge": {
       "type": "checkbox",
