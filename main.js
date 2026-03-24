@@ -283,11 +283,8 @@ class ZendureAutomation extends utils.Adapter {
             await this.setStateAsync('status.feedInCounter', this._feedInCounter, true);
             // ==================================================
 
-            this.log.debug(`Calculated new battery power: ${newBatteryPowerW}W (before safety checks)`);
-
             // ========== SAFETY CHECKS (HIGHEST PRIORITY - CANNOT BE OVERRIDDEN) ==========
             let safetyLimitActive = false;
-            const powerBeforeSafety = newBatteryPowerW;
             
             // Apply discharge protection based on selected mode
             if (newBatteryPowerW > 0) { // Only when discharging
