@@ -214,19 +214,24 @@ class ZendureAutomation extends utils.Adapter {
             }
             // ================================================================
 
+            // Use last written limit as base for calculation (more stable than measured power)
+            // If no limit was written yet, use 0 as starting point
+            const lastSetPowerW = this._lastWrittenLimit !== null ? this._lastWrittenLimit : 0;
+
             this.log.debug(
-                `Cycle: Grid=${gridPowerW}W, Battery=${currentBatteryPowerW}W, SOC=${batterySoc}%, Target=${targetGridPowerW}W`
+                `Cycle: Grid=${gridPowerW}W, Battery_measured=${currentBatteryPowerW}W, Battery_set=${lastSetPowerW}W, SOC=${batterySoc}%, Target=${targetGridPowerW}W`
             );
 
             // Calculate new battery power target
-            // Formula: newPower = currentBatteryPower + (actualGrid - targetGrid)
+            // Formula: newPower = lastSetPower + (actualGrid - targetGrid)
             // Convention: positive = discharge, negative = charge
-            // Example: Grid=+300W (drawing), Target=0W, Battery=0W
+            // Use last SET power instead of measured power for stable control loop
+            // Example: Grid=+300W (drawing), Target=0W, LastSet=0W
             //   => newPower = 0 + (300 - 0) = +300W (discharge 300W to compensate grid draw)
-            // Example: Grid=-200W (feeding), Target=0W, Battery=0W  
+            // Example: Grid=-200W (feeding), Target=0W, LastSet=0W  
             //   => newPower = 0 + (-200 - 0) = -200W (charge 200W to use excess power)
             
-            let newBatteryPowerW = currentBatteryPowerW + (gridPowerW - targetGridPowerW);
+            let newBatteryPowerW = lastSetPowerW + (gridPowerW - targetGridPowerW);
 
             this.log.debug(`Calculated new battery power: ${newBatteryPowerW}W (before limits)`);
 
@@ -285,28 +290,28 @@ class ZendureAutomation extends utils.Adapter {
             }
 
             // Apply hysteresis (avoid frequent small changes)
-            const powerDelta = Math.abs(newBatteryPowerW - currentBatteryPowerW);
+            const powerDelta = Math.abs(newBatteryPowerW - lastSetPowerW);
             if (powerDelta < (this.config.hysteresisW || 50)) {
                 this.log.debug(`Power delta ${powerDelta}W below hysteresis, keeping current power`);
-                newBatteryPowerW = currentBatteryPowerW;
+                newBatteryPowerW = lastSetPowerW;
             }
 
             // Apply ramp rate limits
             const rampUpLimit = this.config.rampUpWPerCycle || 200;
             const rampDownLimit = this.config.rampDownWPerCycle || 100;
 
-            if (newBatteryPowerW > currentBatteryPowerW) {
+            if (newBatteryPowerW > lastSetPowerW) {
                 // Increasing power (slower discharge or faster charge)
-                const maxChange = Math.abs(currentBatteryPowerW) > 0 ? rampUpLimit : 9999;
-                if ((newBatteryPowerW - currentBatteryPowerW) > maxChange) {
-                    newBatteryPowerW = currentBatteryPowerW + maxChange;
+                const maxChange = Math.abs(lastSetPowerW) > 0 ? rampUpLimit : 9999;
+                if ((newBatteryPowerW - lastSetPowerW) > maxChange) {
+                    newBatteryPowerW = lastSetPowerW + maxChange;
                     this.log.debug(`Ramp-up limited to ${maxChange}W/cycle`);
                 }
-            } else if (newBatteryPowerW < currentBatteryPowerW) {
+            } else if (newBatteryPowerW < lastSetPowerW) {
                 // Decreasing power (slower charge or faster discharge)
-                const maxChange = Math.abs(currentBatteryPowerW) > 0 ? rampDownLimit : 9999;
-                if ((currentBatteryPowerW - newBatteryPowerW) > maxChange) {
-                    newBatteryPowerW = currentBatteryPowerW - maxChange;
+                const maxChange = Math.abs(lastSetPowerW) > 0 ? rampDownLimit : 9999;
+                if ((lastSetPowerW - newBatteryPowerW) > maxChange) {
+                    newBatteryPowerW = lastSetPowerW - maxChange;
                     this.log.debug(`Ramp-down limited to ${maxChange}W/cycle`);
                 }
             }
