@@ -365,22 +365,22 @@ class ZendureAutomation extends utils.Adapter {
             // Ramp limits prevent sudden power changes during normal operation
             // but NEVER override safety limits
             if (!safetyLimitActive) {
-                const rampUpLimit = this.config.rampUpWPerCycle || 200;
-                const rampDownLimit = this.config.rampDownWPerCycle || 100;
+                const rampChargeLimit = this.config.rampChargeWPerCycle || 100;
+                const rampDischargeLimit = this.config.rampDischargeWPerCycle || 400;
 
-                if (newBatteryPowerW > lastSetPowerW) {
-                    // Increasing power (slower discharge or faster charge)
-                    const maxChange = Math.abs(lastSetPowerW) > 0 ? rampUpLimit : 9999;
-                    if ((newBatteryPowerW - lastSetPowerW) > maxChange) {
-                        newBatteryPowerW = lastSetPowerW + maxChange;
-                        this.log.debug(`Ramp-up limited to ${maxChange}W/cycle`);
+                const powerChange = newBatteryPowerW - lastSetPowerW;
+
+                if (powerChange > 0) {
+                    // Power becoming more positive = more discharge (or less charge)
+                    if (powerChange > rampDischargeLimit && Math.abs(lastSetPowerW) > 0) {
+                        newBatteryPowerW = lastSetPowerW + rampDischargeLimit;
+                        this.log.debug(`Discharge ramp limited to ${rampDischargeLimit}W/cycle`);
                     }
-                } else if (newBatteryPowerW < lastSetPowerW) {
-                    // Decreasing power (slower charge or faster discharge)
-                    const maxChange = Math.abs(lastSetPowerW) > 0 ? rampDownLimit : 9999;
-                    if ((lastSetPowerW - newBatteryPowerW) > maxChange) {
-                        newBatteryPowerW = lastSetPowerW - maxChange;
-                        this.log.debug(`Ramp-down limited to ${maxChange}W/cycle`);
+                } else if (powerChange < 0) {
+                    // Power becoming more negative = more charge (or less discharge)
+                    if (Math.abs(powerChange) > rampChargeLimit && Math.abs(lastSetPowerW) > 0) {
+                        newBatteryPowerW = lastSetPowerW - rampChargeLimit;
+                        this.log.debug(`Charge ramp limited to ${rampChargeLimit}W/cycle`);
                     }
                 }
             } else {

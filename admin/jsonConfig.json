@@ -436,41 +436,41 @@
         "de": "Minimale Leistungsänderung erforderlich für Update (vermeidet häufige kleine Anpassungen)"
       }
     },
-    "rampUpWPerCycle": {
+    "rampChargeWPerCycle": {
       "type": "number",
       "label": {
-        "en": "Ramp-up limit (W/cycle)",
-        "de": "Ramp-Up Limit (W/Zyklus)"
+        "en": "Charge ramp limit (W/cycle)",
+        "de": "Lade-Rampe (W/Zyklus)"
       },
-      "sm": 4,
-      "min": 0,
-      "max": 2000,
-      "def": 200,
-      "help": {
-        "en": "Maximum power increase per cycle (0 = unlimited). Applies to discharge increase AND charge decrease",
-        "de": "Maximale Leistungserhöhung pro Zyklus (0 = unbegrenzt). Gilt für Entlade-Erhöhung UND Lade-Verringerung"
-      }
-    },
-    "rampDownWPerCycle": {
-      "type": "number",
-      "label": {
-        "en": "Ramp-down limit (W/cycle)",
-        "de": "Ramp-Down Limit (W/Zyklus)"
-      },
-      "sm": 4,
+      "sm": 6,
       "min": 0,
       "max": 2000,
       "def": 100,
       "help": {
-        "en": "Maximum power decrease per cycle (0 = unlimited). Applies to discharge decrease AND charge increase",
-        "de": "Maximale Leistungsverringerung pro Zyklus (0 = unbegrenzt). Gilt für Entlade-Verringerung UND Lade-Erhöhung"
+        "en": "Maximum charge power increase per cycle (0 = unlimited). Controls how fast charging ramps up when grid feed-in increases",
+        "de": "Maximale Lade-Erhöhung pro Zyklus (0 = unbegrenzt). Steuert wie schnell die Ladeleistung bei steigender Einspeisung erhöht wird"
+      }
+    },
+    "rampDischargeWPerCycle": {
+      "type": "number",
+      "label": {
+        "en": "Discharge ramp limit (W/cycle)",
+        "de": "Entlade-Rampe (W/Zyklus)"
+      },
+      "sm": 6,
+      "min": 0,
+      "max": 2000,
+      "def": 400,
+      "help": {
+        "en": "Maximum discharge power increase per cycle (0 = unlimited). Controls how fast discharging ramps up when grid consumption increases",
+        "de": "Maximale Entlade-Erhöhung pro Zyklus (0 = unbegrenzt). Steuert wie schnell die Entladeleistung bei steigendem Verbrauch erhöht wird"
       }
     },
     "_tuningHint": {
       "type": "staticText",
       "text": {
-        "en": "⚙️ Ramp-up/down limits control how fast battery power can change. Higher values = faster response but more aggressive. Lower values = smoother but slower.",
-        "de": "⚙️ Ramp-Up/Down Limits steuern wie schnell sich die Batterieleistung ändern kann. Höhere Werte = schnellere Reaktion aber aggressiver. Niedrigere Werte = sanfter aber langsamer."
+        "en": "⚙️ Ramp limits control power change speed. Higher = faster response (more aggressive), lower = smoother (slower). Separate control for charging and discharging allows optimized behavior.",
+        "de": "⚙️ Rampen-Limits steuern die Geschwindigkeit der Leistungsänderung. Höher = schnellere Reaktion (aggressiver), niedriger = sanfter (langsamer). Getrennte Steuerung für Laden und Entladen ermöglicht optimiertes Verhalten."
       },
       "sm": 12,
       "style": {
