@@ -20,7 +20,8 @@
       "style": {
         "backgroundColor": "#e3f2fd",
         "padding": "10px",
-        "borderRadius": "4px"
+        "borderRadius": "4px",
+        "color": "#1565c0"
       }
     },
     "_deviceSettings": {
@@ -77,7 +78,7 @@
       "style": {
         "fontSize": "0.9em",
         "fontStyle": "italic",
-        "color": "#666"
+        "color": "#555"
       }
     },
     "_gridSettings": {
@@ -307,7 +308,8 @@
         "backgroundColor": "#fff3e0",
         "padding": "10px",
         "borderRadius": "4px",
-        "fontSize": "0.9em"
+        "fontSize": "0.9em",
+        "color": "#e65100"
       }
     },
     "useLowVoltageBlock": {
@@ -408,7 +410,8 @@
         "backgroundColor": "#e8f5e9",
         "padding": "10px",
         "borderRadius": "4px",
-        "fontSize": "0.9em"
+        "fontSize": "0.9em",
+        "color": "#2e7d32"
       }
     },
     "_tuning": {
@@ -473,7 +476,7 @@
       "style": {
         "fontSize": "0.9em",
         "fontStyle": "italic",
-        "color": "#666"
+        "color": "#555"
       }
     },
     "_switchProtection": {
@@ -524,7 +527,8 @@
         "backgroundColor": "#fff3e0",
         "padding": "10px",
         "borderRadius": "4px",
-        "fontSize": "0.9em"
+        "fontSize": "0.9em",
+        "color": "#e65100"
       }
     },
     "_logging": {
