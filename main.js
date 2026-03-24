@@ -336,8 +336,6 @@ class ZendureAutomation extends utils.Adapter {
                 newBatteryPowerW = 0;
                 safetyLimitActive = true;
             }
-                newBatteryPowerW = 0;
-            }
 
             // Check charge/discharge enable flags
             if (newBatteryPowerW < 0 && !this.config.enableCharge) {
