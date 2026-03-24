@@ -34,6 +34,7 @@ class ZendureAutomation extends utils.Adapter {
         this._isRunning = false;
         this._deviceBasePath = null;
         this._inRecoveryMode = false; // Recovery mode after emergency charging
+        this._feedInCounter = 0; // Counter for sustained feed-in detection
     }
 
     /**
@@ -234,6 +235,53 @@ class ZendureAutomation extends utils.Adapter {
             let newBatteryPowerW = lastSetPowerW + (gridPowerW - targetGridPowerW);
 
             this.log.debug(`Calculated new battery power: ${newBatteryPowerW}W (before limits)`);
+
+            // ========== FEED-IN SWITCHING PROTECTION ==========
+            // Prevents frequent charge/discharge switching by requiring sustained feed-in
+            // before switching to charging mode. Protects hardware relays from excessive wear.
+            const feedInThresholdW = this.config.feedInThresholdW || -150;
+            const feedInDelayTicks = this.config.feedInDelayTicks || 5;
+            
+            if (newBatteryPowerW < 0) {
+                // Would charge - check if feed-in is sufficient and sustained
+                if (gridPowerW < feedInThresholdW) {
+                    // Sufficient feed-in detected
+                    this._feedInCounter++;
+                    this.log.debug(`Feed-in detected (${gridPowerW}W < ${feedInThresholdW}W), counter: ${this._feedInCounter}/${feedInDelayTicks}`);
+                    
+                    if (this._feedInCounter < feedInDelayTicks) {
+                        // Not yet sustained enough - stay in discharge/standby mode
+                        this.log.info(
+                            `Feed-in not yet sustained (${this._feedInCounter}/${feedInDelayTicks} ticks), ` +
+                            `staying in discharge mode (Hardware protection)`
+                        );
+                        newBatteryPowerW = Math.max(0, lastSetPowerW); // Keep discharging or go to standby
+                    } else {
+                        // Sustained feed-in confirmed - allow charging
+                        this.log.info(
+                            `✓ Feed-in sustained for ${feedInDelayTicks} ticks (${gridPowerW}W), ` +
+                            `allowing charge: ${newBatteryPowerW}W`
+                        );
+                    }
+                } else {
+                    // Feed-in below threshold - reset counter and prevent charging
+                    if (this._feedInCounter > 0) {
+                        this.log.debug(`Feed-in below threshold, resetting counter (was ${this._feedInCounter})`);
+                    }
+                    this._feedInCounter = 0;
+                    newBatteryPowerW = Math.max(0, lastSetPowerW); // Stay in discharge/standby mode
+                }
+            } else {
+                // Not charging (discharging or standby) - reset counter
+                if (this._feedInCounter > 0) {
+                    this.log.debug(`Switched to discharge/standby, resetting feed-in counter (was ${this._feedInCounter})`);
+                }
+                this._feedInCounter = 0;
+            }
+            
+            // Update feed-in counter state for visibility
+            await this.setStateAsync('status.feedInCounter', this._feedInCounter, true);
+            // ==================================================
 
             // Apply discharge protection based on selected mode
             if (newBatteryPowerW > 0) { // Only when discharging

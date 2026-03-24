@@ -63,6 +63,8 @@
     "hysteresisW": 50,
     "rampUpWPerCycle": 200,
     "rampDownWPerCycle": 100,
+    "feedInThresholdW": -150,
+    "feedInDelayTicks": 5,
     "useLowVoltageBlock": true,
     "useFullChargeNeeded": true,
     "emergencyChargeVoltageV": 2.8,
@@ -220,6 +222,20 @@
         "read": true,
         "write": false,
         "def": ""
+      },
+      "native": {}
+    },
+    {
+      "_id": "status.feedInCounter",
+      "type": "state",
+      "common": {
+        "name": "Feed-in delay counter",
+        "type": "number",
+        "role": "value",
+        "read": true,
+        "write": false,
+        "def": 0,
+        "unit": "ticks"
       },
       "native": {}
     },

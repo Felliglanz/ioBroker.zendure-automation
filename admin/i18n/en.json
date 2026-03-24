@@ -20,5 +20,8 @@
   "batteryProtection_divider": "Battery Protection",
   "emergencyCharging_divider": "Emergency Charging",
   "emergencyCharging_hint": "🚨 Emergency charging activates on: critical pack voltage, device flags (lowVoltageBlock/fullChargeNeeded). Has highest priority and ignores grid target!",
-  "emergencyRecovery_hint": "🔄 Recovery phase: After emergency (from exit SOC), battery continues charging with normal grid target, but discharge is blocked until recovery SOC. Prevents endless loop."
+  "emergencyRecovery_hint": "🔄 Recovery phase: After emergency (from exit SOC), battery continues charging with normal grid target, but discharge is blocked until recovery SOC. Prevents endless loop.",
+  "feedInThresholdW_help": "Only start charging when grid feed-in exceeds this threshold. Negative value (e.g. -150W = 150W feed-in)",
+  "feedInDelayTicks_help": "Number of cycles feed-in must persist before switching to charging. Prevents frequent switching on short grid fluctuations (1 tick = update interval)",
+  "switchProtection_hint": "⚡ Protects hardware relays from excessive switching. Battery only switches to charging after sustained grid feed-in exceeds threshold for specified ticks. Reduces mechanical wear!"
 }

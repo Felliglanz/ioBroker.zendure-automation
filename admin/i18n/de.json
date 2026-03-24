@@ -20,5 +20,8 @@
   "batteryProtection_divider": "Akku-Schutz",
   "emergencyCharging_divider": "Notladen",
   "emergencyCharging_hint": "🚨 Notladen wird aktiviert bei: kritischer Pack-Spannung, Geräte-Flags (lowVoltageBlock/fullChargeNeeded). Hat höchste Priorität und ignoriert Grid-Target!",
-  "emergencyRecovery_hint": "🔄 Recovery-Phase: Nach Notladen (ab Exit-SOC) lädt der Akku weiter mit normalem Grid-Target, aber Entladung ist blockiert bis Recovery-SOC erreicht ist. Verhindert Endlos-Zyklus."
+  "emergencyRecovery_hint": "🔄 Recovery-Phase: Nach Notladen (ab Exit-SOC) lädt der Akku weiter mit normalem Grid-Target, aber Entladung ist blockiert bis Recovery-SOC erreicht ist. Verhindert Endlos-Zyklus.",
+  "feedInThresholdW_help": "Laden erst starten wenn Netz-Einspeisung diesen Schwellwert überschreitet. Negativer Wert (z.B. -150W = 150W Einspeisung)",
+  "feedInDelayTicks_help": "Anzahl Zyklen die Einspeisung anhalten muss, bevor auf Laden umgeschaltet wird. Verhindert häufiges Schalten bei kurzen Netzschwankungen (1 Tick = Update-Intervall)",
+  "switchProtection_hint": "⚡ Schützt Hardware-Relais vor übermäßigem Schalten. Batterie schaltet erst auf Laden um, wenn nachhaltige Netz-Einspeisung für angegebene Ticks über Schwellwert liegt. Reduziert mechanischen Verschleiß!"
 }

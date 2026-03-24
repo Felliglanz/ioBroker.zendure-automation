@@ -356,6 +356,57 @@
         "color": "#666"
       }
     },
+    "_switchProtection": {
+      "type": "divider",
+      "label": {
+        "en": "Switching Protection",
+        "de": "Umschalt-Schutz"
+      }
+    },
+    "feedInThresholdW": {
+      "type": "number",
+      "label": {
+        "en": "Feed-in threshold (W)",
+        "de": "Einspeise-Schwellwert (W)"
+      },
+      "sm": 6,
+      "min": -5000,
+      "max": 0,
+      "def": -150,
+      "help": {
+        "en": "feedInThresholdW_help",
+        "de": "feedInThresholdW_help"
+      }
+    },
+    "feedInDelayTicks": {
+      "type": "number",
+      "label": {
+        "en": "Feed-in delay (ticks)",
+        "de": "Einspeise-Verzögerung (Ticks)"
+      },
+      "sm": 6,
+      "min": 0,
+      "max": 20,
+      "def": 5,
+      "help": {
+        "en": "feedInDelayTicks_help",
+        "de": "feedInDelayTicks_help"
+      }
+    },
+    "_switchProtectionHint": {
+      "type": "staticText",
+      "text": {
+        "en": "switchProtection_hint",
+        "de": "switchProtection_hint"
+      },
+      "sm": 12,
+      "style": {
+        "backgroundColor": "#fff3e0",
+        "padding": "10px",
+        "borderRadius": "4px",
+        "fontSize": "0.9em"
+      }
+    },
     "_logging": {
       "type": "divider",
       "label": "Logging"
