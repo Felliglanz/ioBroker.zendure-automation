@@ -283,12 +283,19 @@ class ZendureAutomation extends utils.Adapter {
             await this.setStateAsync('status.feedInCounter', this._feedInCounter, true);
             // ==================================================
 
+            this.log.debug(`Calculated new battery power: ${newBatteryPowerW}W (before safety checks)`);
+
+            // ========== SAFETY CHECKS (HIGHEST PRIORITY - CANNOT BE OVERRIDDEN) ==========
+            let safetyLimitActive = false;
+            const powerBeforeSafety = newBatteryPowerW;
+            
             // Apply discharge protection based on selected mode
             if (newBatteryPowerW > 0) { // Only when discharging
                 // RECOVERY MODE: Block all discharging
                 if (this._inRecoveryMode) {
                     this.log.info(`Recovery mode active, preventing discharge until ${this.config.emergencyRecoverySoc || 30}% SOC`);
                     newBatteryPowerW = 0;
+                    safetyLimitActive = true;
                 }
                 
                 // Check device lowVoltageBlock flag (even if not critical enough for emergency)
@@ -299,6 +306,7 @@ class ZendureAutomation extends utils.Adapter {
                     if (lowVoltageState && lowVoltageState.val === true) {
                         this.log.info('Device lowVoltageBlock active, preventing discharge');
                         newBatteryPowerW = 0;
+                        safetyLimitActive = true;
                     }
                 }
                 
@@ -307,6 +315,7 @@ class ZendureAutomation extends utils.Adapter {
                     if (batterySoc <= this.config.minBatterySoc) {
                         this.log.info(`Battery SOC low (${batterySoc}%), preventing discharge`);
                         newBatteryPowerW = 0;
+                        safetyLimitActive = true;
                     }
                 } else if (protectionMode === 'voltage') {
                     // Voltage-based protection
@@ -316,6 +325,7 @@ class ZendureAutomation extends utils.Adapter {
                         if (minPackVoltageV <= minVoltageLimit) {
                             this.log.info(`Pack voltage low (${minPackVoltageV.toFixed(2)}V <= ${minVoltageLimit}V), preventing discharge`);
                             newBatteryPowerW = 0;
+                            safetyLimitActive = true;
                         }
                     }
                 }
@@ -324,44 +334,62 @@ class ZendureAutomation extends utils.Adapter {
             if (batterySoc >= this.config.maxBatterySoc && newBatteryPowerW < 0) {
                 this.log.info(`Battery SOC high (${batterySoc}%), preventing charge`);
                 newBatteryPowerW = 0;
+                safetyLimitActive = true;
+            }
+                newBatteryPowerW = 0;
             }
 
             // Check charge/discharge enable flags
             if (newBatteryPowerW < 0 && !this.config.enableCharge) {
                 this.log.debug('Charging disabled by configuration');
                 newBatteryPowerW = 0;
+                safetyLimitActive = true;
             }
 
             if (newBatteryPowerW > 0 && !this.config.enableDischarge) {
                 this.log.debug('Discharging disabled by configuration');
                 newBatteryPowerW = 0;
+                safetyLimitActive = true;
+            }
+            // ========== END SAFETY CHECKS ==========
+
+            // Apply hysteresis (only if no safety limit is active)
+            // Hysteresis prevents small frequent changes during normal operation
+            // but NEVER overrides safety limits (SOC/voltage protection)
+            if (!safetyLimitActive) {
+                const powerDelta = Math.abs(newBatteryPowerW - lastSetPowerW);
+                if (powerDelta < (this.config.hysteresisW || 50)) {
+                    this.log.debug(`Power delta ${powerDelta}W below hysteresis, keeping current power`);
+                    newBatteryPowerW = lastSetPowerW;
+                }
+            } else {
+                this.log.debug('Safety limit active, hysteresis bypassed');
             }
 
-            // Apply hysteresis (avoid frequent small changes)
-            const powerDelta = Math.abs(newBatteryPowerW - lastSetPowerW);
-            if (powerDelta < (this.config.hysteresisW || 50)) {
-                this.log.debug(`Power delta ${powerDelta}W below hysteresis, keeping current power`);
-                newBatteryPowerW = lastSetPowerW;
-            }
+            // Apply ramp rate limits (only if no safety limit is active)
+            // Ramp limits prevent sudden power changes during normal operation
+            // but NEVER override safety limits
+            if (!safetyLimitActive) {
+                const rampUpLimit = this.config.rampUpWPerCycle || 200;
+                const rampDownLimit = this.config.rampDownWPerCycle || 100;
 
-            // Apply ramp rate limits
-            const rampUpLimit = this.config.rampUpWPerCycle || 200;
-            const rampDownLimit = this.config.rampDownWPerCycle || 100;
-
-            if (newBatteryPowerW > lastSetPowerW) {
-                // Increasing power (slower discharge or faster charge)
-                const maxChange = Math.abs(lastSetPowerW) > 0 ? rampUpLimit : 9999;
-                if ((newBatteryPowerW - lastSetPowerW) > maxChange) {
-                    newBatteryPowerW = lastSetPowerW + maxChange;
-                    this.log.debug(`Ramp-up limited to ${maxChange}W/cycle`);
+                if (newBatteryPowerW > lastSetPowerW) {
+                    // Increasing power (slower discharge or faster charge)
+                    const maxChange = Math.abs(lastSetPowerW) > 0 ? rampUpLimit : 9999;
+                    if ((newBatteryPowerW - lastSetPowerW) > maxChange) {
+                        newBatteryPowerW = lastSetPowerW + maxChange;
+                        this.log.debug(`Ramp-up limited to ${maxChange}W/cycle`);
+                    }
+                } else if (newBatteryPowerW < lastSetPowerW) {
+                    // Decreasing power (slower charge or faster discharge)
+                    const maxChange = Math.abs(lastSetPowerW) > 0 ? rampDownLimit : 9999;
+                    if ((lastSetPowerW - newBatteryPowerW) > maxChange) {
+                        newBatteryPowerW = lastSetPowerW - maxChange;
+                        this.log.debug(`Ramp-down limited to ${maxChange}W/cycle`);
+                    }
                 }
-            } else if (newBatteryPowerW < lastSetPowerW) {
-                // Decreasing power (slower charge or faster discharge)
-                const maxChange = Math.abs(lastSetPowerW) > 0 ? rampDownLimit : 9999;
-                if ((lastSetPowerW - newBatteryPowerW) > maxChange) {
-                    newBatteryPowerW = lastSetPowerW - maxChange;
-                    this.log.debug(`Ramp-down limited to ${maxChange}W/cycle`);
-                }
+            } else {
+                this.log.debug('Safety limit active, ramp limits bypassed');
             }
 
             // Apply absolute power limits
