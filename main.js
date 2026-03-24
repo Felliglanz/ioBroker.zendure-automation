@@ -251,14 +251,14 @@ class ZendureAutomation extends utils.Adapter {
                     
                     if (this._feedInCounter < feedInDelayTicks) {
                         // Not yet sustained enough - stay in discharge/standby mode
-                        this.log.info(
+                        this.log.debug(
                             `Feed-in not yet sustained (${this._feedInCounter}/${feedInDelayTicks} ticks), ` +
                             `staying in discharge mode (Hardware protection)`
                         );
                         newBatteryPowerW = Math.max(0, lastSetPowerW); // Keep discharging or go to standby
                     } else {
                         // Sustained feed-in confirmed - allow charging
-                        this.log.info(
+                        this.log.debug(
                             `✓ Feed-in sustained for ${feedInDelayTicks} ticks (${gridPowerW}W), ` +
                             `allowing charge: ${newBatteryPowerW}W`
                         );
@@ -290,7 +290,7 @@ class ZendureAutomation extends utils.Adapter {
             if (newBatteryPowerW > 0) { // Only when discharging
                 // RECOVERY MODE: Block all discharging
                 if (this._inRecoveryMode) {
-                    this.log.info(`Recovery mode active, preventing discharge until ${this.config.emergencyRecoverySoc || 30}% SOC`);
+                    this.log.debug(`Recovery mode active, preventing discharge until ${this.config.emergencyRecoverySoc || 30}% SOC`);
                     newBatteryPowerW = 0;
                     safetyLimitActive = true;
                 }
@@ -301,7 +301,7 @@ class ZendureAutomation extends utils.Adapter {
                         `${this._deviceBasePath}.control.lowVoltageBlock`
                     );
                     if (lowVoltageState && lowVoltageState.val === true) {
-                        this.log.info('Device lowVoltageBlock active, preventing discharge');
+                        this.log.debug('Device lowVoltageBlock active, preventing discharge');
                         newBatteryPowerW = 0;
                         safetyLimitActive = true;
                     }
@@ -310,7 +310,7 @@ class ZendureAutomation extends utils.Adapter {
                 if (protectionMode === 'soc') {
                     // SOC-based protection
                     if (batterySoc <= this.config.minBatterySoc) {
-                        this.log.info(`Battery SOC low (${batterySoc}%), preventing discharge`);
+                        this.log.debug(`Battery SOC low (${batterySoc}%), preventing discharge`);
                         newBatteryPowerW = 0;
                         safetyLimitActive = true;
                     }
@@ -320,7 +320,7 @@ class ZendureAutomation extends utils.Adapter {
                     if (minPackVoltageV !== null) {
                         const minVoltageLimit = this.config.minBatteryVoltageV || 3.0;
                         if (minPackVoltageV <= minVoltageLimit) {
-                            this.log.info(`Pack voltage low (${minPackVoltageV.toFixed(2)}V <= ${minVoltageLimit}V), preventing discharge`);
+                            this.log.debug(`Pack voltage low (${minPackVoltageV.toFixed(2)}V <= ${minVoltageLimit}V), preventing discharge`);
                             newBatteryPowerW = 0;
                             safetyLimitActive = true;
                         }
@@ -329,7 +329,7 @@ class ZendureAutomation extends utils.Adapter {
             }
 
             if (batterySoc >= this.config.maxBatterySoc && newBatteryPowerW < 0) {
-                this.log.info(`Battery SOC high (${batterySoc}%), preventing charge`);
+                this.log.debug(`Battery SOC high (${batterySoc}%), preventing charge`);
                 newBatteryPowerW = 0;
                 safetyLimitActive = true;
             }
@@ -404,7 +404,7 @@ class ZendureAutomation extends utils.Adapter {
             // Round to nearest 10W
             newBatteryPowerW = Math.round(newBatteryPowerW / 10) * 10;
 
-            this.log.info(
+            this.log.debug(
                 `Setting battery power: ${newBatteryPowerW}W (Grid: ${gridPowerW}W → ${targetGridPowerW}W)`
             );
 
@@ -621,7 +621,7 @@ class ZendureAutomation extends utils.Adapter {
             await this.setForeignStateAsync(limitPath, powerW, false);
             
             this._lastWrittenLimit = powerW;
-            this.log.info(`✓ Wrote battery limit: ${powerW}W to ${limitPath}`);
+            this.log.debug(`✓ Wrote battery limit: ${powerW}W to ${limitPath}`);
 
         } catch (err) {
             this.log.error(`Failed to set battery power: ${err.message}`);
