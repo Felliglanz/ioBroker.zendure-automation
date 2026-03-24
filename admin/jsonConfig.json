@@ -117,7 +117,6 @@
       "sm": 6,
       "min": -5000,
       "max": 5000,
-      "def": 0,
       "help": {
         "en": "Target grid power in watts. 0 = zero grid draw/feed, positive = allow some grid draw, negative = allow some grid feed",
         "de": "Ziel-Netzleistung in Watt. 0 = kein Netzbezug/Einspeisung, positiv = etwas Netzbezug erlaubt, negativ = etwas Einspeisung erlaubt"
@@ -132,7 +131,6 @@
       "sm": 6,
       "min": 1,
       "max": 300,
-      "def": 5,
       "help": {
         "en": "How often to update battery power (recommended: 5 seconds)",
         "de": "Wie oft die Batterieleistung aktualisiert wird (empfohlen: 5 Sekunden)"
@@ -154,7 +152,6 @@
       "sm": 6,
       "min": 0,
       "max": 3000,
-      "def": 1600,
       "help": {
         "en": "Maximum charging power in watts",
         "de": "Maximale Ladeleistung in Watt"
@@ -169,7 +166,6 @@
       "sm": 6,
       "min": 0,
       "max": 3000,
-      "def": 1600,
       "help": {
         "en": "Maximum discharging power in watts",
         "de": "Maximale Entladeleistung in Watt"
@@ -191,7 +187,6 @@
       "sm": 6,
       "min": 0,
       "max": 100,
-      "def": 10,
       "help": {
         "en": "Stop discharging when battery SOC falls below this value (when using SOC protection mode)",
         "de": "Entladung stoppen wenn SOC unter diesen Wert fällt (bei SOC-Schutzmodus)"
@@ -206,7 +201,6 @@
       "sm": 6,
       "min": 0,
       "max": 100,
-      "def": 100,
       "help": {
         "en": "Stop charging when SOC reaches this value (full charge = 100% SOC)",
         "de": "Laden stoppen wenn SOC diesen Wert erreicht (Vollladung = 100% SOC)"
@@ -219,7 +213,6 @@
         "de": "Entladeschutz-Modus"
       },
       "sm": 6,
-      "def": "soc",
       "options": [
         { 
           "label": {
@@ -251,7 +244,6 @@
       "min": 2.5,
       "max": 3.5,
       "step": 0.01,
-      "def": 3.0,
       "help": {
         "en": "Stop discharging when ANY pack drops below this voltage (voltage mode only). Typical: 3.0V for LFP",
         "de": "Entladung stoppen wenn IRGENDEIN Pack unter diese Spannung fällt (nur im Spannungs-Modus). Typisch: 3.0V für LFP"
@@ -271,7 +263,6 @@
         "de": "Laden aktivieren"
       },
       "sm": 6,
-      "def": true,
       "help": {
         "en": "Allow battery charging during automation",
         "de": "Erlaube Batterie-Laden während Automatisierung"
@@ -284,7 +275,6 @@
         "de": "Entladen aktivieren"
       },
       "sm": 6,
-      "def": true,
       "help": {
         "en": "Allow battery discharge during automation",
         "de": "Erlaube Batterie-Entladung während Automatisierung"
@@ -319,7 +309,6 @@
         "de": "Geräte-Unterspannungs-Flag beachten"
       },
       "sm": 6,
-      "def": true,
       "help": {
         "en": "When device reports 'lowVoltageBlock=true', stop discharge immediately (device protection)",
         "de": "Wenn das Gerät 'lowVoltageBlock=true' meldet, Entladung sofort stoppen (Geräteschutz)"
@@ -332,7 +321,6 @@
         "de": "Geräte-Vollladungs-Anfrage beachten"
       },
       "sm": 6,
-      "def": true,
       "help": {
         "en": "When device reports 'fullChargeNeeded=true', force full charge (battery calibration)",
         "de": "Wenn das Gerät 'fullChargeNeeded=true' meldet, Vollladung erzwingen (Akku-Kalibrierung)"
@@ -348,7 +336,6 @@
       "min": 2.5,
       "max": 3.0,
       "step": 0.1,
-      "def": 2.8,
       "help": {
         "en": "When ANY pack drops below this critical voltage, emergency charging starts (typical: 2.8V for LFP)",
         "de": "Wenn IRGENDEIN Pack unter diese kritische Spannung fällt, wird Notladen gestartet (typisch: 2.8V für LFP)"
@@ -363,7 +350,6 @@
       "sm": 6,
       "min": 0,
       "max": 3000,
-      "def": 800,
       "help": {
         "en": "Charging power during emergency mode (ignores grid target)",
         "de": "Ladeleistung während des Notladens (ignoriert Grid-Target)"
@@ -378,7 +364,6 @@
       "sm": 6,
       "min": 5,
       "max": 50,
-      "def": 20,
       "help": {
         "en": "At this SOC, emergency charging ends and recovery mode begins",
         "de": "Bei diesem SOC endet das Notladen und Recovery-Mode beginnt"
@@ -393,7 +378,6 @@
       "sm": 6,
       "min": 10,
       "max": 80,
-      "def": 30,
       "help": {
         "en": "Until this SOC, only charging is allowed (no discharge). Prevents endless emergency cycles",
         "de": "Bis zu diesem SOC ist nur Laden erlaubt (kein Entladen). Verhindert Endlos-Zyklus nach Notladen"
@@ -430,7 +414,6 @@
       "sm": 4,
       "min": 0,
       "max": 500,
-      "def": 50,
       "help": {
         "en": "Minimum power change required to update (avoids frequent small adjustments)",
         "de": "Minimale Leistungsänderung erforderlich für Update (vermeidet häufige kleine Anpassungen)"
@@ -445,7 +428,6 @@
       "sm": 6,
       "min": 0,
       "max": 2000,
-      "def": 100,
       "help": {
         "en": "Maximum charge power increase per cycle (0 = unlimited). Controls how fast charging ramps up when grid feed-in increases",
         "de": "Maximale Lade-Erhöhung pro Zyklus (0 = unbegrenzt). Steuert wie schnell die Ladeleistung bei steigender Einspeisung erhöht wird"
@@ -460,7 +442,6 @@
       "sm": 6,
       "min": 0,
       "max": 2000,
-      "def": 400,
       "help": {
         "en": "Maximum discharge power increase per cycle (0 = unlimited). Controls how fast discharging ramps up when grid consumption increases",
         "de": "Maximale Entlade-Erhöhung pro Zyklus (0 = unbegrenzt). Steuert wie schnell die Entladeleistung bei steigendem Verbrauch erhöht wird"
@@ -495,7 +476,6 @@
       "sm": 6,
       "min": -5000,
       "max": 0,
-      "def": -150,
       "help": {
         "en": "Start charging only when grid feed-in exceeds this threshold. Negative value (e.g. -150W = 150W feed-in)",
         "de": "Laden erst starten wenn Netz-Einspeisung diesen Schwellwert überschreitet. Negativer Wert (z.B. -150W = 150W Einspeisung)"
@@ -510,7 +490,6 @@
       "sm": 6,
       "min": 0,
       "max": 20,
-      "def": 5,
       "help": {
         "en": "Number of cycles feed-in must persist before switching to charging. Prevents frequent switching on short grid fluctuations (1 tick = update interval)",
         "de": "Anzahl Zyklen die Einspeisung anhalten muss, bevor auf Laden umgeschaltet wird. Verhindert häufiges Schalten bei kurzen Netzschwankungen (1 Tick = Update-Intervall)"
@@ -545,7 +524,6 @@
         "de": "Log-Level"
       },
       "sm": 12,
-      "def": "info",
       "options": [
         { "label": "Error", "value": "error" },
         { "label": "Warn", "value": "warn" },
