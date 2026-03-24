@@ -4,12 +4,18 @@
   "items": {
     "_header": {
       "type": "header",
-      "text": "Zendure Automation - Automatic Battery Control",
+      "text": {
+        "en": "header_text",
+        "de": "header_text"
+      },
       "size": 2
     },
     "_info": {
       "type": "staticText",
-      "text": "This adapter automatically controls your Zendure Solarflow battery to achieve zero grid feed-in/draw. It reads grid power and adjusts battery charge/discharge accordingly.",
+      "text": {
+        "en": "info_text",
+        "de": "info_text"
+      },
       "sm": 12,
       "style": {
         "backgroundColor": "#e3f2fd",
@@ -19,30 +25,54 @@
     },
     "_deviceSettings": {
       "type": "divider",
-      "label": "Device Settings"
+      "label": {
+        "en": "deviceSettings_divider",
+        "de": "deviceSettings_divider"
+      }
     },
     "zendureSolarflowInstance": {
       "type": "text",
-      "label": "Zendure Solarflow adapter instance",
+      "label": {
+        "en": "zendureSolarflowInstance_label",
+        "de": "zendureSolarflowInstance_label"
+      },
       "placeholder": "zendure-solarflow.0",
       "sm": 12,
-      "help": "The instance name of the nograx zendure-solarflow adapter"
+      "help": {
+        "en": "zendureSolarflowInstance_help",
+        "de": "zendureSolarflowInstance_help"
+      }
     },
     "deviceProductKey": {
       "type": "text",
-      "label": "Device ProductKey",
+      "label": {
+        "en": "deviceProductKey_label",
+        "de": "deviceProductKey_label"
+      },
       "sm": 6,
-      "help": "The ProductKey of your Zendure device (e.g., for 1600AC+)"
+      "help": {
+        "en": "deviceProductKey_help",
+        "de": "deviceProductKey_help"
+      }
     },
     "deviceKey": {
       "type": "text",
-      "label": "Device Key",
+      "label": {
+        "en": "deviceKey_label",
+        "de": "deviceKey_label"
+      },
       "sm": 6,
-      "help": "The DeviceKey of your Zendure device"
+      "help": {
+        "en": "deviceKey_help",
+        "de": "deviceKey_help"
+      }
     },
     "_deviceHint": {
       "type": "staticText",
-      "text": "💡 You can find ProductKey and DeviceKey in the zendure-solarflow adapter object tree. Look for the device path structure.",
+      "text": {
+        "en": "deviceHint_text",
+        "de": "deviceHint_text"
+      },
       "sm": 12,
       "style": {
         "fontSize": "0.9em",
@@ -52,58 +82,97 @@
     },
     "_gridSettings": {
       "type": "divider",
-      "label": "Grid Power Meter"
+      "label": {
+        "en": "gridSettings_divider",
+        "de": "gridSettings_divider"
+      }
     },
     "powerMeterDp": {
       "type": "objectId",
-      "label": "Grid power meter datapoint",
+      "label": {
+        "en": "powerMeterDp_label",
+        "de": "powerMeterDp_label"
+      },
       "sm": 12,
       "types": ["state"],
-      "help": "Select the datapoint that provides current grid power (positive = drawing from grid, negative = feeding to grid)"
+      "help": {
+        "en": "powerMeterDp_help",
+        "de": "powerMeterDp_help"
+      }
     },
     "_automation": {
       "type": "divider",
-      "label": "Automation Settings"
+      "label": {
+        "en": "automation_divider",
+        "de": "automation_divider"
+      }
     },
     "targetGridPowerW": {
       "type": "number",
-      "label": "Target grid power (W)",
+      "label": {
+        "en": "targetGridPowerW_label",
+        "de": "targetGridPowerW_label"
+      },
       "sm": 6,
       "min": -5000,
       "max": 5000,
       "def": 0,
-      "help": "Target grid power in watts. 0 = zero grid draw/feed, positive = allow some grid draw, negative = allow some grid feed"
+      "help": {
+        "en": "targetGridPowerW_help",
+        "de": "targetGridPowerW_help"
+      }
     },
     "updateIntervalSec": {
       "type": "number",
-      "label": "Update interval (seconds)",
+      "label": {
+        "en": "updateIntervalSec_label",
+        "de": "updateIntervalSec_label"
+      },
       "sm": 6,
       "min": 1,
       "max": 300,
       "def": 5,
-      "help": "How often to update battery power (recommended: 5 seconds)"
+      "help": {
+        "en": "updateIntervalSec_help",
+        "de": "updateIntervalSec_help"
+      }
     },
     "_powerLimits": {
       "type": "divider",
-      "label": "Power Limits"
+      "label": {
+        "en": "powerLimits_divider",
+        "de": "powerLimits_divider"
+      }
     },
     "maxChargePowerW": {
       "type": "number",
-      "label": "Max charge power (W)",
+      "label": {
+        "en": "maxChargePowerW_label",
+        "de": "maxChargePowerW_label"
+      },
       "sm": 6,
       "min": 0,
       "max": 3000,
       "def": 1600,
-      "help": "Maximum charging power in watts"
+      "help": {
+        "en": "maxChargePowerW_help",
+        "de": "maxChargePowerW_help"
+      }
     },
     "maxDischargePowerW": {
       "type": "number",
-      "label": "Max discharge power (W)",
+      "label": {
+        "en": "maxDischargePowerW_label",
+        "de": "maxDischargePowerW_label"
+      },
       "sm": 6,
       "min": 0,
       "max": 3000,
       "def": 1600,
-      "help": "Maximum discharging power in watts"
+      "help": {
+        "en": "maxDischargePowerW_help",
+        "de": "maxDischargePowerW_help"
+      }
     },
     "_batteryLimits": {
       "type": "divider",
@@ -114,21 +183,33 @@
     },
     "minBatterySoc": {
       "type": "number",
-      "label": "Minimum battery SOC (%)",
+      "label": {
+        "en": "minBatterySoc_label",
+        "de": "minBatterySoc_label"
+      },
       "sm": 6,
       "min": 0,
       "max": 100,
       "def": 10,
-      "help": "Stop discharging when SOC falls below this value (when using SOC protection mode)"
+      "help": {
+        "en": "minBatterySoc_help",
+        "de": "minBatterySoc_help"
+      }
     },
     "maxBatterySoc": {
       "type": "number",
-      "label": "Maximum battery SOC (%)",
+      "label": {
+        "en": "maxBatterySoc_label",
+        "de": "maxBatterySoc_label"
+      },
       "sm": 6,
       "min": 0,
       "max": 100,
       "def": 100,
-      "help": "Stop charging when SOC reaches this value (maxVol is ignored, full charge = 100% SOC)"
+      "help": {
+        "en": "maxBatterySoc_help",
+        "de": "maxBatterySoc_help"
+      }
     },
     "dischargeProtectionMode": {
       "type": "select",
@@ -181,17 +262,30 @@
     },
     "enableCharge": {
       "type": "checkbox",
-      "label": "Enable charging",
+      "label": {
+        "en": "enableCharge_label",
+        "de": "enableCharge_label"
+      },
       "sm": 6,
       "def": true,
-      "help": "Allow the adapter to charge the battery"
+      "help": {
+        "en": "enableCharge_help",
+        "de": "enableCharge_help"
+      }
     },
     "enableDischarge": {
       "type": "checkbox",
-      "label": "Enable discharging",
+      "label": {
+        "en": "enableDischarge_label",
+        "de": "enableDischarge_label"
+      },
       "sm": 6,
       "def": true,
-      "help": "Allow the adapter to discharge the battery"
+      "help": {
+        "en": "enableDischarge_help",
+        "de": "enableDischarge_help"
+      }
+    },
     },
     "_emergencyCharging": {
       "type": "divider",
@@ -317,38 +411,62 @@
     },
     "_tuning": {
       "type": "divider",
-      "label": "Tuning / Advanced"
+      "label": {
+        "en": "tuning_divider",
+        "de": "tuning_divider"
+      }
     },
     "hysteresisW": {
       "type": "number",
-      "label": "Hysteresis (W)",
+      "label": {
+        "en": "hysteresisW_label",
+        "de": "hysteresisW_label"
+      },
       "sm": 4,
       "min": 0,
       "max": 500,
       "def": 50,
-      "help": "Minimum power change required to update (avoids frequent small adjustments)"
+      "help": {
+        "en": "hysteresisW_help",
+        "de": "hysteresisW_help"
+      }
     },
     "rampUpWPerCycle": {
       "type": "number",
-      "label": "Ramp-up limit (W/cycle)",
+      "label": {
+        "en": "rampUpWPerCycle_label",
+        "de": "rampUpWPerCycle_label"
+      },
       "sm": 4,
       "min": 0,
       "max": 2000,
       "def": 200,
-      "help": "Maximum power increase per cycle (0 = unlimited)"
+      "help": {
+        "en": "rampUpWPerCycle_help",
+        "de": "rampUpWPerCycle_help"
+      }
     },
     "rampDownWPerCycle": {
       "type": "number",
-      "label": "Ramp-down limit (W/cycle)",
+      "label": {
+        "en": "rampDownWPerCycle_label",
+        "de": "rampDownWPerCycle_label"
+      },
       "sm": 4,
       "min": 0,
       "max": 2000,
       "def": 100,
-      "help": "Maximum power decrease per cycle (0 = unlimited)"
+      "help": {
+        "en": "rampDownWPerCycle_help",
+        "de": "rampDownWPerCycle_help"
+      }
     },
     "_tuningHint": {
       "type": "staticText",
-      "text": "⚙️ Ramp rates control how quickly the battery power can change. Higher values = faster response but more aggressive. Lower values = smoother but slower response.",
+      "text": {
+        "en": "tuningHint_text",
+        "de": "tuningHint_text"
+      },
       "sm": 12,
       "style": {
         "fontSize": "0.9em",
@@ -409,11 +527,17 @@
     },
     "_logging": {
       "type": "divider",
-      "label": "Logging"
+      "label": {
+        "en": "logging_divider",
+        "de": "logging_divider"
+      }
     },
     "logLevel": {
       "type": "select",
-      "label": "Log level",
+      "label": {
+        "en": "logLevel_label",
+        "de": "logLevel_label"
+      },
       "sm": 12,
       "def": "info",
       "options": [
