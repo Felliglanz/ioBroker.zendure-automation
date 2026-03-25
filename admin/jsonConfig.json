@@ -495,11 +495,39 @@
         "de": "Anzahl Zyklen die Einspeisung anhalten muss, bevor auf Laden umgeschaltet wird. Verhindert häufiges Schalten bei kurzen Netzschwankungen (1 Tick = Update-Intervall)"
       }
     },
+    "dischargeThresholdW": {
+      "type": "number",
+      "label": {
+        "en": "Discharge threshold (W)",
+        "de": "Entlade-Schwellwert (W)"
+      },
+      "sm": 6,
+      "min": 0,
+      "max": 5000,
+      "help": {
+        "en": "Stop charging and start discharging only when grid draw exceeds this threshold. Positive value (e.g. 200W = 200W grid draw)",
+        "de": "Laden stoppen und Entladen erst starten wenn Netz-Bezug diesen Schwellwert überschreitet. Positiver Wert (z.B. 200W = 200W Netzbezug)"
+      }
+    },
+    "dischargeDelayTicks": {
+      "type": "number",
+      "label": {
+        "en": "Discharge delay (ticks)",
+        "de": "Entlade-Verzögerung (Ticks)"
+      },
+      "sm": 6,
+      "min": 0,
+      "max": 20,
+      "help": {
+        "en": "Number of cycles grid draw must persist before switching from charging to discharging. Prevents oscillation during cloudy conditions (1 tick = update interval)",
+        "de": "Anzahl Zyklen die Netzbezug anhalten muss, bevor von Laden auf Entladen umgeschaltet wird. Verhindert Oszillation bei Bewölkung (1 Tick = Update-Intervall)"
+      }
+    },
     "_switchProtectionHint": {
       "type": "staticText",
       "text": {
-        "en": "⚡ Protects hardware relays from excessive switching. Battery only switches to charging when grid feed-in is sustained above threshold for the specified delay ticks. Reduces mechanical wear!",
-        "de": "⚡ Schützt Hardware-Relais vor übermäßigem Schalten. Batterie schaltet nur auf Laden um, wenn Netz-Einspeisung nachhaltig über Schwellwert für angegebene Ticks liegt. Reduziert mechanischen Verschleiß!"
+        "en": "⚡ Dual-direction switching protection: Battery only switches to charging when feed-in is sustained above threshold AND only switches to discharging when grid draw is sustained above threshold. Protects hardware relays from excessive wear, especially during cloudy/variable conditions!",
+        "de": "⚡ Bidirektionaler Schaltschutz: Batterie schaltet nur auf Laden bei nachhaltiger Einspeisung über Schwellwert UND nur auf Entladen bei nachhaltigem Netzbezug über Schwellwert. Schützt Hardware-Relais vor Verschleiß, besonders bei bewölkten/wechselhaften Bedingungen!"
       },
       "sm": 12,
       "style": {

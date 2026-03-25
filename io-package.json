@@ -65,6 +65,8 @@
     "rampDischargeWPerCycle": 400,
     "feedInThresholdW": -150,
     "feedInDelayTicks": 5,
+    "dischargeThresholdW": 200,
+    "dischargeDelayTicks": 3,
     "useLowVoltageBlock": true,
     "useFullChargeNeeded": true,
     "emergencyChargeVoltageV": 2.8,
@@ -230,6 +232,20 @@
       "type": "state",
       "common": {
         "name": "Feed-in delay counter",
+        "type": "number",
+        "role": "value",
+        "read": true,
+        "write": false,
+        "def": 0,
+        "unit": "ticks"
+      },
+      "native": {}
+    },
+    {
+      "_id": "status.dischargeCounter",
+      "type": "state",
+      "common": {
+        "name": "Discharge delay counter",
         "type": "number",
         "role": "value",
         "read": true,

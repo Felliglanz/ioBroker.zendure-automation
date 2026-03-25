@@ -34,7 +34,8 @@ class ZendureAutomation extends utils.Adapter {
         this._isRunning = false;
         this._deviceBasePath = null;
         this._inRecoveryMode = false; // Recovery mode after emergency charging
-        this._feedInCounter = 0; // Counter for sustained feed-in detection
+        this._feedInCounter = 0; // Counter for sustained feed-in detection (Discharge→Charge)
+        this._dischargeCounter = 0; // Counter for sustained grid draw detection (Charge→Discharge)
     }
 
     /**
@@ -234,67 +235,114 @@ class ZendureAutomation extends utils.Adapter {
 
             this.log.debug(`Calculated new battery power: ${newBatteryPowerW}W (before limits)`);
 
-            // ========== FEED-IN SWITCHING PROTECTION ==========
-            // Prevents frequent charge/discharge switching by requiring sustained feed-in
-            // ONLY when transitioning from discharge/standby → charging mode.
-            // Once charging, normal regulation applies (no counter check).
-            const feedInThresholdW = this.config.feedInThresholdW || -150;
-            const feedInDelayTicks = this.config.feedInDelayTicks || 5;
+            // ========== MODE SWITCHING PROTECTION ==========
+            // Prevents frequent charge/discharge switching by requiring sustained conditions
+            // before allowing mode transitions. Protects hardware relays from excessive wear.
+            const feedInThresholdW = this.config.feedInThresholdW || -150;      // Grid feed-in to start charging
+            const feedInDelayTicks = this.config.feedInDelayTicks || 5;         // Delay for discharge→charge
+            const dischargeThresholdW = this.config.dischargeThresholdW || 200; // Grid draw to stop charging
+            const dischargeDelayTicks = this.config.dischargeDelayTicks || 3;   // Delay for charge→discharge
             
-            const currentlyCharging = lastSetPowerW < 0; // Are we already charging?
-            const wantsToCharge = newBatteryPowerW < 0;  // Does regulation want to charge?
+            const currentlyCharging = lastSetPowerW < 0;    // Are we already charging?
+            const currentlyDischarging = lastSetPowerW > 0; // Are we already discharging?
+            const wantsToCharge = newBatteryPowerW < 0;     // Does regulation want to charge?
+            const wantsToDischarge = newBatteryPowerW > 0;  // Does regulation want to discharge?
             
             if (!currentlyCharging && wantsToCharge) {
-                // TRANSITION: Not charging → Want to charge
-                // Apply feed-in protection to prevent relay oscillation
+                // ========== TRANSITION: Discharge/Standby → Charge ==========
+                // Require sustained feed-in before starting to charge
                 if (gridPowerW < feedInThresholdW) {
                     // Sufficient feed-in detected
                     this._feedInCounter++;
-                    this.log.debug(`Feed-in transition detected (${gridPowerW}W < ${feedInThresholdW}W), counter: ${this._feedInCounter}/${feedInDelayTicks}`);
+                    this.log.debug(`Feed-in detected (${gridPowerW}W < ${feedInThresholdW}W), counter: ${this._feedInCounter}/${feedInDelayTicks}`);
                     
                     if (this._feedInCounter < feedInDelayTicks) {
-                        // Not yet sustained enough - block transition to charging
+                        // Not yet sustained - block transition to charging
                         this.log.debug(
-                            `Feed-in not yet sustained (${this._feedInCounter}/${feedInDelayTicks} ticks), ` +
-                            `blocking charge transition (Hardware protection)`
+                            `Feed-in not sustained (${this._feedInCounter}/${feedInDelayTicks}), blocking charge transition`
                         );
-                        newBatteryPowerW = Math.max(0, lastSetPowerW); // Stay in discharge/standby mode
+                        newBatteryPowerW = Math.max(0, lastSetPowerW); // Stay in discharge/standby
                     } else {
-                        // Sustained feed-in confirmed - allow transition to charging
+                        // Sustained feed-in confirmed - allow charging
                         this.log.debug(
-                            `✓ Feed-in sustained for ${feedInDelayTicks} ticks (${gridPowerW}W), ` +
-                            `allowing charge transition: ${newBatteryPowerW}W`
+                            `✓ Feed-in sustained for ${feedInDelayTicks} ticks, allowing charge: ${newBatteryPowerW}W`
                         );
                     }
                 } else {
-                    // Feed-in below threshold - reset counter and block transition
+                    // Feed-in below threshold - reset counter and block
                     if (this._feedInCounter > 0) {
-                        this.log.debug(`Feed-in below threshold on transition, resetting counter (was ${this._feedInCounter})`);
+                        this.log.debug(`Feed-in below threshold, resetting counter (was ${this._feedInCounter})`);
                     }
                     this._feedInCounter = 0;
-                    newBatteryPowerW = Math.max(0, lastSetPowerW); // Stay in discharge/standby mode
+                    newBatteryPowerW = Math.max(0, lastSetPowerW); // Stay in discharge/standby
                 }
-            } else if (currentlyCharging && !wantsToCharge) {
-                // TRANSITION: Charging → Want to discharge/standby
-                // No protection needed, allow immediate switch
-                this.log.debug(`Switching from charging to discharge/standby, resetting counter (was ${this._feedInCounter})`);
+                // Reset discharge counter when attempting to charge
+                this._dischargeCounter = 0;
+                
+            } else if (currentlyCharging && wantsToDischarge) {
+                // ========== TRANSITION: Charge → Discharge ==========
+                // Require sustained grid draw before stopping charge and starting discharge
+                if (gridPowerW > dischargeThresholdW) {
+                    // Sufficient grid draw detected
+                    this._dischargeCounter++;
+                    this.log.debug(`Grid draw detected (${gridPowerW}W > ${dischargeThresholdW}W), counter: ${this._dischargeCounter}/${dischargeDelayTicks}`);
+                    
+                    if (this._dischargeCounter < dischargeDelayTicks) {
+                        // Not yet sustained - stay in charging mode
+                        this.log.debug(
+                            `Grid draw not sustained (${this._dischargeCounter}/${dischargeDelayTicks}), staying in charge mode`
+                        );
+                        newBatteryPowerW = Math.min(0, lastSetPowerW); // Stay charging or go standby
+                    } else {
+                        // Sustained grid draw confirmed - allow discharge
+                        this.log.debug(
+                            `✓ Grid draw sustained for ${dischargeDelayTicks} ticks, allowing discharge: ${newBatteryPowerW}W`
+                        );
+                    }
+                } else {
+                    // Grid draw below threshold - reset counter and stay charging
+                    if (this._dischargeCounter > 0) {
+                        this.log.debug(`Grid draw below threshold, resetting counter (was ${this._dischargeCounter})`);
+                    }
+                    this._dischargeCounter = 0;
+                    newBatteryPowerW = Math.min(0, lastSetPowerW); // Stay charging or go standby
+                }
+                // Reset feed-in counter when attempting to discharge
                 this._feedInCounter = 0;
-            } else if (!currentlyCharging && !wantsToCharge) {
-                // Staying in discharge/standby mode
-                this._feedInCounter = 0;
-            } else {
-                // currentlyCharging && wantsToCharge
-                // Already charging, continue charging - NO COUNTER CHECK
-                // Normal regulation applies: adjust charge power to maintain targetGrid
-                this.log.debug(`Already charging, continuing with normal regulation (no feed-in check)`);
-                // Keep counter at max to indicate "charging mode active"
+                
+            } else if (currentlyCharging && wantsToCharge) {
+                // ========== CONTINUE CHARGING ==========
+                // Already charging, continue with normal regulation (no counter check)
+                this.log.debug(`Continuing charge mode, normal regulation applies`);
+                // Keep counters to indicate active charge mode
                 if (this._feedInCounter < feedInDelayTicks) {
                     this._feedInCounter = feedInDelayTicks;
                 }
+                this._dischargeCounter = 0;
+                
+            } else if (currentlyDischarging && wantsToDischarge) {
+                // ========== CONTINUE DISCHARGING ==========
+                // Already discharging, continue with normal regulation (no counter check)
+                this.log.debug(`Continuing discharge mode, normal regulation applies`);
+                this._feedInCounter = 0;
+                // Keep discharge counter to indicate active discharge mode
+                if (this._dischargeCounter < dischargeDelayTicks) {
+                    this._dischargeCounter = dischargeDelayTicks;
+                }
+                
+            } else {
+                // ========== OTHER TRANSITIONS (Standby, etc.) ==========
+                // Reset counters for standby or other states
+                if (this._feedInCounter > 0 || this._dischargeCounter > 0) {
+                    this.log.debug(`Mode change to standby, resetting counters`);
+                }
+                this._feedInCounter = 0;
+                this._dischargeCounter = 0;
             }
             
-            // Update feed-in counter state for visibility
+            // Update counter states for visibility
             await this.setStateAsync('status.feedInCounter', this._feedInCounter, true);
+            await this.setStateAsync('status.dischargeCounter', this._dischargeCounter, true);
             // ==================================================
 
             // ========== SAFETY CHECKS (HIGHEST PRIORITY - CANNOT BE OVERRIDDEN) ==========
