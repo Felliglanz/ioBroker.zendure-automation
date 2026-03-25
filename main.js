@@ -33,7 +33,8 @@ class ZendureAutomation extends utils.Adapter {
         this._lastWrittenLimit = null;
         this._isRunning = false;
         this._deviceBasePath = null;
-        this._inRecoveryMode = false; // Recovery mode after emergency charging
+        this._inRecoveryMode = false; // Recovery mode after emergency charging (SOC-based)
+        this._inVoltageRecovery = false; // Voltage recovery mode after low voltage cutoff
         this._feedInCounter = 0; // Counter for sustained feed-in detection (Discharge→Charge)
         this._dischargeCounter = 0; // Counter for sustained grid draw detection (Charge→Discharge)
     }
@@ -200,7 +201,7 @@ class ZendureAutomation extends utils.Adapter {
                 await this.setStateAsync('status.emergencyReason', '', true);
             }
 
-            // Check recovery mode status
+            // Check recovery mode status (SOC-based)
             if (this._inRecoveryMode) {
                 const recoverySoc = this.config.emergencyRecoverySoc || 30;
                 if (batterySoc >= recoverySoc) {
@@ -210,6 +211,31 @@ class ZendureAutomation extends utils.Adapter {
                 } else {
                     this.log.debug(`Recovery mode active (${batterySoc}% < ${recoverySoc}%), discharge blocked`);
                     await this.setStateAsync('status.mode', 'recovery', true);
+                }
+            }
+
+            // Check voltage recovery mode status (Voltage-based)
+            if (this._inVoltageRecovery) {
+                const protectionMode = this.config.dischargeProtectionMode || 'soc';
+                if (protectionMode === 'voltage') {
+                    const minPackVoltageV = await this.getMinimumPackVoltageV();
+                    if (minPackVoltageV !== null) {
+                        const minVoltageLimit = this.config.minBatteryVoltageV || 3.0;
+                        const hysteresis = this.config.voltageRecoveryHysteresisV || 0.1;
+                        const recoveryVoltage = minVoltageLimit + hysteresis;
+                        
+                        if (minPackVoltageV >= recoveryVoltage) {
+                            this.log.info(`✓ Voltage recovery complete (${minPackVoltageV.toFixed(2)}V >= ${recoveryVoltage.toFixed(2)}V), resuming discharge`);
+                            this._inVoltageRecovery = false;
+                            await this.setStateAsync('status.mode', 'standby', true);
+                        } else {
+                            this.log.debug(`Voltage recovery active (${minPackVoltageV.toFixed(2)}V < ${recoveryVoltage.toFixed(2)}V), discharge blocked`);
+                            await this.setStateAsync('status.mode', 'recovery', true);
+                        }
+                    }
+                } else {
+                    // If mode changed from voltage to SOC, clear the flag
+                    this._inVoltageRecovery = false;
                 }
             }
             // ================================================================
@@ -377,12 +403,25 @@ class ZendureAutomation extends utils.Adapter {
                         safetyLimitActive = true;
                     }
                 } else if (protectionMode === 'voltage') {
-                    // Voltage-based protection
+                    // Voltage-based protection with hysteresis recovery
                     const minPackVoltageV = await this.getMinimumPackVoltageV();
                     if (minPackVoltageV !== null) {
                         const minVoltageLimit = this.config.minBatteryVoltageV || 3.0;
+                        
+                        // Check if voltage recovery mode should be activated
                         if (minPackVoltageV <= minVoltageLimit) {
+                            if (!this._inVoltageRecovery) {
+                                this.log.warn(`⚠️ Pack voltage critically low (${minPackVoltageV.toFixed(2)}V <= ${minVoltageLimit}V), entering voltage recovery mode`);
+                                this._inVoltageRecovery = true;
+                            }
                             this.log.debug(`Pack voltage low (${minPackVoltageV.toFixed(2)}V <= ${minVoltageLimit}V), preventing discharge`);
+                            newBatteryPowerW = 0;
+                            safetyLimitActive = true;
+                        }
+                        
+                        // Block discharge if in voltage recovery (requires voltage + hysteresis to exit)
+                        if (this._inVoltageRecovery) {
+                            this.log.debug(`Voltage recovery mode active, preventing discharge`);
                             newBatteryPowerW = 0;
                             safetyLimitActive = true;
                         }

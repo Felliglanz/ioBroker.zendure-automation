@@ -249,6 +249,21 @@
         "de": "Entladung stoppen wenn IRGENDEIN Pack unter diese Spannung fällt (nur im Spannungs-Modus). Typisch: 3.0V für LFP"
       }
     },
+    "voltageRecoveryHysteresisV": {
+      "type": "number",
+      "label": {
+        "en": "Voltage recovery hysteresis (V)",
+        "de": "Spannungs-Recovery-Hysterese (V)"
+      },
+      "sm": 6,
+      "min": 0.0,
+      "max": 0.5,
+      "step": 0.01,
+      "help": {
+        "en": "Voltage must rise above (minimum + hysteresis) before discharge is allowed again. Prevents oscillation after voltage cutoff. Example: min=3.0V, hysteresis=0.1V → recovery at 3.1V",
+        "de": "Spannung muss über (Minimum + Hysterese) steigen bevor Entladung wieder erlaubt wird. Verhindert Oszillation nach Spannungsabschaltung. Beispiel: min=3.0V, Hysterese=0.1V → Recovery bei 3.1V"
+      }
+    },
     "_features": {
       "type": "divider",
       "label": {

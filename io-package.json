@@ -67,6 +67,7 @@
     "feedInDelayTicks": 5,
     "dischargeThresholdW": 200,
     "dischargeDelayTicks": 3,
+    "voltageRecoveryHysteresisV": 0.1,
     "useLowVoltageBlock": true,
     "useFullChargeNeeded": true,
     "emergencyChargeVoltageV": 2.8,
