@@ -2,8 +2,12 @@
   "common": {
     "name": "zendure-automation",
     "title": "Zendure Automation",
-    "version": "0.5.0",
+    "version": "0.5.1",
     "news": {
+      "0.5.1": {
+        "en": "Persistent voltage recovery state - survives adapter restarts",
+        "de": "Persistenter Voltage Recovery State - überlebt Adapter-Neustarts"
+      },
       "0.5.0": {
         "en": "Voltage recovery hysteresis, bidirectional mode-switching protection, asymmetric ramp limits",
         "de": "Voltage Recovery Hysterese, bidirektionaler Mode-Switching Schutz, asymmetrische Ramp Limits"
@@ -257,6 +261,19 @@
         "write": false,
         "def": 0,
         "unit": "ticks"
+      },
+      "native": {}
+    },
+    {
+      "_id": "status.voltageRecoveryActive",
+      "type": "state",
+      "common": {
+        "name": "Voltage recovery mode active",
+        "type": "boolean",
+        "role": "indicator",
+        "read": true,
+        "write": false,
+        "def": false
       },
       "native": {}
     },

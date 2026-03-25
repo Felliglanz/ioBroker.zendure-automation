@@ -70,6 +70,13 @@ class ZendureAutomation extends utils.Adapter {
         await this.setStateAsync('status.mode', 'idle', true);
         await this.setStateAsync('info.connection', true, true);
 
+        // Restore voltage recovery state from persistent storage (survives restarts)
+        const voltageRecoveryState = await this.getStateAsync('status.voltageRecoveryActive');
+        if (voltageRecoveryState && voltageRecoveryState.val === true) {
+            this._inVoltageRecovery = true;
+            this.log.info('Restored voltage recovery state from previous session');
+        }
+
         // Subscribe to control states
         this.subscribeStates('control.*');
 
@@ -227,6 +234,7 @@ class ZendureAutomation extends utils.Adapter {
                         if (minPackVoltageV >= recoveryVoltage) {
                             this.log.info(`✓ Voltage recovery complete (${minPackVoltageV.toFixed(2)}V >= ${recoveryVoltage.toFixed(2)}V), resuming discharge`);
                             this._inVoltageRecovery = false;
+                            await this.setStateAsync('status.voltageRecoveryActive', false, true);
                             await this.setStateAsync('status.mode', 'standby', true);
                         } else {
                             this.log.debug(`Voltage recovery active (${minPackVoltageV.toFixed(2)}V < ${recoveryVoltage.toFixed(2)}V), discharge blocked`);
@@ -236,6 +244,7 @@ class ZendureAutomation extends utils.Adapter {
                 } else {
                     // If mode changed from voltage to SOC, clear the flag
                     this._inVoltageRecovery = false;
+                    await this.setStateAsync('status.voltageRecoveryActive', false, true);
                 }
             }
             // ================================================================
@@ -413,6 +422,7 @@ class ZendureAutomation extends utils.Adapter {
                             if (!this._inVoltageRecovery) {
                                 this.log.warn(`⚠️ Pack voltage critically low (${minPackVoltageV.toFixed(2)}V <= ${minVoltageLimit}V), entering voltage recovery mode`);
                                 this._inVoltageRecovery = true;
+                                await this.setStateAsync('status.voltageRecoveryActive', true, true);
                             }
                             this.log.debug(`Pack voltage low (${minPackVoltageV.toFixed(2)}V <= ${minVoltageLimit}V), preventing discharge`);
                             newBatteryPowerW = 0;
