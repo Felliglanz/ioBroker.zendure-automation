@@ -162,12 +162,10 @@ class ZendureAutomation extends utils.Adapter {
             await this.setStateAsync('status.batterySoc', batterySoc, true);
             await this.setStateAsync('status.currentPowerW', currentBatteryPowerW, true);
             
-            // Read and update pack voltage if in voltage mode
-            if (protectionMode === 'voltage') {
-                const minPackVoltageV = await this.getMinimumPackVoltageV();
-                if (minPackVoltageV !== null) {
-                    await this.setStateAsync('status.minPackVoltageV', minPackVoltageV, true);
-                }
+            // Read and update pack voltage (always for monitoring, used for protection when in voltage mode)
+            const minPackVoltageV = await this.getMinimumPackVoltageV();
+            if (minPackVoltageV !== null) {
+                await this.setStateAsync('status.minPackVoltageV', minPackVoltageV, true);
             }
             
             await this.setStateAsync('status.lastUpdate', Date.now(), true);
