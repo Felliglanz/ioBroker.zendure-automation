@@ -2,8 +2,12 @@
   "common": {
     "name": "zendure-automation",
     "title": "Zendure Automation",
-    "version": "0.4.0",
+    "version": "0.5.0",
     "news": {
+      "0.5.0": {
+        "en": "Voltage recovery hysteresis, bidirectional mode-switching protection, asymmetric ramp limits",
+        "de": "Voltage Recovery Hysterese, bidirektionaler Mode-Switching Schutz, asymmetrische Ramp Limits"
+      },
       "0.4.0": {
         "en": "Added recovery mode: Prevents discharge loop after emergency charging. i18n support for admin UI (DE/EN)",
         "de": "Recovery-Modus hinzugefügt: Verhindert Entlade-Schleife nach Notladen. i18n Unterstützung für Admin UI (DE/EN)"
