@@ -296,7 +296,7 @@ class ZendureAutomation extends utils.Adapter {
                         this.log.debug(
                             `Feed-in not sustained (${this._feedInCounter}/${feedInDelayTicks}), blocking charge transition`
                         );
-                        newBatteryPowerW = Math.max(0, lastSetPowerW); // Stay in discharge/standby
+                        newBatteryPowerW = Math.max(0, newBatteryPowerW); // Allow regulation but block charging (negative values)
                     } else {
                         // Sustained feed-in confirmed - allow charging
                         this.log.debug(
@@ -309,7 +309,7 @@ class ZendureAutomation extends utils.Adapter {
                         this.log.debug(`Feed-in below threshold, resetting counter (was ${this._feedInCounter})`);
                     }
                     this._feedInCounter = 0;
-                    newBatteryPowerW = Math.max(0, lastSetPowerW); // Stay in discharge/standby
+                    newBatteryPowerW = Math.max(0, newBatteryPowerW); // Allow regulation but block charging (negative values)
                 }
                 // Reset discharge counter when attempting to charge
                 this._dischargeCounter = 0;
@@ -327,7 +327,7 @@ class ZendureAutomation extends utils.Adapter {
                         this.log.debug(
                             `Grid draw not sustained (${this._dischargeCounter}/${dischargeDelayTicks}), staying in charge mode`
                         );
-                        newBatteryPowerW = Math.min(0, lastSetPowerW); // Stay charging or go standby
+                        newBatteryPowerW = Math.min(0, newBatteryPowerW); // Allow regulation but block discharging (positive values)
                     } else {
                         // Sustained grid draw confirmed - allow discharge
                         this.log.debug(
@@ -340,7 +340,7 @@ class ZendureAutomation extends utils.Adapter {
                         this.log.debug(`Grid draw below threshold, resetting counter (was ${this._dischargeCounter})`);
                     }
                     this._dischargeCounter = 0;
-                    newBatteryPowerW = Math.min(0, lastSetPowerW); // Stay charging or go standby
+                    newBatteryPowerW = Math.min(0, newBatteryPowerW); // Allow regulation but block discharging (positive values)
                 }
                 // Reset feed-in counter when attempting to discharge
                 this._feedInCounter = 0;
