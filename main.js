@@ -86,8 +86,7 @@ class ZendureAutomation extends utils.Adapter {
         }
 
         // Subscribe to device states to track current power
-        await this.subscribeForeignStatesAsync(`${this._deviceBasePath}.outputPower`);
-        await this.subscribeForeignStatesAsync(`${this._deviceBasePath}.inputPower`);
+        await this.subscribeForeignStatesAsync(`${this._deviceBasePath}.packPower`);
         await this.subscribeForeignStatesAsync(`${this._deviceBasePath}.electricLevel`);
 
         // Subscribe to pack voltage states (for all packs)
@@ -298,10 +297,19 @@ class ZendureAutomation extends utils.Adapter {
                         );
                         newBatteryPowerW = Math.max(0, newBatteryPowerW); // Allow regulation but block charging (negative values)
                     } else {
-                        // Sustained feed-in confirmed - allow charging
-                        this.log.debug(
-                            `✓ Feed-in sustained for ${feedInDelayTicks} ticks, allowing charge: ${newBatteryPowerW}W`
-                        );
+                        // Sustained feed-in confirmed - check if battery power is near zero before allowing mode switch
+                        const modeSwitchToleranceW = 10; // Allow mode switch if battery power is within ±10W of zero
+                        if (Math.abs(currentBatteryPowerW) > modeSwitchToleranceW) {
+                            this.log.debug(
+                                `Waiting for battery power near 0W before charge transition (current: ${currentBatteryPowerW}W)`
+                            );
+                            newBatteryPowerW = Math.max(0, newBatteryPowerW); // Force toward zero but block charging
+                        } else {
+                            // Battery power near zero - safe to switch relay
+                            this.log.debug(
+                                `✓ Feed-in sustained and battery at ${currentBatteryPowerW}W (~0W), allowing charge: ${newBatteryPowerW}W`
+                            );
+                        }
                     }
                 } else {
                     // Feed-in below threshold - reset counter and block
@@ -329,10 +337,19 @@ class ZendureAutomation extends utils.Adapter {
                         );
                         newBatteryPowerW = Math.min(0, newBatteryPowerW); // Allow regulation but block discharging (positive values)
                     } else {
-                        // Sustained grid draw confirmed - allow discharge
-                        this.log.debug(
-                            `✓ Grid draw sustained for ${dischargeDelayTicks} ticks, allowing discharge: ${newBatteryPowerW}W`
-                        );
+                        // Sustained grid draw confirmed - check if battery power is near zero before allowing mode switch
+                        const modeSwitchToleranceW = 10; // Allow mode switch if battery power is within ±10W of zero
+                        if (Math.abs(currentBatteryPowerW) > modeSwitchToleranceW) {
+                            this.log.debug(
+                                `Waiting for battery power near 0W before discharge transition (current: ${currentBatteryPowerW}W)`
+                            );
+                            newBatteryPowerW = Math.min(0, newBatteryPowerW); // Force toward zero but block discharging
+                        } else {
+                            // Battery power near zero - safe to switch relay
+                            this.log.debug(
+                                `✓ Grid draw sustained and battery at ${currentBatteryPowerW}W (~0W), allowing discharge: ${newBatteryPowerW}W`
+                            );
+                        }
                     }
                 } else {
                     // Grid draw below threshold - reset counter and stay charging
@@ -698,26 +715,19 @@ class ZendureAutomation extends utils.Adapter {
      */
     async getCurrentBatteryPowerW() {
         try {
-            // Read both input and output power
-            const outputState = await this.getForeignStateAsync(`${this._deviceBasePath}.outputPower`);
-            const inputState = await this.getForeignStateAsync(`${this._deviceBasePath}.inputPower`);
+            // Read packPower from Zendure device
+            // Note: Zendure packPower convention is INVERTED:
+            //   Zendure: negative=discharge, positive=charge
+            //   Our code: positive=discharge, negative=charge
+            // Therefore we invert: -packPower
+            const packPowerState = await this.getForeignStateAsync(`${this._deviceBasePath}.packPower`);
 
-            let outputPower = 0;
-            let inputPower = 0;
-
-            if (outputState && outputState.val !== null) {
-                outputPower = Number(outputState.val);
+            if (packPowerState && packPowerState.val !== null && packPowerState.val !== undefined) {
+                // Invert Zendure packPower to match our code convention
+                const batteryPower = -Number(packPowerState.val);
+                this._lastBatteryPowerW = batteryPower;
+                return batteryPower;
             }
-
-            if (inputState && inputState.val !== null) {
-                inputPower = Number(inputState.val);
-            }
-
-            // Net power: positive = discharging, negative = charging
-            const netPower = outputPower - inputPower;
-            
-            this._lastBatteryPowerW = netPower;
-            return netPower;
 
         } catch (err) {
             this.log.warn(`Could not read battery power: ${err.message}`);
