@@ -1,578 +1,772 @@
 {
-  "type": "panel",
+  "type": "tabs",
   "i18n": true,
   "items": {
-    "_header": {
-      "type": "header",
-      "text": {
-        "en": "Zendure Automation - Automatic Battery Control",
-        "de": "Zendure Automation - Automatische Batteriesteuerung"
+    "_tabBasic": {
+      "type": "panel",
+      "label": {
+        "en": "⚙️ Basic Settings",
+        "de": "⚙️ Basis-Einstellungen"
       },
-      "size": 2
-    },
-    "_info": {
-      "type": "staticText",
-      "text": {
-        "en": "This adapter automatically controls your Zendure Solarflow battery to achieve zero grid power. It reads your grid power meter and adjusts battery charge/discharge accordingly.",
-        "de": "Dieser Adapter steuert automatisch deine Zendure Solarflow Batterie für Null-Netzbezug/-Einspeisung. Er liest deinen Stromzähler und passt Laden/Entladen entsprechend an."
-      },
-      "sm": 12,
-      "style": {
-        "backgroundColor": "#e3f2fd",
-        "padding": "10px",
-        "borderRadius": "4px",
-        "color": "#1565c0"
-      }
-    },
-    "_deviceSettings": {
-      "type": "divider",
-      "label": {
-        "en": "Device Settings",
-        "de": "Geräte-Einstellungen"
-      }
-    },
-    "zendureSolarflowInstance": {
-      "type": "text",
-      "label": {
-        "en": "Zendure Solarflow adapter instance",
-        "de": "Zendure Solarflow Adapter-Instanz"
-      },
-      "placeholder": "zendure-solarflow.0",
-      "sm": 12,
-      "help": {
-        "en": "The instance name of the nograx zendure-solarflow adapter",
-        "de": "Der Instanzname des nograx zendure-solarflow Adapters"
-      }
-    },
-    "deviceProductKey": {
-      "type": "text",
-      "label": {
-        "en": "Device ProductKey",
-        "de": "Gerät ProductKey"
-      },
-      "sm": 6,
-      "help": {
-        "en": "The ProductKey of your Zendure device (e.g., for 1600AC+)",
-        "de": "Der ProductKey deines Zendure Geräts (z.B. für 1600AC+)"
-      }
-    },
-    "deviceKey": {
-      "type": "text",
-      "label": {
-        "en": "Device Key",
-        "de": "Gerät DeviceKey"
-      },
-      "sm": 6,
-      "help": {
-        "en": "The DeviceKey of your Zendure device",
-        "de": "Der DeviceKey deines Zendure Geräts"
-      }
-    },
-    "_deviceHint": {
-      "type": "staticText",
-      "text": {
-        "en": "💡 Tip: Find ProductKey and DeviceKey in the zendure-solarflow adapter object tree under your device.",
-        "de": "💡 Tipp: ProductKey und DeviceKey findest du im zendure-solarflow Adapter unter deinem Gerät im Objektbaum."
-      },
-      "sm": 12,
-      "style": {
-        "fontSize": "0.9em",
-        "fontStyle": "italic",
-        "color": "#555"
-      }
-    },
-    "_gridSettings": {
-      "type": "divider",
-      "label": {
-        "en": "Grid Power Meter",
-        "de": "Netz-Stromzähler"
-      }
-    },
-    "powerMeterDp": {
-      "type": "objectId",
-      "label": {
-        "en": "Grid power meter datapoint",
-        "de": "Netz-Leistungsmesser Datenpunkt"
-      },
-      "sm": 12,
-      "types": ["state"],
-      "help": {
-        "en": "Select the datapoint that provides current grid power (positive = drawing from grid, negative = feeding to grid)",
-        "de": "Wähle den Datenpunkt für aktuelle Netzleistung (positiv = Netzbezug, negativ = Einspeisung)"
-      }
-    },
-    "_automation": {
-      "type": "divider",
-      "label": {
-        "en": "Automation Settings",
-        "de": "Automatisierungs-Einstellungen"
-      }
-    },
-    "targetGridPowerW": {
-      "type": "number",
-      "label": {
-        "en": "Target grid power (W)",
-        "de": "Ziel-Netzleistung (W)"
-      },
-      "sm": 6,
-      "min": -5000,
-      "max": 5000,
-      "help": {
-        "en": "Target grid power in watts. 0 = zero grid draw/feed, positive = allow some grid draw, negative = allow some grid feed",
-        "de": "Ziel-Netzleistung in Watt. 0 = kein Netzbezug/Einspeisung, positiv = etwas Netzbezug erlaubt, negativ = etwas Einspeisung erlaubt"
-      }
-    },
-    "updateIntervalSec": {
-      "type": "number",
-      "label": {
-        "en": "Update interval (seconds)",
-        "de": "Update-Intervall (Sekunden)"
-      },
-      "sm": 6,
-      "min": 1,
-      "max": 300,
-      "help": {
-        "en": "How often to update battery power (recommended: 5 seconds)",
-        "de": "Wie oft die Batterieleistung aktualisiert wird (empfohlen: 5 Sekunden)"
-      }
-    },
-    "_powerLimits": {
-      "type": "divider",
-      "label": {
-        "en": "Power Limits",
-        "de": "Leistungsgrenzen"
-      }
-    },
-    "maxChargePowerW": {
-      "type": "number",
-      "label": {
-        "en": "Max. charge power (W)",
-        "de": "Max. Ladeleistung (W)"
-      },
-      "sm": 6,
-      "min": 0,
-      "max": 3000,
-      "help": {
-        "en": "Maximum charging power in watts",
-        "de": "Maximale Ladeleistung in Watt"
-      }
-    },
-    "maxDischargePowerW": {
-      "type": "number",
-      "label": {
-        "en": "Max. discharge power (W)",
-        "de": "Max. Entladeleistung (W)"
-      },
-      "sm": 6,
-      "min": 0,
-      "max": 3000,
-      "help": {
-        "en": "Maximum discharging power in watts",
-        "de": "Maximale Entladeleistung in Watt"
-      }
-    },
-    "_batteryLimits": {
-      "type": "divider",
-      "label": {
-        "en": "Battery Protection",
-        "de": "Akku-Schutz"
-      }
-    },
-    "minBatterySoc": {
-      "type": "number",
-      "label": {
-        "en": "Minimum battery SOC (%)",
-        "de": "Minimaler Batterie-SOC (%)"
-      },
-      "sm": 6,
-      "min": 0,
-      "max": 100,
-      "help": {
-        "en": "Stop discharging when battery SOC falls below this value (when using SOC protection mode)",
-        "de": "Entladung stoppen wenn SOC unter diesen Wert fällt (bei SOC-Schutzmodus)"
-      }
-    },
-    "maxBatterySoc": {
-      "type": "number",
-      "label": {
-        "en": "Maximum battery SOC (%)",
-        "de": "Maximaler Batterie-SOC (%)"
-      },
-      "sm": 6,
-      "min": 0,
-      "max": 100,
-      "help": {
-        "en": "Stop charging when SOC reaches this value (full charge = 100% SOC)",
-        "de": "Laden stoppen wenn SOC diesen Wert erreicht (Vollladung = 100% SOC)"
-      }
-    },
-    "dischargeProtectionMode": {
-      "type": "select",
-      "label": {
-        "en": "Discharge protection mode",
-        "de": "Entladeschutz-Modus"
-      },
-      "sm": 6,
-      "options": [
-        { 
-          "label": {
-            "en": "By SOC (%)",
-            "de": "Nach SOC (%)"
-          }, 
-          "value": "soc" 
+      "items": {
+        "_header": {
+          "type": "header",
+          "text": {
+            "en": "Zendure Automation - Zero Grid Target",
+            "de": "Zendure Automation - Nulleinspeisung"
+          },
+          "size": 2
         },
-        { 
+        "_info": {
+          "type": "staticText",
+          "text": {
+            "en": "Automatic battery control for zero grid feed-in/draw. Configure the required settings below to get started.",
+            "de": "Automatische Batteriesteuerung für Null-Netzbezug/-Einspeisung. Konfiguriere unten die erforderlichen Einstellungen."
+          },
+          "sm": 12,
+          "style": {
+            "backgroundColor": "#e3f2fd",
+            "padding": "10px",
+            "borderRadius": "4px",
+            "color": "#1565c0"
+          }
+        },
+        "_panelDevice": {
+          "type": "panel",
           "label": {
-            "en": "By pack voltage (V)",
-            "de": "Nach Pack-Spannung (V)"
-          }, 
-          "value": "voltage" 
+            "en": "🔌 Device Connection (Required)",
+            "de": "🔌 Geräte-Verbindung (Erforderlich)"
+          },
+          "collapsible": false,
+          "items": {
+            "zendureSolarflowInstance": {
+              "type": "text",
+              "label": {
+                "en": "Zendure Solarflow adapter instance",
+                "de": "Zendure Solarflow Adapter-Instanz"
+              },
+              "placeholder": "zendure-solarflow.0",
+              "sm": 12,
+              "help": {
+                "en": "The instance name of the nograx zendure-solarflow adapter",
+                "de": "Der Instanzname des nograx zendure-solarflow Adapters"
+              }
+            },
+            "deviceProductKey": {
+              "type": "text",
+              "label": {
+                "en": "Device ProductKey",
+                "de": "Gerät ProductKey"
+              },
+              "sm": 6,
+              "help": {
+                "en": "The ProductKey of your Zendure device",
+                "de": "Der ProductKey deines Zendure Geräts"
+              }
+            },
+            "deviceKey": {
+              "type": "text",
+              "label": {
+                "en": "Device Key",
+                "de": "Gerät DeviceKey"
+              },
+              "sm": 6,
+              "help": {
+                "en": "The DeviceKey of your Zendure device",
+                "de": "Der DeviceKey deines Zendure Geräts"
+              }
+            },
+            "_deviceHint": {
+              "type": "staticText",
+              "text": {
+                "en": "💡 Find ProductKey and DeviceKey in the zendure-solarflow adapter object tree under your device.",
+                "de": "💡 ProductKey und DeviceKey findest du im zendure-solarflow Adapter unter deinem Gerät im Objektbaum."
+              },
+              "sm": 12,
+              "style": {
+                "fontSize": "0.85em",
+                "fontStyle": "italic",
+                "color": "#666",
+                "marginTop": "5px"
+              }
+            }
+          }
+        },
+        "_panelMeter": {
+          "type": "panel",
+          "label": {
+            "en": "📊 Grid Power Meter (Required)",
+            "de": "📊 Netz-Stromzähler (Erforderlich)"
+          },
+          "collapsible": false,
+          "items": {
+            "powerMeterDp": {
+              "type": "objectId",
+              "label": {
+                "en": "Grid power datapoint",
+                "de": "Netzleistungs-Datenpunkt"
+              },
+              "sm": 12,
+              "types": ["state"],
+              "help": {
+                "en": "Datapoint with current grid power (positive = drawing, negative = feeding)",
+                "de": "Datenpunkt mit aktueller Netzleistung (positiv = Bezug, negativ = Einspeisung)"
+              }
+            },
+            "_meterHint": {
+              "type": "staticText",
+              "text": {
+                "en": "💡 Convention: Positive values = grid draw (consuming), negative = grid feed-in (producing)",
+                "de": "💡 Konvention: Positive Werte = Netzbezug (Verbrauch), negativ = Einspeisung (Erzeugung)"
+              },
+              "sm": 12,
+              "style": {
+                "fontSize": "0.85em",
+                "fontStyle": "italic",
+                "color": "#666",
+                "marginTop": "5px"
+              }
+            }
+          }
         }
-      ],
-      "help": {
-        "en": "Choose how to protect battery from deep discharge: per SOC percentage or per pack cell voltage",
-        "de": "Wähle wie der Akku vor Tiefentladung geschützt wird: per SOC-Prozent oder per Pack-Zellspannung"
       }
     },
-    "minBatteryVoltageV": {
-      "type": "number",
+    "_tabControl": {
+      "type": "panel",
       "label": {
-        "en": "Minimum pack cell voltage (V)",
-        "de": "Minimale Pack-Zellspannung (V)"
+        "en": "🎯 Zero Grid Control",
+        "de": "🎯 Nulleinspeisung"
       },
-      "sm": 6,
-      "min": 2.5,
-      "max": 3.5,
-      "step": 0.01,
-      "help": {
-        "en": "Stop discharging when ANY pack drops below this voltage (voltage mode only). Typical: 3.0V for LFP",
-        "de": "Entladung stoppen wenn IRGENDEIN Pack unter diese Spannung fällt (nur im Spannungs-Modus). Typisch: 3.0V für LFP"
+      "items": {
+        "_panelTarget": {
+          "type": "panel",
+          "label": {
+            "en": "Target & Timing",
+            "de": "Ziel & Timing"
+          },
+          "collapsible": false,
+          "items": {
+            "targetGridPowerW": {
+              "type": "number",
+              "label": {
+                "en": "Target grid power (W)",
+                "de": "Ziel-Netzleistung (W)"
+              },
+              "sm": 6,
+              "min": -5000,
+              "max": 5000,
+              "help": {
+                "en": "0 = zero grid, positive = allow grid draw, negative = allow feed-in",
+                "de": "0 = Nulleinspeisung, positiv = Netzbezug erlaubt, negativ = Einspeisung erlaubt"
+              }
+            },
+            "updateIntervalSec": {
+              "type": "number",
+              "label": {
+                "en": "Update interval (seconds)",
+                "de": "Update-Intervall (Sekunden)"
+              },
+              "sm": 6,
+              "min": 1,
+              "max": 300,
+              "help": {
+                "en": "How often to adjust battery power (recommended: 5s)",
+                "de": "Wie oft Batterieleistung angepasst wird (empfohlen: 5s)"
+              }
+            }
+          }
+        },
+        "_panelRegulation": {
+          "type": "panel",
+          "label": {
+            "en": "Regulation Parameters",
+            "de": "Regelparameter"
+          },
+          "collapsible": false,
+          "items": {
+            "hysteresisW": {
+              "type": "number",
+              "label": {
+                "en": "Hysteresis (W)",
+                "de": "Hysterese (W)"
+              },
+              "sm": 4,
+              "min": 0,
+              "max": 500,
+              "help": {
+                "en": "Minimum power change to react (avoids small adjustments)",
+                "de": "Minimale Leistungsänderung zum Reagieren (vermeidet kleine Anpassungen)"
+              }
+            },
+            "rampChargeWPerCycle": {
+              "type": "number",
+              "label": {
+                "en": "Charge ramp (W/cycle)",
+                "de": "Lade-Rampe (W/Zyklus)"
+              },
+              "sm": 4,
+              "min": 0,
+              "max": 2000,
+              "help": {
+                "en": "Max charge power change per cycle (higher = faster)",
+                "de": "Max. Ladeänderung pro Zyklus (höher = schneller)"
+              }
+            },
+            "rampDischargeWPerCycle": {
+              "type": "number",
+              "label": {
+                "en": "Discharge ramp (W/cycle)",
+                "de": "Entlade-Rampe (W/Zyklus)"
+              },
+              "sm": 4,
+              "min": 0,
+              "max": 2000,
+              "help": {
+                "en": "Max discharge power change per cycle (higher = faster)",
+                "de": "Max. Entladeänderung pro Zyklus (höher = schneller)"
+              }
+            },
+            "_regulationHint": {
+              "type": "staticText",
+              "text": {
+                "en": "⚙️ Higher ramps = faster response (aggressive), lower = smoother (gentle). Hysteresis prevents oscillation around target.",
+                "de": "⚙️ Höhere Rampen = schnellere Reaktion (aggressiv), niedriger = sanfter. Hysterese verhindert Oszillation um Zielwert."
+              },
+              "sm": 12,
+              "style": {
+                "fontSize": "0.85em",
+                "fontStyle": "italic",
+                "color": "#666",
+                "marginTop": "10px",
+                "padding": "8px",
+                "backgroundColor": "#f5f5f5",
+                "borderRadius": "4px"
+              }
+            }
+          }
+        },
+        "_panelFeatures": {
+          "type": "panel",
+          "label": {
+            "en": "Enable/Disable",
+            "de": "Aktivieren/Deaktivieren"
+          },
+          "collapsible": false,
+          "items": {
+            "enableCharge": {
+              "type": "checkbox",
+              "label": {
+                "en": "Enable charging",
+                "de": "Laden aktivieren"
+              },
+              "sm": 6,
+              "help": {
+                "en": "Allow battery charging",
+                "de": "Batterie-Laden erlauben"
+              }
+            },
+            "enableDischarge": {
+              "type": "checkbox",
+              "label": {
+                "en": "Enable discharging",
+                "de": "Entladen aktivieren"
+              },
+              "sm": 6,
+              "help": {
+                "en": "Allow battery discharge",
+                "de": "Batterie-Entladung erlauben"
+              }
+            }
+          }
+        }
       }
     },
-    "voltageRecoveryHysteresisV": {
-      "type": "number",
+    "_tabRelay": {
+      "type": "panel",
       "label": {
-        "en": "Voltage recovery hysteresis (V)",
-        "de": "Spannungs-Recovery-Hysterese (V)"
+        "en": "⚡ Relay Protection",
+        "de": "⚡ Relais-Schutz"
       },
-      "sm": 6,
-      "min": 0.0,
-      "max": 0.5,
-      "step": 0.01,
-      "help": {
-        "en": "Voltage must rise above (minimum + hysteresis) before discharge is allowed again. Prevents oscillation after voltage cutoff. Example: min=3.0V, hysteresis=0.1V → recovery at 3.1V",
-        "de": "Spannung muss über (Minimum + Hysterese) steigen bevor Entladung wieder erlaubt wird. Verhindert Oszillation nach Spannungsabschaltung. Beispiel: min=3.0V, Hysterese=0.1V → Recovery bei 3.1V"
+      "items": {
+        "_relayInfo": {
+          "type": "staticText",
+          "text": {
+            "en": "⚡ Protection against frequent relay switching: Requires sustained grid conditions before mode transitions. Additional 10W-check ensures relay only switches at minimal current (~0.04A).",
+            "de": "⚡ Schutz vor häufigem Relais-Schalten: Erfordert nachhaltige Netzbedingungen vor Moduswechsel. Zusätzlicher 10W-Check stellt sicher, dass Relais nur bei minimalem Strom (~0,04A) schaltet."
+          },
+          "sm": 12,
+          "style": {
+            "backgroundColor": "#fff3e0",
+            "padding": "12px",
+            "borderRadius": "4px",
+            "color": "#e65100",
+            "marginBottom": "15px"
+          }
+        },
+        "_panelChargeSwitch": {
+          "type": "panel",
+          "label": {
+            "en": "Transition to Charging",
+            "de": "Umschaltung auf Laden"
+          },
+          "collapsible": false,
+          "items": {
+            "feedInThresholdW": {
+              "type": "number",
+              "label": {
+                "en": "Feed-in threshold (W)",
+                "de": "Einspeise-Schwellwert (W)"
+              },
+              "sm": 6,
+              "min": -5000,
+              "max": 0,
+              "help": {
+                "en": "Start charging when feed-in exceeds this (negative value, e.g. -150W)",
+                "de": "Laden starten bei Überschreitung (negativer Wert, z.B. -150W)"
+              }
+            },
+            "feedInDelayTicks": {
+              "type": "number",
+              "label": {
+                "en": "Feed-in delay (ticks)",
+                "de": "Einspeise-Verzögerung (Ticks)"
+              },
+              "sm": 6,
+              "min": 0,
+              "max": 20,
+              "help": {
+                "en": "Cycles feed-in must persist before switching (1 tick = interval)",
+                "de": "Zyklen die Einspeisung anhalten muss (1 Tick = Intervall)"
+              }
+            },
+            "_chargeHint": {
+              "type": "staticText",
+              "text": {
+                "en": "After delay: Relay only switches when battery power < 10W (safe switching at ~0.04A)",
+                "de": "Nach Verzögerung: Relais schaltet nur bei Batterieleistung < 10W (sicheres Schalten bei ~0,04A)"
+              },
+              "sm": 12,
+              "style": {
+                "fontSize": "0.85em",
+                "color": "#2e7d32",
+                "marginTop": "8px",
+                "padding": "6px",
+                "backgroundColor": "#e8f5e9",
+                "borderRadius": "4px"
+              }
+            }
+          }
+        },
+        "_panelDischargeSwitch": {
+          "type": "panel",
+          "label": {
+            "en": "Transition to Discharging",
+            "de": "Umschaltung auf Entladen"
+          },
+          "collapsible": false,
+          "items": {
+            "dischargeThresholdW": {
+              "type": "number",
+              "label": {
+                "en": "Grid draw threshold (W)",
+                "de": "Netzbezugs-Schwellwert (W)"
+              },
+              "sm": 6,
+              "min": 0,
+              "max": 5000,
+              "help": {
+                "en": "Start discharging when grid draw exceeds this (positive value, e.g. 200W)",
+                "de": "Entladen starten bei Überschreitung (positiver Wert, z.B. 200W)"
+              }
+            },
+            "dischargeDelayTicks": {
+              "type": "number",
+              "label": {
+                "en": "Discharge delay (ticks)",
+                "de": "Entlade-Verzögerung (Ticks)"
+              },
+              "sm": 6,
+              "min": 0,
+              "max": 20,
+              "help": {
+                "en": "Cycles grid draw must persist before switching (1 tick = interval)",
+                "de": "Zyklen die Netzbezug anhalten muss (1 Tick = Intervall)"
+              }
+            },
+            "_dischargeHint": {
+              "type": "staticText",
+              "text": {
+                "en": "After delay: Relay only switches when battery power < 10W (safe switching at ~0.04A)",
+                "de": "Nach Verzögerung: Relais schaltet nur bei Batterieleistung < 10W (sicheres Schalten bei ~0,04A)"
+              },
+              "sm": 12,
+              "style": {
+                "fontSize": "0.85em",
+                "color": "#2e7d32",
+                "marginTop": "8px",
+                "padding": "6px",
+                "backgroundColor": "#e8f5e9",
+                "borderRadius": "4px"
+              }
+            }
+          }
+        }
       }
     },
-    "_features": {
-      "type": "divider",
+    "_tabBattery": {
+      "type": "panel",
       "label": {
-        "en": "Features",
-        "de": "Funktionen"
-      }
-    },
-    "enableCharge": {
-      "type": "checkbox",
-      "label": {
-        "en": "Enable charging",
-        "de": "Laden aktivieren"
+        "en": "🔋 Battery Protection",
+        "de": "🔋 Akku-Schutz"
       },
-      "sm": 6,
-      "help": {
-        "en": "Allow battery charging during automation",
-        "de": "Erlaube Batterie-Laden während Automatisierung"
+      "items": {
+        "_panelPowerLimits": {
+          "type": "panel",
+          "label": {
+            "en": "Power Limits",
+            "de": "Leistungsgrenzen"
+          },
+          "collapsible": false,
+          "items": {
+            "maxChargePowerW": {
+              "type": "number",
+              "label": {
+                "en": "Max. charge power (W)",
+                "de": "Max. Ladeleistung (W)"
+              },
+              "sm": 6,
+              "min": 0,
+              "max": 3000,
+              "help": {
+                "en": "Maximum charging power",
+                "de": "Maximale Ladeleistung"
+              }
+            },
+            "maxDischargePowerW": {
+              "type": "number",
+              "label": {
+                "en": "Max. discharge power (W)",
+                "de": "Max. Entladeleistung (W)"
+              },
+              "sm": 6,
+              "min": 0,
+              "max": 3000,
+              "help": {
+                "en": "Maximum discharging power",
+                "de": "Maximale Entladeleistung"
+              }
+            }
+          }
+        },
+        "_panelProtection": {
+          "type": "panel",
+          "label": {
+            "en": "Discharge Protection Mode",
+            "de": "Entladeschutz-Modus"
+          },
+          "collapsible": false,
+          "items": {
+            "dischargeProtectionMode": {
+              "type": "select",
+              "label": {
+                "en": "Protection mode",
+                "de": "Schutzmodus"
+              },
+              "sm": 12,
+              "options": [
+                { 
+                  "label": {
+                    "en": "By SOC percentage (%)",
+                    "de": "Nach SOC Prozent (%)"
+                  }, 
+                  "value": "soc" 
+                },
+                { 
+                  "label": {
+                    "en": "By pack cell voltage (V)",
+                    "de": "Nach Pack-Zellspannung (V)"
+                  }, 
+                  "value": "voltage" 
+                }
+              ],
+              "help": {
+                "en": "Choose discharge protection method: SOC percentage or pack voltage",
+                "de": "Wähle Entladeschutz-Methode: SOC-Prozent oder Pack-Spannung"
+              }
+            }
+          }
+        },
+        "_panelSocProtection": {
+          "type": "panel",
+          "label": {
+            "en": "SOC Protection (when mode = soc)",
+            "de": "SOC-Schutz (wenn Modus = soc)"
+          },
+          "collapsible": false,
+          "items": {
+            "minBatterySoc": {
+              "type": "number",
+              "label": {
+                "en": "Minimum SOC (%)",
+                "de": "Minimaler SOC (%)"
+              },
+              "sm": 6,
+              "min": 0,
+              "max": 100,
+              "help": {
+                "en": "Stop discharge below this SOC",
+                "de": "Entladung stoppen unter diesem SOC"
+              }
+            },
+            "maxBatterySoc": {
+              "type": "number",
+              "label": {
+                "en": "Maximum SOC (%)",
+                "de": "Maximaler SOC (%)"
+              },
+              "sm": 6,
+              "min": 0,
+              "max": 100,
+              "help": {
+                "en": "Stop charge above this SOC",
+                "de": "Laden stoppen über diesem SOC"
+              }
+            }
+          }
+        },
+        "_panelVoltageProtection": {
+          "type": "panel",
+          "label": {
+            "en": "Voltage Protection (when mode = voltage)",
+            "de": "Spannungs-Schutz (wenn Modus = voltage)"
+          },
+          "collapsible": false,
+          "items": {
+            "minBatteryVoltageV": {
+              "type": "number",
+              "label": {
+                "en": "Minimum pack voltage (V)",
+                "de": "Minimale Pack-Spannung (V)"
+              },
+              "sm": 6,
+              "min": 2.5,
+              "max": 3.5,
+              "step": 0.01,
+              "help": {
+                "en": "Stop discharge when ANY pack drops below (typical: 3.0V for LFP)",
+                "de": "Entladung stoppen wenn IRGENDEIN Pack darunter fällt (typisch: 3.0V für LFP)"
+              }
+            },
+            "voltageRecoveryHysteresisV": {
+              "type": "number",
+              "label": {
+                "en": "Recovery hysteresis (V)",
+                "de": "Recovery-Hysterese (V)"
+              },
+              "sm": 6,
+              "min": 0.0,
+              "max": 0.5,
+              "step": 0.01,
+              "help": {
+                "en": "Voltage must rise min+hysteresis before discharge allowed again (prevents oscillation)",
+                "de": "Spannung muss min+Hysterese überschreiten vor erneuter Entladung (verhindert Oszillation)"
+              }
+            },
+            "_voltageHint": {
+              "type": "staticText",
+              "text": {
+                "en": "Example: min=3.0V, hysteresis=0.1V → discharge blocked until voltage reaches 3.1V",
+                "de": "Beispiel: min=3.0V, Hysterese=0.1V → Entladung blockiert bis Spannung 3.1V erreicht"
+              },
+              "sm": 12,
+              "style": {
+                "fontSize": "0.85em",
+                "fontStyle": "italic",
+                "color": "#666",
+                "marginTop": "5px"
+              }
+            }
+          }
+        }
       }
     },
-    "enableDischarge": {
-      "type": "checkbox",
+    "_tabEmergency": {
+      "type": "panel",
       "label": {
-        "en": "Enable discharging",
-        "de": "Entladen aktivieren"
+        "en": "🚨 Emergency & Recovery",
+        "de": "🚨 Notladen & Recovery"
       },
-      "sm": 6,
-      "help": {
-        "en": "Allow battery discharge during automation",
-        "de": "Erlaube Batterie-Entladung während Automatisierung"
+      "items": {
+        "_emergencyInfo": {
+          "type": "staticText",
+          "text": {
+            "en": "🚨 Emergency charging is triggered by: critical pack voltage, device flags (lowVoltageBlock/fullChargeNeeded). Ignores grid target and charges with full power until recovery SOC is reached.",
+            "de": "🚨 Notladen wird aktiviert bei: kritischer Pack-Spannung, Geräte-Flags (lowVoltageBlock/fullChargeNeeded). Ignoriert Grid-Target und lädt mit voller Kraft bis Recovery-SOC erreicht ist."
+          },
+          "sm": 12,
+          "style": {
+            "backgroundColor": "#ffebee",
+            "padding": "12px",
+            "borderRadius": "4px",
+            "color": "#c62828",
+            "marginBottom": "15px"
+          }
+        },
+        "_panelEmergencyTrigger": {
+          "type": "panel",
+          "label": {
+            "en": "Emergency Triggers",
+            "de": "Notlade-Auslöser"
+          },
+          "collapsible": false,
+          "items": {
+            "useLowVoltageBlock": {
+              "type": "checkbox",
+              "label": {
+                "en": "Respect device low voltage flag",
+                "de": "Geräte-Unterspannungs-Flag beachten"
+              },
+              "sm": 6,
+              "help": {
+                "en": "When device reports 'lowVoltageBlock=true', stop discharge immediately",
+                "de": "Wenn Gerät 'lowVoltageBlock=true' meldet, Entladung sofort stoppen"
+              }
+            },
+            "useFullChargeNeeded": {
+              "type": "checkbox",
+              "label": {
+                "en": "Respect device full charge request",
+                "de": "Geräte-Vollladungs-Anfrage beachten"
+              },
+              "sm": 6,
+              "help": {
+                "en": "When device reports 'fullChargeNeeded=true', force full charge (calibration)",
+                "de": "Wenn Gerät 'fullChargeNeeded=true' meldet, Vollladung erzwingen (Kalibrierung)"
+              }
+            },
+            "emergencyChargeVoltageV": {
+              "type": "number",
+              "label": {
+                "en": "Critical voltage (V)",
+                "de": "Kritische Spannung (V)"
+              },
+              "sm": 6,
+              "min": 2.5,
+              "max": 3.0,
+              "step": 0.1,
+              "help": {
+                "en": "Emergency charging when ANY pack below this (typical: 2.8V for LFP)",
+                "de": "Notladen wenn IRGENDEIN Pack darunter (typisch: 2.8V für LFP)"
+              }
+            },
+            "emergencyChargePowerW": {
+              "type": "number",
+              "label": {
+                "en": "Emergency charge power (W)",
+                "de": "Notlade-Leistung (W)"
+              },
+              "sm": 6,
+              "min": 0,
+              "max": 3000,
+              "help": {
+                "en": "Charging power during emergency (ignores grid)",
+                "de": "Ladeleistung während Notladen (ignoriert Netz)"
+              }
+            }
+          }
+        },
+        "_panelRecovery": {
+          "type": "panel",
+          "label": {
+            "en": "Recovery Settings",
+            "de": "Recovery-Einstellungen"
+          },
+          "collapsible": false,
+          "items": {
+            "emergencyExitSoc": {
+              "type": "number",
+              "label": {
+                "en": "Emergency exit SOC (%)",
+                "de": "Notlade-Ende SOC (%)"
+              },
+              "sm": 6,
+              "min": 5,
+              "max": 50,
+              "help": {
+                "en": "Exit emergency at this SOC, enter recovery mode",
+                "de": "Notladen beenden bei diesem SOC, Recovery-Mode starten"
+              }
+            },
+            "emergencyRecoverySoc": {
+              "type": "number",
+              "label": {
+                "en": "Recovery complete SOC (%)",
+                "de": "Recovery-Ende SOC (%)"
+              },
+              "sm": 6,
+              "min": 10,
+              "max": 80,
+              "help": {
+                "en": "In recovery: only charging allowed until this SOC (prevents emergency loops)",
+                "de": "Im Recovery: nur Laden erlaubt bis dieser SOC (verhindert Notlade-Schleifen)"
+              }
+            },
+            "_recoveryHint": {
+              "type": "staticText",
+              "text": {
+                "en": "🔄 Recovery phase: After emergency (at exit SOC), battery continues charging with normal grid target but discharge is blocked until recovery SOC reached. Prevents endless emergency cycles.",
+                "de": "🔄 Recovery-Phase: Nach Notladen (ab Exit-SOC) lädt Akku weiter mit normalem Grid-Target, aber Entladung ist blockiert bis Recovery-SOC erreicht. Verhindert Endlos-Notlade-Zyklen."
+              },
+              "sm": 12,
+              "style": {
+                "fontSize": "0.85em",
+                "padding": "8px",
+                "backgroundColor": "#e8f5e9",
+                "borderRadius": "4px",
+                "color": "#2e7d32",
+                "marginTop": "10px"
+              }
+            }
+          }
+        }
       }
     },
-    "_emergencyCharging": {
-      "type": "divider",
+    "_tabSystem": {
+      "type": "panel",
       "label": {
-        "en": "Emergency Charging",
-        "de": "Notladen"
-      }
-    },
-    "_emergencyHint": {
-      "type": "staticText",
-      "text": {
-        "en": "🚨 Emergency charging is triggered by: critical pack voltage, device flags (lowVoltageBlock/fullChargeNeeded). It has highest priority and ignores grid target!",
-        "de": "🚨 Notladen wird aktiviert bei: kritischer Pack-Spannung, Geräte-Flags (lowVoltageBlock/fullChargeNeeded). Hat höchste Priorität und ignoriert Grid-Target!"
+        "en": "⚙️ System",
+        "de": "⚙️ System"
       },
-      "sm": 12,
-      "style": {
-        "backgroundColor": "#fff3e0",
-        "padding": "10px",
-        "borderRadius": "4px",
-        "fontSize": "0.9em",
-        "color": "#e65100"
+      "items": {
+        "_panelLogging": {
+          "type": "panel",
+          "label": {
+            "en": "Logging",
+            "de": "Protokollierung"
+          },
+          "collapsible": false,
+          "items": {
+            "logLevel": {
+              "type": "select",
+              "label": {
+                "en": "Log level",
+                "de": "Log-Level"
+              },
+              "sm": 12,
+              "options": [
+                { "label": "Error", "value": "error" },
+                { "label": "Warn", "value": "warn" },
+                { "label": "Info", "value": "info" },
+                { "label": "Debug", "value": "debug" }
+              ],
+              "help": {
+                "en": "Verbosity of adapter logging (debug = very detailed)",
+                "de": "Ausführlichkeit der Adapter-Protokollierung (debug = sehr detailliert)"
+              }
+            }
+          }
+        }
       }
-    },
-    "useLowVoltageBlock": {
-      "type": "checkbox",
-      "label": {
-        "en": "Respect device low voltage flag",
-        "de": "Geräte-Unterspannungs-Flag beachten"
-      },
-      "sm": 6,
-      "help": {
-        "en": "When device reports 'lowVoltageBlock=true', stop discharge immediately (device protection)",
-        "de": "Wenn das Gerät 'lowVoltageBlock=true' meldet, Entladung sofort stoppen (Geräteschutz)"
-      }
-    },
-    "useFullChargeNeeded": {
-      "type": "checkbox",
-      "label": {
-        "en": "Respect device full charge request",
-        "de": "Geräte-Vollladungs-Anfrage beachten"
-      },
-      "sm": 6,
-      "help": {
-        "en": "When device reports 'fullChargeNeeded=true', force full charge (battery calibration)",
-        "de": "Wenn das Gerät 'fullChargeNeeded=true' meldet, Vollladung erzwingen (Akku-Kalibrierung)"
-      }
-    },
-    "emergencyChargeVoltageV": {
-      "type": "number",
-      "label": {
-        "en": "Emergency charge trigger voltage (V)",
-        "de": "Notlade-Spannung (V)"
-      },
-      "sm": 6,
-      "min": 2.5,
-      "max": 3.0,
-      "step": 0.1,
-      "help": {
-        "en": "When ANY pack drops below this critical voltage, emergency charging starts (typical: 2.8V for LFP)",
-        "de": "Wenn IRGENDEIN Pack unter diese kritische Spannung fällt, wird Notladen gestartet (typisch: 2.8V für LFP)"
-      }
-    },
-    "emergencyChargePowerW": {
-      "type": "number",
-      "label": {
-        "en": "Emergency charge power (W)",
-        "de": "Notlade-Leistung (W)"
-      },
-      "sm": 6,
-      "min": 0,
-      "max": 3000,
-      "help": {
-        "en": "Charging power during emergency mode (ignores grid target)",
-        "de": "Ladeleistung während des Notladens (ignoriert Grid-Target)"
-      }
-    },
-    "emergencyExitSoc": {
-      "type": "number",
-      "label": {
-        "en": "Emergency exit SOC (%)",
-        "de": "Notlade-Ende SOC (%)"
-      },
-      "sm": 6,
-      "min": 5,
-      "max": 50,
-      "help": {
-        "en": "At this SOC, emergency charging ends and recovery mode begins",
-        "de": "Bei diesem SOC endet das Notladen und Recovery-Mode beginnt"
-      }
-    },
-    "emergencyRecoverySoc": {
-      "type": "number",
-      "label": {
-        "en": "Recovery end SOC (%)",
-        "de": "Recovery-Ende SOC (%)"
-      },
-      "sm": 6,
-      "min": 10,
-      "max": 80,
-      "help": {
-        "en": "Until this SOC, only charging is allowed (no discharge). Prevents endless emergency cycles",
-        "de": "Bis zu diesem SOC ist nur Laden erlaubt (kein Entladen). Verhindert Endlos-Zyklus nach Notladen"
-      }
-    },
-    "_recoveryHint": {
-      "type": "staticText",
-      "text": {
-        "en": "🔄 Recovery phase: After emergency charging (at exit SOC), battery continues charging with normal grid target but discharge is blocked until recovery SOC is reached. Prevents endless emergency cycles.",
-        "de": "🔄 Recovery-Phase: Nach Notladen (ab Exit-SOC) lädt der Akku weiter mit normalem Grid-Target, aber Entladung ist blockiert bis Recovery-SOC erreicht ist. Verhindert Endlos-Notlade-Zyklen."
-      },
-      "sm": 12,
-      "style": {
-        "backgroundColor": "#e8f5e9",
-        "padding": "10px",
-        "borderRadius": "4px",
-        "fontSize": "0.9em",
-        "color": "#2e7d32"
-      }
-    },
-    "_tuning": {
-      "type": "divider",
-      "label": {
-        "en": "Tuning / Advanced",
-        "de": "Feinabstimmung / Erweitert"
-      }
-    },
-    "hysteresisW": {
-      "type": "number",
-      "label": {
-        "en": "Hysteresis (W)",
-        "de": "Hysterese (W)"
-      },
-      "sm": 4,
-      "min": 0,
-      "max": 500,
-      "help": {
-        "en": "Minimum power change required to update (avoids frequent small adjustments)",
-        "de": "Minimale Leistungsänderung erforderlich für Update (vermeidet häufige kleine Anpassungen)"
-      }
-    },
-    "rampChargeWPerCycle": {
-      "type": "number",
-      "label": {
-        "en": "Charge ramp limit (W/cycle)",
-        "de": "Lade-Rampe (W/Zyklus)"
-      },
-      "sm": 6,
-      "min": 0,
-      "max": 2000,
-      "help": {
-        "en": "Maximum charge power increase per cycle (0 = unlimited). Controls how fast charging ramps up when grid feed-in increases",
-        "de": "Maximale Lade-Erhöhung pro Zyklus (0 = unbegrenzt). Steuert wie schnell die Ladeleistung bei steigender Einspeisung erhöht wird"
-      }
-    },
-    "rampDischargeWPerCycle": {
-      "type": "number",
-      "label": {
-        "en": "Discharge ramp limit (W/cycle)",
-        "de": "Entlade-Rampe (W/Zyklus)"
-      },
-      "sm": 6,
-      "min": 0,
-      "max": 2000,
-      "help": {
-        "en": "Maximum discharge power increase per cycle (0 = unlimited). Controls how fast discharging ramps up when grid consumption increases",
-        "de": "Maximale Entlade-Erhöhung pro Zyklus (0 = unbegrenzt). Steuert wie schnell die Entladeleistung bei steigendem Verbrauch erhöht wird"
-      }
-    },
-    "_tuningHint": {
-      "type": "staticText",
-      "text": {
-        "en": "⚙️ Ramp limits control power change speed. Higher = faster response (more aggressive), lower = smoother (slower). Separate control for charging and discharging allows optimized behavior.",
-        "de": "⚙️ Rampen-Limits steuern die Geschwindigkeit der Leistungsänderung. Höher = schnellere Reaktion (aggressiver), niedriger = sanfter (langsamer). Getrennte Steuerung für Laden und Entladen ermöglicht optimiertes Verhalten."
-      },
-      "sm": 12,
-      "style": {
-        "fontSize": "0.9em",
-        "fontStyle": "italic",
-        "color": "#555"
-      }
-    },
-    "_switchProtection": {
-      "type": "divider",
-      "label": {
-        "en": "Switching Protection",
-        "de": "Umschalt-Schutz"
-      }
-    },
-    "feedInThresholdW": {
-      "type": "number",
-      "label": {
-        "en": "Feed-in threshold (W)",
-        "de": "Einspeise-Schwellwert (W)"
-      },
-      "sm": 6,
-      "min": -5000,
-      "max": 0,
-      "help": {
-        "en": "Start charging only when grid feed-in exceeds this threshold. Negative value (e.g. -150W = 150W feed-in)",
-        "de": "Laden erst starten wenn Netz-Einspeisung diesen Schwellwert überschreitet. Negativer Wert (z.B. -150W = 150W Einspeisung)"
-      }
-    },
-    "feedInDelayTicks": {
-      "type": "number",
-      "label": {
-        "en": "Feed-in delay (ticks)",
-        "de": "Einspeise-Verzögerung (Ticks)"
-      },
-      "sm": 6,
-      "min": 0,
-      "max": 20,
-      "help": {
-        "en": "Number of cycles feed-in must persist before switching to charging. Prevents frequent switching on short grid fluctuations (1 tick = update interval)",
-        "de": "Anzahl Zyklen die Einspeisung anhalten muss, bevor auf Laden umgeschaltet wird. Verhindert häufiges Schalten bei kurzen Netzschwankungen (1 Tick = Update-Intervall)"
-      }
-    },
-    "dischargeThresholdW": {
-      "type": "number",
-      "label": {
-        "en": "Discharge threshold (W)",
-        "de": "Entlade-Schwellwert (W)"
-      },
-      "sm": 6,
-      "min": 0,
-      "max": 5000,
-      "help": {
-        "en": "Stop charging and start discharging only when grid draw exceeds this threshold. Positive value (e.g. 200W = 200W grid draw)",
-        "de": "Laden stoppen und Entladen erst starten wenn Netz-Bezug diesen Schwellwert überschreitet. Positiver Wert (z.B. 200W = 200W Netzbezug)"
-      }
-    },
-    "dischargeDelayTicks": {
-      "type": "number",
-      "label": {
-        "en": "Discharge delay (ticks)",
-        "de": "Entlade-Verzögerung (Ticks)"
-      },
-      "sm": 6,
-      "min": 0,
-      "max": 20,
-      "help": {
-        "en": "Number of cycles grid draw must persist before switching from charging to discharging. Prevents oscillation during cloudy conditions (1 tick = update interval)",
-        "de": "Anzahl Zyklen die Netzbezug anhalten muss, bevor von Laden auf Entladen umgeschaltet wird. Verhindert Oszillation bei Bewölkung (1 Tick = Update-Intervall)"
-      }
-    },
-    "_switchProtectionHint": {
-      "type": "staticText",
-      "text": {
-        "en": "⚡ Dual-direction switching protection: Battery only switches to charging when feed-in is sustained above threshold AND only switches to discharging when grid draw is sustained above threshold. Protects hardware relays from excessive wear, especially during cloudy/variable conditions!",
-        "de": "⚡ Bidirektionaler Schaltschutz: Batterie schaltet nur auf Laden bei nachhaltiger Einspeisung über Schwellwert UND nur auf Entladen bei nachhaltigem Netzbezug über Schwellwert. Schützt Hardware-Relais vor Verschleiß, besonders bei bewölkten/wechselhaften Bedingungen!"
-      },
-      "sm": 12,
-      "style": {
-        "backgroundColor": "#fff3e0",
-        "padding": "10px",
-        "borderRadius": "4px",
-        "fontSize": "0.9em",
-        "color": "#e65100"
-      }
-    },
-    "_logging": {
-      "type": "divider",
-      "label": {
-        "en": "Logging",
-        "de": "Protokollierung"
-      }
-    },
-    "logLevel": {
-      "type": "select",
-      "label": {
-        "en": "Log level",
-        "de": "Log-Level"
-      },
-      "sm": 12,
-      "options": [
-        { "label": "Error", "value": "error" },
-        { "label": "Warn", "value": "warn" },
-        { "label": "Info", "value": "info" },
-        { "label": "Debug", "value": "debug" }
-      ]
     }
   }
 }

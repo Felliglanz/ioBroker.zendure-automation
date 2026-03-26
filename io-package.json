@@ -2,8 +2,12 @@
   "common": {
     "name": "zendure-automation",
     "title": "Zendure Automation",
-    "version": "0.5.3",
+    "version": "0.5.4",
     "news": {
+      "0.5.4": {
+        "en": "Restructured admin UI: Logical grouping with tabs and collapsible panels (Basic Settings, Zero Grid Control, Relay Protection, Battery Protection, Emergency & Recovery, System). Improved clarity and better visual organization.",
+        "de": "Admin UI umstrukturiert: Logische Gruppierung mit Tabs und zusammenklappbaren Panels (Basis-Einstellungen, Nulleinspeisung, Relais-Schutz, Akku-Schutz, Notladen & Recovery, System). Verbesserte Übersichtlichkeit und bessere visuelle Organisation."
+      },
       "0.5.3": {
         "en": "Fixed ramp logic: Now uses mode-based ramp limits (discharge ramp when discharging, charge ramp when charging) instead of change-direction based limits. Fixes slow response when reducing discharge power.",
         "de": "Ramp-Logik korrigiert: Verwendet jetzt modi-basierte Rampen-Limits (Entlade-Rampe beim Entladen, Lade-Rampe beim Laden) statt richtungs-basierter Limits. Behebt langsame Reaktion beim Reduzieren der Entladeleistung."
