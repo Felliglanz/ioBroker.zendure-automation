@@ -37,7 +37,6 @@
             "en": "🔌 Device Connection (Required)",
             "de": "🔌 Geräte-Verbindung (Erforderlich)"
           },
-          "collapsible": false,
           "items": {
             "zendureSolarflowInstance": {
               "type": "text",
@@ -98,7 +97,6 @@
             "en": "📊 Grid Power Meter (Required)",
             "de": "📊 Netz-Stromzähler (Erforderlich)"
           },
-          "collapsible": false,
           "items": {
             "powerMeterDp": {
               "type": "objectId",
@@ -144,7 +142,6 @@
             "en": "Target & Timing",
             "de": "Ziel & Timing"
           },
-          "collapsible": false,
           "items": {
             "targetGridPowerW": {
               "type": "number",
@@ -182,7 +179,6 @@
             "en": "Regulation Parameters",
             "de": "Regelparameter"
           },
-          "collapsible": false,
           "items": {
             "hysteresisW": {
               "type": "number",
@@ -251,7 +247,6 @@
             "en": "Enable/Disable",
             "de": "Aktivieren/Deaktivieren"
           },
-          "collapsible": false,
           "items": {
             "enableCharge": {
               "type": "checkbox",
@@ -309,7 +304,6 @@
             "en": "Transition to Charging",
             "de": "Umschaltung auf Laden"
           },
-          "collapsible": false,
           "items": {
             "feedInThresholdW": {
               "type": "number",
@@ -363,7 +357,6 @@
             "en": "Transition to Discharging",
             "de": "Umschaltung auf Entladen"
           },
-          "collapsible": false,
           "items": {
             "dischargeThresholdW": {
               "type": "number",
@@ -426,7 +419,6 @@
             "en": "Power Limits",
             "de": "Leistungsgrenzen"
           },
-          "collapsible": false,
           "items": {
             "maxChargePowerW": {
               "type": "number",
@@ -464,7 +456,6 @@
             "en": "Discharge Protection Mode",
             "de": "Entladeschutz-Modus"
           },
-          "collapsible": false,
           "items": {
             "dischargeProtectionMode": {
               "type": "select",
@@ -502,7 +493,6 @@
             "en": "SOC Protection (when mode = soc)",
             "de": "SOC-Schutz (wenn Modus = soc)"
           },
-          "collapsible": false,
           "items": {
             "minBatterySoc": {
               "type": "number",
@@ -540,7 +530,6 @@
             "en": "Voltage Protection (when mode = voltage)",
             "de": "Spannungs-Schutz (wenn Modus = voltage)"
           },
-          "collapsible": false,
           "items": {
             "minBatteryVoltageV": {
               "type": "number",
@@ -618,7 +607,6 @@
             "en": "Emergency Triggers",
             "de": "Notlade-Auslöser"
           },
-          "collapsible": false,
           "items": {
             "useLowVoltageBlock": {
               "type": "checkbox",
@@ -681,7 +669,6 @@
             "en": "Recovery Settings",
             "de": "Recovery-Einstellungen"
           },
-          "collapsible": false,
           "items": {
             "emergencyExitSoc": {
               "type": "number",
@@ -744,7 +731,6 @@
             "en": "Logging",
             "de": "Protokollierung"
           },
-          "collapsible": false,
           "items": {
             "logLevel": {
               "type": "select",
