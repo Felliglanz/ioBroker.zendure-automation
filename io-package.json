@@ -2,8 +2,12 @@
   "common": {
     "name": "zendure-automation",
     "title": "Zendure Automation",
-    "version": "0.5.2",
+    "version": "0.5.3",
     "news": {
+      "0.5.3": {
+        "en": "Fixed ramp logic: Now uses mode-based ramp limits (discharge ramp when discharging, charge ramp when charging) instead of change-direction based limits. Fixes slow response when reducing discharge power.",
+        "de": "Ramp-Logik korrigiert: Verwendet jetzt modi-basierte Rampen-Limits (Entlade-Rampe beim Entladen, Lade-Rampe beim Laden) statt richtungs-basierter Limits. Behebt langsame Reaktion beim Reduzieren der Entladeleistung."
+      },
       "0.5.2": {
         "en": "Fixed regulation during mode-switching delay: System now goes to 0W (idle) instead of continuing old power level, preventing grid feed-in",
         "de": "Regelung während Mode-Switching-Verzögerung korrigiert: System geht jetzt auf 0W (idle) statt alten Leistungswert beizubehalten, verhindert Netzeinspeisung"

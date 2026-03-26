@@ -475,23 +475,53 @@ class ZendureAutomation extends utils.Adapter {
             // Apply ramp rate limits (only if no safety limit is active)
             // Ramp limits prevent sudden power changes during normal operation
             // but NEVER override safety limits
+            // 
+            // IMPORTANT: Ramp limit is chosen based on CURRENT MODE, not direction of change
+            // - If currently discharging (>0): use discharge ramp for all changes (up or down)
+            // - If currently charging (<0): use charge ramp for all changes (up or down)
+            // This ensures fast response when discharging (600W) and gentle regulation when charging (100W)
             if (!safetyLimitActive) {
                 const rampChargeLimit = this.config.rampChargeWPerCycle || 100;
                 const rampDischargeLimit = this.config.rampDischargeWPerCycle || 400;
 
                 const powerChange = newBatteryPowerW - lastSetPowerW;
+                const isCurrentlyInDischargeMode = lastSetPowerW > 0;
+                const isCurrentlyInChargeMode = lastSetPowerW < 0;
 
-                if (powerChange > 0) {
-                    // Power becoming more positive = more discharge (or less charge)
-                    if (powerChange > rampDischargeLimit && Math.abs(lastSetPowerW) > 0) {
-                        newBatteryPowerW = lastSetPowerW + rampDischargeLimit;
-                        this.log.debug(`Discharge ramp limited to ${rampDischargeLimit}W/cycle`);
+                if (isCurrentlyInDischargeMode) {
+                    // Currently discharging: use discharge ramp for ALL changes (up or down)
+                    if (Math.abs(powerChange) > rampDischargeLimit) {
+                        if (powerChange > 0) {
+                            // Increasing discharge
+                            newBatteryPowerW = lastSetPowerW + rampDischargeLimit;
+                        } else {
+                            // Decreasing discharge (toward zero)
+                            newBatteryPowerW = lastSetPowerW - rampDischargeLimit;
+                        }
+                        this.log.debug(`Discharge ramp applied: ${rampDischargeLimit}W/cycle (change: ${powerChange.toFixed(0)}W)`);
                     }
-                } else if (powerChange < 0) {
-                    // Power becoming more negative = more charge (or less discharge)
-                    if (Math.abs(powerChange) > rampChargeLimit && Math.abs(lastSetPowerW) > 0) {
-                        newBatteryPowerW = lastSetPowerW - rampChargeLimit;
-                        this.log.debug(`Charge ramp limited to ${rampChargeLimit}W/cycle`);
+                } else if (isCurrentlyInChargeMode) {
+                    // Currently charging: use charge ramp for ALL changes (up or down)
+                    if (Math.abs(powerChange) > rampChargeLimit) {
+                        if (powerChange > 0) {
+                            // Decreasing charge (toward zero)
+                            newBatteryPowerW = lastSetPowerW + rampChargeLimit;
+                        } else {
+                            // Increasing charge
+                            newBatteryPowerW = lastSetPowerW - rampChargeLimit;
+                        }
+                        this.log.debug(`Charge ramp applied: ${rampChargeLimit}W/cycle (change: ${powerChange.toFixed(0)}W)`);
+                    }
+                } else {
+                    // Starting from zero/standby: use appropriate ramp based on target direction
+                    if (powerChange > 0 && Math.abs(powerChange) > rampDischargeLimit) {
+                        // Starting discharge
+                        newBatteryPowerW = rampDischargeLimit;
+                        this.log.debug(`Starting discharge with ramp: ${rampDischargeLimit}W/cycle`);
+                    } else if (powerChange < 0 && Math.abs(powerChange) > rampChargeLimit) {
+                        // Starting charge
+                        newBatteryPowerW = -rampChargeLimit;
+                        this.log.debug(`Starting charge with ramp: ${rampChargeLimit}W/cycle`);
                     }
                 }
             } else {
