@@ -223,20 +223,20 @@ class ZendureAutomation extends utils.Adapter {
 
             // Check emergency recovery status (persistent, both SOC and Voltage modes)
             // This blocks discharge after ANY emergency condition until full recovery
+            // Mode is NOT set here - recovery just blocks discharge, normal charging continues
             if (this._inEmergencyRecovery) {
                 const recoverySoc = this.config.emergencyRecoverySoc || 30;
                 if (batterySoc >= recoverySoc) {
                     this.log.info(`✓ Emergency recovery complete (${batterySoc}% >= ${recoverySoc}%), resuming normal operation`);
                     this._inEmergencyRecovery = false;
                     await this.setStateAsync('status.emergencyRecoveryActive', false, true);
-                    await this.setStateAsync('status.mode', 'standby', true);
                 } else {
                     this.log.debug(`Emergency recovery active (${batterySoc}% < ${recoverySoc}%), discharge blocked`);
-                    await this.setStateAsync('status.mode', 'recovery', true);
                 }
             }
 
             // Check voltage recovery mode status (Voltage-based)
+            // Mode is NOT set here - recovery just blocks discharge, normal charging continues
             if (this._inVoltageRecovery) {
                 const protectionMode = this.config.dischargeProtectionMode || 'soc';
                 if (protectionMode === 'voltage') {
@@ -250,10 +250,8 @@ class ZendureAutomation extends utils.Adapter {
                             this.log.info(`✓ Voltage recovery complete (${minPackVoltageV.toFixed(2)}V >= ${recoveryVoltage.toFixed(2)}V), resuming discharge`);
                             this._inVoltageRecovery = false;
                             await this.setStateAsync('status.voltageRecoveryActive', false, true);
-                            await this.setStateAsync('status.mode', 'standby', true);
                         } else {
                             this.log.debug(`Voltage recovery active (${minPackVoltageV.toFixed(2)}V < ${recoveryVoltage.toFixed(2)}V), discharge blocked`);
-                            await this.setStateAsync('status.mode', 'recovery', true);
                         }
                     }
                 } else {
@@ -585,13 +583,22 @@ class ZendureAutomation extends utils.Adapter {
             // Write to device (only if changed)
             await this.setBatteryPower(newBatteryPowerW);
 
-            // Update mode status
+            // Update mode status based on actual power and recovery state
             let mode = 'standby';
             if (newBatteryPowerW < -10) {
                 mode = 'charging';
             } else if (newBatteryPowerW > 10) {
                 mode = 'discharging';
             }
+            
+            // Override mode display if in recovery (but still show actual action)
+            if (this._inEmergencyRecovery || this._inVoltageRecovery) {
+                if (mode === 'standby') {
+                    mode = 'recovery'; // Show recovery only when idle
+                }
+                // If charging, show 'charging' (user sees battery is being charged)
+            }
+            
             await this.setStateAsync('status.mode', mode, true);
 
         } catch (err) {
