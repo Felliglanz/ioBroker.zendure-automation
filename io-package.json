@@ -290,6 +290,19 @@
       "native": {}
     },
     {
+      "_id": "status.emergencyRecoveryActive",
+      "type": "state",
+      "common": {
+        "name": "Emergency recovery mode active (persistent)",
+        "type": "boolean",
+        "role": "indicator",
+        "read": true,
+        "write": false,
+        "def": false
+      },
+      "native": {}
+    },
+    {
       "_id": "status.lastUpdate",
       "type": "state",
       "common": {
