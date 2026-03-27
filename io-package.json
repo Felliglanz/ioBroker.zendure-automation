@@ -2,7 +2,7 @@
   "common": {
     "name": "zendure-automation",
     "title": "Zendure Automation",
-    "version": "0.5.5",
+    "version": "0.5.6",
     "news": {
       "0.5.5": {
         "en": "Critical fix: Emergency recovery now persistent across restarts. Prevents premature discharge after emergency conditions in both SOC and voltage modes.",

@@ -311,18 +311,24 @@ class ZendureAutomation extends utils.Adapter {
                         );
                         newBatteryPowerW = Math.max(0, newBatteryPowerW); // Allow regulation but block charging (negative values)
                     } else {
-                        // Sustained feed-in confirmed - check if battery power is near zero before allowing mode switch
-                        const modeSwitchToleranceW = 10; // Allow mode switch if battery power is within ±10W of zero
-                        if (Math.abs(currentBatteryPowerW) > modeSwitchToleranceW) {
-                            this.log.debug(
-                                `Waiting for battery power near 0W before charge transition (current: ${currentBatteryPowerW}W)`
-                            );
-                            newBatteryPowerW = Math.max(0, newBatteryPowerW); // Force toward zero but block charging
+                        // Sustained feed-in confirmed
+                        // Only check battery power tolerance when switching from active discharging
+                        // (to protect relay). No check needed from standby.
+                        if (currentlyDischarging) {
+                            const modeSwitchToleranceW = 10;
+                            if (Math.abs(currentBatteryPowerW) > modeSwitchToleranceW) {
+                                this.log.debug(
+                                    `Waiting for battery power near 0W before relay switch (current: ${currentBatteryPowerW}W)`
+                                );
+                                newBatteryPowerW = Math.max(0, newBatteryPowerW); // Force toward zero but block charging
+                            } else {
+                                this.log.debug(
+                                    `✓ Feed-in sustained, battery at ${currentBatteryPowerW}W (~0W), relay safe to switch`
+                                );
+                            }
                         } else {
-                            // Battery power near zero - safe to switch relay
-                            this.log.debug(
-                                `✓ Feed-in sustained and battery at ${currentBatteryPowerW}W (~0W), allowing charge: ${newBatteryPowerW}W`
-                            );
+                            // Starting from standby - no relay switch needed, allow immediate charging
+                            this.log.debug(`✓ Feed-in sustained, allowing charge from standby: ${newBatteryPowerW}W`);
                         }
                     }
                 } else {
@@ -351,17 +357,17 @@ class ZendureAutomation extends utils.Adapter {
                         );
                         newBatteryPowerW = Math.min(0, newBatteryPowerW); // Allow regulation but block discharging (positive values)
                     } else {
-                        // Sustained grid draw confirmed - check if battery power is near zero before allowing mode switch
-                        const modeSwitchToleranceW = 10; // Allow mode switch if battery power is within ±10W of zero
+                        // Sustained grid draw confirmed - always check battery power tolerance
+                        // when switching from charge to discharge (relay protection)
+                        const modeSwitchToleranceW = 10;
                         if (Math.abs(currentBatteryPowerW) > modeSwitchToleranceW) {
                             this.log.debug(
-                                `Waiting for battery power near 0W before discharge transition (current: ${currentBatteryPowerW}W)`
+                                `Waiting for battery power near 0W before relay switch (current: ${currentBatteryPowerW}W)`
                             );
                             newBatteryPowerW = Math.min(0, newBatteryPowerW); // Force toward zero but block discharging
                         } else {
-                            // Battery power near zero - safe to switch relay
                             this.log.debug(
-                                `✓ Grid draw sustained and battery at ${currentBatteryPowerW}W (~0W), allowing discharge: ${newBatteryPowerW}W`
+                                `✓ Grid draw sustained, battery at ${currentBatteryPowerW}W (~0W), relay safe to switch`
                             );
                         }
                     }
