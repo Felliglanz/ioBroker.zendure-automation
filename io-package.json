@@ -2,8 +2,12 @@
   "common": {
     "name": "zendure-automation",
     "title": "Zendure Automation",
-    "version": "0.5.4",
+    "version": "0.5.5",
     "news": {
+      "0.5.5": {
+        "en": "Critical fix: Emergency recovery now persistent across restarts. Prevents premature discharge after emergency conditions in both SOC and voltage modes.",
+        "de": "Kritischer Fix: Emergency Recovery jetzt persistent über Neustarts. Verhindert vorzeitige Entladung nach Notfall-Bedingungen in beiden Modi (SOC und Spannung)."
+      },
       "0.5.4": {
         "en": "Restructured admin UI: Logical grouping with tabs and collapsible panels (Basic Settings, Zero Grid Control, Relay Protection, Battery Protection, Emergency & Recovery, System). Improved clarity and better visual organization.",
         "de": "Admin UI umstrukturiert: Logische Gruppierung mit Tabs und zusammenklappbaren Panels (Basis-Einstellungen, Nulleinspeisung, Relais-Schutz, Akku-Schutz, Notladen & Recovery, System). Verbesserte Übersichtlichkeit und bessere visuelle Organisation."
