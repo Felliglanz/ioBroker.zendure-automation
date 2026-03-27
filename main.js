@@ -33,8 +33,8 @@ class ZendureAutomation extends utils.Adapter {
         this._lastWrittenLimit = null;
         this._isRunning = false;
         this._deviceBasePath = null;
-        this._inRecoveryMode = false; // Recovery mode after emergency charging (SOC-based)
-        this._inVoltageRecovery = false; // Voltage recovery mode after low voltage cutoff
+        this._inEmergencyRecovery = false; // Persistent emergency recovery mode (survives restarts, both SOC and Voltage)
+        this._inVoltageRecovery = false; // Voltage recovery mode after low voltage cutoff (voltage mode only)
         this._feedInCounter = 0; // Counter for sustained feed-in detection (Discharge→Charge)
         this._dischargeCounter = 0; // Counter for sustained grid draw detection (Charge→Discharge)
     }
@@ -69,6 +69,14 @@ class ZendureAutomation extends utils.Adapter {
         await this.setStateAsync('control.targetGridPowerW', this.config.targetGridPowerW || 0, true);
         await this.setStateAsync('status.mode', 'idle', true);
         await this.setStateAsync('info.connection', true, true);
+
+        // Restore emergency recovery state from persistent storage (survives restarts)
+        // This flag protects against discharge after emergency conditions in BOTH modes
+        const emergencyRecoveryState = await this.getStateAsync('status.emergencyRecoveryActive');
+        if (emergencyRecoveryState && emergencyRecoveryState.val === true) {
+            this._inEmergencyRecovery = true;
+            this.log.warn('🔒 Restored emergency recovery state from previous session - discharge blocked');
+        }
 
         // Restore voltage recovery state from persistent storage (survives restarts)
         const voltageRecoveryState = await this.getStateAsync('status.voltageRecoveryActive');
@@ -183,39 +191,47 @@ class ZendureAutomation extends utils.Adapter {
             const emergencyState = await this.checkEmergencyConditions(batterySoc);
             
             if (emergencyState.isEmergency) {
-                this.log.warn(`🚨 EMERGENCY MODE ACTIVE: ${emergencyState.reason}`);
+                // EMERGENCY DETECTED - activate persistent recovery mode immediately
+                if (!this._inEmergencyRecovery) {
+                    this.log.warn(`🚨 EMERGENCY TRIGGERED: ${emergencyState.reason}`);
+                    this.log.warn(`🔒 Activating persistent emergency recovery mode (survives restarts)`);
+                    this._inEmergencyRecovery = true;
+                    await this.setStateAsync('status.emergencyRecoveryActive', true, true);
+                }
+                
                 await this.setStateAsync('status.mode', 'emergency-charging', true);
                 await this.setStateAsync('status.emergencyReason', emergencyState.reason, true);
                 
-                // Check if we should exit emergency and enter recovery
+                // Check if we can exit emergency charging phase
                 const emergencyExitSoc = this.config.emergencyExitSoc || 20;
                 if (batterySoc >= emergencyExitSoc) {
-                    this.log.info(`✓ Emergency exit SOC reached (${batterySoc}% >= ${emergencyExitSoc}%), entering recovery mode`);
-                    this._inRecoveryMode = true;
+                    this.log.info(`✓ Emergency exit SOC reached (${batterySoc}% >= ${emergencyExitSoc}%), entering recovery phase`);
                     await this.setStateAsync('status.mode', 'recovery', true);
                     await this.setStateAsync('status.emergencyReason', '', true);
-                    // Continue to normal automation (but discharge will be blocked)
+                    // Continue to normal automation (but discharge blocked by emergencyRecoveryActive)
                 } else {
-                    // Continue emergency charging
+                    // Continue emergency charging until exit SOC
                     const emergencyChargePower = -(this.config.emergencyChargePowerW || 800);
-                    this.log.warn(`⚡ Forcing emergency charge at ${Math.abs(emergencyChargePower)}W (SOC: ${batterySoc}%)`);
+                    this.log.warn(`⚡ Emergency charging at ${Math.abs(emergencyChargePower)}W (SOC: ${batterySoc}% → ${emergencyExitSoc}%)`);
                     await this.setBatteryPower(emergencyChargePower);
                     return; // Skip normal automation cycle
                 }
             } else {
-                // Clear emergency reason when not in emergency
+                // Clear emergency reason when not in active emergency
                 await this.setStateAsync('status.emergencyReason', '', true);
             }
 
-            // Check recovery mode status (SOC-based)
-            if (this._inRecoveryMode) {
+            // Check emergency recovery status (persistent, both SOC and Voltage modes)
+            // This blocks discharge after ANY emergency condition until full recovery
+            if (this._inEmergencyRecovery) {
                 const recoverySoc = this.config.emergencyRecoverySoc || 30;
                 if (batterySoc >= recoverySoc) {
-                    this.log.info(`✓ Recovery complete (${batterySoc}% >= ${recoverySoc}%), resuming normal operation`);
-                    this._inRecoveryMode = false;
+                    this.log.info(`✓ Emergency recovery complete (${batterySoc}% >= ${recoverySoc}%), resuming normal operation`);
+                    this._inEmergencyRecovery = false;
+                    await this.setStateAsync('status.emergencyRecoveryActive', false, true);
                     await this.setStateAsync('status.mode', 'standby', true);
                 } else {
-                    this.log.debug(`Recovery mode active (${batterySoc}% < ${recoverySoc}%), discharge blocked`);
+                    this.log.debug(`Emergency recovery active (${batterySoc}% < ${recoverySoc}%), discharge blocked`);
                     await this.setStateAsync('status.mode', 'recovery', true);
                 }
             }
@@ -402,9 +418,9 @@ class ZendureAutomation extends utils.Adapter {
             
             // Apply discharge protection based on selected mode
             if (newBatteryPowerW > 0) { // Only when discharging
-                // RECOVERY MODE: Block all discharging
-                if (this._inRecoveryMode) {
-                    this.log.debug(`Recovery mode active, preventing discharge until ${this.config.emergencyRecoverySoc || 30}% SOC`);
+                // EMERGENCY RECOVERY MODE: Block all discharging (persistent, both SOC and Voltage modes)
+                if (this._inEmergencyRecovery) {
+                    this.log.debug(`Emergency recovery active, preventing discharge until ${this.config.emergencyRecoverySoc || 30}% SOC`);
                     newBatteryPowerW = 0;
                     safetyLimitActive = true;
                 }
