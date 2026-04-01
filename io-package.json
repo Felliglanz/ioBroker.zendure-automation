@@ -2,8 +2,12 @@
   "common": {
     "name": "zendure-automation",
     "title": "Zendure Automation",
-    "version": "0.5.7",
+    "version": "0.5.8",
     "news": {
+      "0.5.8": {
+        "en": "Improved power validation: Accepts device ramping behavior. Validation succeeds if device is charging (even while ramping up), prevents false failures during gradual power increase.",
+        "de": "Verbesserte Leistungsvalidierung: Akzeptiert Geräte-Rampverhalten. Validierung erfolgreich wenn Gerät lädt (auch während Hochrampen), verhindert Fehlalarme bei gradueller Leistungssteigerung."
+      },
       "0.5.7": {
         "en": "Added non-blocking power setpoint validation for charging. Validates in next cycle using normal tick timer, automatically retries on communication failures. Only for charging (discharge changes too frequently).",
         "de": "Non-blocking Leistungs-Validierung beim Laden hinzugefügt. Validiert im nächsten Zyklus mit normalem Tick-Timer, wiederholt automatisch bei Kommunikationsfehlern. Nur beim Laden (Entladung ändert sich zu oft)."

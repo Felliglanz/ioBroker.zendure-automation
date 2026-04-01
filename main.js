@@ -172,13 +172,18 @@ class ZendureAutomation extends utils.Adapter {
                     const deviation = Math.abs(actualPowerW - expectedPowerW);
                     const toleranceW = this.config.setPowerValidationToleranceW || 50;
                     
-                    if (deviation <= toleranceW) {
-                        // Setpoint accepted by device
+                    // Accept if device is charging (even if still ramping toward target)
+                    // This prevents false failures while device ramps up power gradually
+                    const isCharging = actualPowerW < -50;
+                    const withinTolerance = deviation <= toleranceW;
+                    
+                    if (withinTolerance || isCharging) {
+                        // Setpoint accepted - device is responding (either at target or ramping)
                         this._pendingValidation = false;
                         this._validationRetryCount = 0;
-                        this.log.debug(`✓ Charge setpoint validated: ${expectedPowerW}W (actual: ${actualPowerW}W, deviation: ${deviation}W)`);
+                        this.log.debug(`✓ Charge setpoint validated: ${expectedPowerW}W (actual: ${actualPowerW}W, ${withinTolerance ? 'matched' : 'ramping'})`);
                     } else {
-                        // Setpoint not accepted, retry needed
+                        // Device not responding (still at 0W or discharging) - communication issue
                         const maxRetries = this.config.setPowerMaxRetries || 3;
                         this._validationRetryCount++;
                         
