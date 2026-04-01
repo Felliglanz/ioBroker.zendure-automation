@@ -37,6 +37,8 @@ class ZendureAutomation extends utils.Adapter {
         this._inVoltageRecovery = false; // Voltage recovery mode after low voltage cutoff (voltage mode only)
         this._feedInCounter = 0; // Counter for sustained feed-in detection (Discharge→Charge)
         this._dischargeCounter = 0; // Counter for sustained grid draw detection (Charge→Discharge)
+        this._pendingValidation = false; // Flag: power setpoint needs validation in next cycle
+        this._validationRetryCount = 0; // Retry counter for failed validations
     }
 
     /**
@@ -157,6 +159,45 @@ class ZendureAutomation extends utils.Adapter {
                 await this.setStateAsync('status.mode', 'idle', true);
                 return;
             }
+
+            // ========== POWER SETPOINT VALIDATION (NON-BLOCKING) ==========
+            // Validate previous cycle's power setpoint (if pending)
+            // Only for charging (negative values), discharge changes too frequently
+            if (this._pendingValidation && this._lastWrittenLimit !== null) {
+                const actualPowerW = await this.getCurrentBatteryPowerW();
+                const expectedPowerW = this._lastWrittenLimit;
+                
+                // Only validate charging setpoints (negative values)
+                if (expectedPowerW < -50 && actualPowerW !== null) {
+                    const deviation = Math.abs(actualPowerW - expectedPowerW);
+                    const toleranceW = this.config.setPowerValidationToleranceW || 50;
+                    
+                    if (deviation <= toleranceW) {
+                        // Setpoint accepted by device
+                        this._pendingValidation = false;
+                        this._validationRetryCount = 0;
+                        this.log.debug(`✓ Charge setpoint validated: ${expectedPowerW}W (actual: ${actualPowerW}W, deviation: ${deviation}W)`);
+                    } else {
+                        // Setpoint not accepted, retry needed
+                        const maxRetries = this.config.setPowerMaxRetries || 3;
+                        this._validationRetryCount++;
+                        
+                        if (this._validationRetryCount < maxRetries) {
+                            this.log.warn(`⚠️ Charge setpoint not accepted: target=${expectedPowerW}W, actual=${actualPowerW}W, deviation=${deviation}W - will retry (${this._validationRetryCount}/${maxRetries})`);
+                            // Keep pendingValidation=true, will be resent below
+                        } else {
+                            this.log.error(`❌ Charge setpoint failed after ${maxRetries} attempts: target=${expectedPowerW}W, actual=${actualPowerW}W`);
+                            this._pendingValidation = false;
+                            this._validationRetryCount = 0;
+                        }
+                    }
+                } else {
+                    // Not charging anymore or no data - clear validation
+                    this._pendingValidation = false;
+                    this._validationRetryCount = 0;
+                }
+            }
+            // ================================================================
 
             // Read current values
             const gridPowerW = await this.getGridPowerW();
@@ -781,12 +822,19 @@ class ZendureAutomation extends utils.Adapter {
 
     /**
      * Set battery power by writing to setDeviceAutomationInOutLimit
+     * Non-blocking: writes immediately, validation happens in next cycle
+     * Only validates charging setpoints (negative values), discharge changes too frequently
      * @param {number} powerW - Target power (negative=charge, positive=discharge)
      */
     async setBatteryPower(powerW) {
         try {
-            // Avoid unnecessary writes
-            if (this._lastWrittenLimit === powerW) {
+            const limitPath = `${this._deviceBasePath}.control.setDeviceAutomationInOutLimit`;
+            
+            // Check if we need to resend due to failed validation
+            const needsResend = this._pendingValidation && this._validationRetryCount > 0;
+            
+            // Avoid unnecessary writes (unless retry needed)
+            if (!needsResend && this._lastWrittenLimit === powerW) {
                 this.log.debug('Power unchanged, skipping write');
                 return;
             }
@@ -796,12 +844,30 @@ class ZendureAutomation extends utils.Adapter {
             // - positive values for discharging
             // Which matches our convention
             
-            const limitPath = `${this._deviceBasePath}.control.setDeviceAutomationInOutLimit`;
-            
+            // Write the value (non-blocking)
             await this.setForeignStateAsync(limitPath, powerW, false);
-            
             this._lastWrittenLimit = powerW;
-            this.log.debug(`✓ Wrote battery limit: ${powerW}W to ${limitPath}`);
+            
+            if (needsResend) {
+                this.log.debug(`📤 Resent battery limit: ${powerW}W (validation retry ${this._validationRetryCount})`);
+            } else {
+                this.log.debug(`📤 Wrote battery limit: ${powerW}W`);
+            }
+            
+            // Enable validation for charging setpoints only (negative values < -50W)
+            // Discharge (positive) changes constantly, validation not useful
+            if (powerW < -50) {
+                this._pendingValidation = true;
+                // Don't reset retry count if this is a resend
+                if (!needsResend) {
+                    this._validationRetryCount = 0;
+                }
+                this.log.debug(`⏳ Charge setpoint ${powerW}W will be validated in next cycle`);
+            } else {
+                // Discharge or standby - no validation needed
+                this._pendingValidation = false;
+                this._validationRetryCount = 0;
+            }
 
         } catch (err) {
             this.log.error(`Failed to set battery power: ${err.message}`);

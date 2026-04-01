@@ -170,6 +170,52 @@
                 "en": "How often to adjust battery power (recommended: 5s)",
                 "de": "Wie oft Batterieleistung angepasst wird (empfohlen: 5s)"
               }
+            },
+            "setPowerMaxRetries": {
+              "type": "number",
+              "label": {
+                "en": "Power validation: Max retries",
+                "de": "Leistungsvalidierung: Max. Versuche"
+              },
+              "sm": 6,
+              "min": 1,
+              "max": 10,
+              "help": {
+                "en": "How many times to retry if device doesn't accept power setpoint (only for charging)",
+                "de": "Wie oft wiederholen, wenn Gerät Leistungsvorgabe nicht annimmt (nur beim Laden)"
+              }
+            },
+            "setPowerValidationToleranceW": {
+              "type": "number",
+              "label": {
+                "en": "Power validation: Tolerance (W)",
+                "de": "Leistungsvalidierung: Toleranz (W)"
+              },
+              "sm": 6,
+              "min": 0,
+              "max": 200,
+              "help": {
+                "en": "Acceptable deviation between setpoint and actual power",
+                "de": "Akzeptable Abweichung zwischen Vorgabe und Ist-Leistung"
+              }
+            },
+            "_validationHint": {
+              "type": "staticText",
+              "text": {
+                "en": "🔄 Power validation runs in next cycle (non-blocking). Only for charging - discharge changes too frequently for validation.",
+                "de": "🔄 Leistungsvalidierung läuft im nächsten Zyklus (non-blocking). Nur beim Laden - Entladung ändert sich zu oft für Validierung."
+              },
+              "sm": 12,
+              "style": {
+                "fontSize": "0.85em",
+                "fontStyle": "italic",
+                "color": "#666",
+                "marginTop": "5px",
+                "padding": "8px",
+                "backgroundColor": "#fff3cd",
+                "borderRadius": "4px",
+                "borderLeft": "3px solid #ffc107"
+              }
             }
           }
         },

@@ -2,8 +2,16 @@
   "common": {
     "name": "zendure-automation",
     "title": "Zendure Automation",
-    "version": "0.5.6",
+    "version": "0.5.7",
     "news": {
+      "0.5.7": {
+        "en": "Added non-blocking power setpoint validation for charging. Validates in next cycle using normal tick timer, automatically retries on communication failures. Only for charging (discharge changes too frequently).",
+        "de": "Non-blocking Leistungs-Validierung beim Laden hinzugefügt. Validiert im nächsten Zyklus mit normalem Tick-Timer, wiederholt automatisch bei Kommunikationsfehlern. Nur beim Laden (Entladung ändert sich zu oft)."
+      },
+      "0.5.6": {
+        "en": "Emergency recovery mode now properly displayed in status.mode when idle (shows 'recovery' instead of 'standby'), while showing actual action ('charging') when actively charging.",
+        "de": "Emergency Recovery-Modus wird nun korrekt im status.mode angezeigt wenn idle (zeigt 'recovery' statt 'standby'), während tatsächliche Aktion ('charging') beim aktiven Laden angezeigt wird."
+      },
       "0.5.5": {
         "en": "Critical fix: Emergency recovery now persistent across restarts. Prevents premature discharge after emergency conditions in both SOC and voltage modes.",
         "de": "Kritischer Fix: Emergency Recovery jetzt persistent über Neustarts. Verhindert vorzeitige Entladung nach Notfall-Bedingungen in beiden Modi (SOC und Spannung)."
@@ -75,6 +83,8 @@
     "deviceKey": "",
     "powerMeterDp": "",
     "updateIntervalSec": 5,
+    "setPowerMaxRetries": 3,
+    "setPowerValidationToleranceW": 50,
     "targetGridPowerW": 0,
     "maxChargePowerW": 1600,
     "maxDischargePowerW": 1600,
