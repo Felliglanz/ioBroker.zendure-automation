@@ -184,14 +184,15 @@ class ZendureAutomation extends utils.Adapter {
                         this.log.debug(`✓ Charge setpoint validated: ${expectedPowerW}W (actual: ${actualPowerW}W, ${withinTolerance ? 'matched' : 'ramping'})`);
                     } else {
                         // Device not responding (still at 0W or discharging) - communication issue
-                        const maxRetries = this.config.setPowerMaxRetries || 3;
+                        const maxRetries = this.config.setPowerMaxRetries || 5;
                         this._validationRetryCount++;
                         
                         if (this._validationRetryCount < maxRetries) {
-                            this.log.warn(`⚠️ Charge setpoint not accepted: target=${expectedPowerW}W, actual=${actualPowerW}W, deviation=${deviation}W - will retry (${this._validationRetryCount}/${maxRetries})`);
+                            // Silent retry - normal during mode switches or device ramp-up
+                            this.log.debug(`Charge setpoint retry ${this._validationRetryCount}/${maxRetries}: target=${expectedPowerW}W, actual=${actualPowerW}W`);
                             // Keep pendingValidation=true, will be resent below
                         } else {
-                            this.log.error(`❌ Charge setpoint failed after ${maxRetries} attempts: target=${expectedPowerW}W, actual=${actualPowerW}W`);
+                            this.log.error(`❌ Charge setpoint failed after ${maxRetries} attempts (${maxRetries * 5}s): target=${expectedPowerW}W, actual=${actualPowerW}W - possible API communication issue`);
                             this._pendingValidation = false;
                             this._validationRetryCount = 0;
                         }

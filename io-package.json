@@ -87,7 +87,7 @@
     "deviceKey": "",
     "powerMeterDp": "",
     "updateIntervalSec": 5,
-    "setPowerMaxRetries": 3,
+    "setPowerMaxRetries": 5,
     "setPowerValidationToleranceW": 50,
     "targetGridPowerW": 0,
     "maxChargePowerW": 1600,

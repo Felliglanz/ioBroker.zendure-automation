@@ -181,8 +181,8 @@
               "min": 1,
               "max": 10,
               "help": {
-                "en": "How many times to retry if device doesn't accept power setpoint (only for charging)",
-                "de": "Wie oft wiederholen, wenn Gerät Leistungsvorgabe nicht annimmt (nur beim Laden)"
+                "en": "How many times to retry if device doesn't accept power setpoint. Silent retries, only final error logged. Accounts for mode-switching (~25s with 5 retries at 5s interval).",
+                "de": "Wie oft wiederholen, wenn Gerät Leistungsvorgabe nicht annimmt. Stille Wiederholungen, nur finaler Fehler geloggt. Berücksichtigt Mode-Switching (~25s bei 5 Versuchen mit 5s Intervall)."
               }
             },
             "setPowerValidationToleranceW": {
