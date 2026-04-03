@@ -449,6 +449,46 @@
               }
             }
           }
+        },
+        "_panelDeadband": {
+          "type": "panel",
+          "label": {
+            "en": "Operating Deadband (Advanced)",
+            "de": "Betriebs-Deadband (Erweitert)"
+          },
+          "items": {
+            "operatingDeadbandW": {
+              "type": "number",
+              "label": {
+                "en": "Operating deadband (W)",
+                "de": "Betriebs-Deadband (W)"
+              },
+              "sm": 12,
+              "min": 0,
+              "max": 50,
+              "help": {
+                "en": "Minimum power to maintain in current mode before allowing 0W or sign change. Prevents relay switching through 0W during regulation. Higher = more relay protection, but less precise zero-grid control.",
+                "de": "Mindestleistung im aktuellen Modus vor Erlaubnis von 0W oder Vorzeichenwechsel. Verhindert Relais-Schalten durch 0W während Regelung. Höher = mehr Relais-Schutz, aber weniger präzise Nulleinspeisung."
+              }
+            },
+            "_deadbandHint": {
+              "type": "staticText",
+              "text": {
+                "en": "⚙️ When power drops below this value, system holds at ±deadband for 1 cycle before allowing transition to 0W or opposite sign. Reduces relay wear during oscillating regulation. Recommended: 5W (= ~0.02A @ 230V).",
+                "de": "⚙️ Wenn Leistung unter diesen Wert fällt, hält System für 1 Zyklus bei ±Deadband, bevor Übergang zu 0W oder umgekehrtem Vorzeichen erlaubt wird. Reduziert Relais-Verschleiß bei schwankender Regelung. Empfohlen: 5W (= ~0,02A @ 230V)."
+              },
+              "sm": 12,
+              "style": {
+                "fontSize": "0.85em",
+                "color": "#1565c0",
+                "marginTop": "8px",
+                "padding": "8px",
+                "backgroundColor": "#e3f2fd",
+                "borderRadius": "4px",
+                "borderLeft": "3px solid #1976d2"
+              }
+            }
+          }
         }
       }
     },
