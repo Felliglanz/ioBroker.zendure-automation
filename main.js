@@ -16,12 +16,12 @@ const ValidationService = require('./lib/ValidationService');
  * This module handles the automatic battery charge/discharge control
  * to achieve zero grid feed-in/draw.
  * 
- * Algorithm inspired by OpenDTU-OnBattery Dynamic Power Limiter:
+ * Algorithm: I-Regulator (Integrator)
  * - Reads current grid power
- * - Reads current battery power (charge/discharge)
+ * - Uses last setpoint as base (not measured power for stability)
  * - Calculates new battery power to achieve target grid power
- * - Formula: newBatteryPower = currentBatteryPower + (targetGridPower - actualGridPower)
- * - Applies limits, hysteresis, and ramp rates
+ * - Formula: newBatteryPower = lastSetPower + (gridPower - targetGridPower)
+ * - Applies relay protection, safety limits, regulation (hysteresis, ramping, limits)
  * 
  * Modular Architecture:
  * - DataReader: Sensor data access layer
@@ -176,7 +176,7 @@ class ZendureAutomation extends utils.Adapter {
 
             // ========== POWER SETPOINT VALIDATION (NON-BLOCKING) ==========
             const currentBatteryPowerW = await this.dataReader.getCurrentBatteryPowerW();
-            const needsResend = await this.validationService.validateSetpoint(this.config, currentBatteryPowerW);
+            await this.validationService.validateSetpoint(this.config, currentBatteryPowerW);
             // ================================================================
 
             // ========== READ CURRENT VALUES ==========
