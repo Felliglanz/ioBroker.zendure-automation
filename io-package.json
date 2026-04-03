@@ -2,8 +2,12 @@
   "common": {
     "name": "zendure-automation",
     "title": "Zendure Automation",
-    "version": "0.5.8",
+    "version": "0.6.0",
     "news": {
+      "0.6.0": {
+        "en": "Major refactoring to modular architecture: Split monolithic code into 6 specialized modules (DataReader, EmergencyManager, RelayProtection, SafetyLimiter, PowerRegulator, ValidationService). 59% code reduction (948→388 lines). Improved maintainability, testability, and documentation. All functionality preserved and tested.",
+        "de": "Große Refaktorierung zur modularen Architektur: Aufteilung des monolithischen Codes in 6 spezialisierte Module (DataReader, EmergencyManager, RelayProtection, SafetyLimiter, PowerRegulator, ValidationService). 59% Code-Reduktion (948→388 Zeilen). Verbesserte Wartbarkeit, Testbarkeit und Dokumentation. Alle Funktionen erhalten und getestet."
+      },
       "0.5.8": {
         "en": "Improved power validation: Accepts device ramping behavior. Validation succeeds if device is charging (even while ramping up), prevents false failures during gradual power increase.",
         "de": "Verbesserte Leistungsvalidierung: Akzeptiert Geräte-Rampverhalten. Validierung erfolgreich wenn Gerät lädt (auch während Hochrampen), verhindert Fehlalarme bei gradueller Leistungssteigerung."
