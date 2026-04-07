@@ -105,6 +105,7 @@
     "hysteresisW": 50,
     "rampChargeWPerCycle": 100,
     "rampDischargeWPerCycle": 400,
+    "emaFilterAlpha": 0.5,
     "feedInThresholdW": -150,
     "feedInDelayTicks": 5,
     "dischargeThresholdW": 200,
