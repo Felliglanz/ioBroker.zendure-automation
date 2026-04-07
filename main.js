@@ -48,6 +48,9 @@ class ZendureAutomation extends utils.Adapter {
         this._isRunning = false;
         this._deviceBasePath = null;
         
+        // I-Regulator state
+        this._filteredGridPower = null;  // EMA-filtered grid power for stability
+        
         // Modular components (initialized in onReady)
         this.dataReader = null;
         this.emergencyMgr = null;
@@ -191,6 +194,20 @@ class ZendureAutomation extends utils.Adapter {
                 return;
             }
 
+            // ========== EMA FILTER FOR GRID POWER ==========
+            // Apply Exponential Moving Average to smooth fast load changes (e.g., OLED TV)
+            // Higher alpha = faster response, lower = more smoothing (configurable in admin UI)
+            const emaAlpha = this.config.emaFilterAlpha || 0.5;
+            if (this._filteredGridPower === null) {
+                // Initialize filter with first value
+                this._filteredGridPower = gridPowerW;
+            } else {
+                // EMA formula: filtered = alpha * new + (1 - alpha) * old
+                this._filteredGridPower = emaAlpha * gridPowerW + (1 - emaAlpha) * this._filteredGridPower;
+            }
+            const filteredGridPowerW = Math.round(this._filteredGridPower);
+            this.log.debug(`Grid power: raw=${gridPowerW}W, filtered=${filteredGridPowerW}W`);
+
             // Update status states
             await this.setStateAsync('status.gridPowerW', gridPowerW, true);
             await this.setStateAsync('status.batterySoc', batterySoc, true);
@@ -240,23 +257,47 @@ class ZendureAutomation extends utils.Adapter {
             // ================================================================
 
             // ========== I-REGULATOR: CALCULATE TARGET POWER ==========
-            const lastSetPowerW = this.validationService.lastWrittenLimit !== null 
+            let lastSetPowerW = this.validationService.lastWrittenLimit !== null 
                 ? this.validationService.lastWrittenLimit 
                 : 0;
 
+            // ========== ANTI-WINDUP: Limit lastSetPowerW to prevent integrator windup ==========
+            const maxChargePowerW = -(this.config.maxChargePowerW || 1200);
+            const maxDischargePowerW = this.config.maxDischargePowerW || 1200;
+            
+            // Clamp lastSetPowerW to valid range to prevent integrator windup
+            if (lastSetPowerW < maxChargePowerW) {
+                this.log.debug(`Anti-windup: Limiting lastSetPowerW from ${lastSetPowerW}W to ${maxChargePowerW}W`);
+                lastSetPowerW = maxChargePowerW;
+            } else if (lastSetPowerW > maxDischargePowerW) {
+                this.log.debug(`Anti-windup: Limiting lastSetPowerW from ${lastSetPowerW}W to ${maxDischargePowerW}W`);
+                lastSetPowerW = maxDischargePowerW;
+            }
+
             this.log.debug(
-                `Cycle: Grid=${gridPowerW}W, Battery_measured=${currentBatteryPowerW}W, ` +
-                `Battery_set=${lastSetPowerW}W, SOC=${batterySoc}%, Target=${targetGridPowerW}W`
+                `Cycle: Grid_raw=${gridPowerW}W, Grid_filtered=${filteredGridPowerW}W, ` +
+                `Battery_measured=${currentBatteryPowerW}W, Battery_set=${lastSetPowerW}W, ` +
+                `SOC=${batterySoc}%, Target=${targetGridPowerW}W`
             );
 
-            // I-Regulator formula
-            let newBatteryPowerW = lastSetPowerW + (gridPowerW - targetGridPowerW);
-            this.log.debug(`Calculated new battery power: ${newBatteryPowerW}W (before limits)`);
+            // I-Regulator formula (using filtered grid power)
+            let newBatteryPowerW = lastSetPowerW + (filteredGridPowerW - targetGridPowerW);
+            
+            // ========== ANTI-WINDUP: Limit newBatteryPowerW immediately ==========
+            if (newBatteryPowerW < maxChargePowerW) {
+                this.log.debug(`Anti-windup: Limiting newBatteryPowerW from ${newBatteryPowerW}W to ${maxChargePowerW}W`);
+                newBatteryPowerW = maxChargePowerW;
+            } else if (newBatteryPowerW > maxDischargePowerW) {
+                this.log.debug(`Anti-windup: Limiting newBatteryPowerW from ${newBatteryPowerW}W to ${maxDischargePowerW}W`);
+                newBatteryPowerW = maxDischargePowerW;
+            }
+            
+            this.log.debug(`Calculated new battery power: ${newBatteryPowerW}W (after anti-windup, before relay protection)`);
 
             // ========== MODE SWITCHING PROTECTION (RELAY PROTECTION) ==========
             const relayResult = this.relayProtection.applyProtection({
                 config: this.config,
-                gridPowerW,
+                gridPowerW: filteredGridPowerW,  // Use filtered value for relay protection too
                 currentBatteryPowerW,
                 lastSetPowerW,
                 newBatteryPowerW
