@@ -194,9 +194,10 @@ class ZendureAutomation extends utils.Adapter {
                 return;
             }
 
-            // ========== EMA FILTER FOR GRID POWER (alpha = 0.3) ==========
+            // ========== EMA FILTER FOR GRID POWER ==========
             // Apply Exponential Moving Average to smooth fast load changes (e.g., OLED TV)
-            const emaAlpha = 0.3;
+            // Higher alpha = faster response, lower = more smoothing (configurable in admin UI)
+            const emaAlpha = this.config.emaFilterAlpha || 0.5;
             if (this._filteredGridPower === null) {
                 // Initialize filter with first value
                 this._filteredGridPower = gridPowerW;
