@@ -2,8 +2,16 @@
   "common": {
     "name": "zendure-automation",
     "title": "Zendure Automation",
-    "version": "0.6.1",
+    "version": "0.6.2",
     "news": {
+      "0.6.2": {
+        "en": "Add configurable EMA (Exponential Moving Average) filter for grid power signal. Smooths fast load changes (e.g., TV, microwave) while maintaining responsiveness. Configurable alpha (0.1-1.0, default 0.5) in admin UI. Set to 1.0 to disable filter completely.",
+        "de": "Konfigurierbarer EMA (Exponential Moving Average) Filter für Netzleistungs-Signal hinzugefügt. Glättet schnelle Laständerungen (z.B. TV, Mikrowelle) bei gleichzeitiger Reaktionsfähigkeit. Konfigurierbares Alpha (0.1-1.0, Standard 0.5) in Admin UI. Auf 1.0 setzen um Filter komplett zu deaktivieren."
+      },
+      "0.6.1": {
+        "en": "Add configurable EMA (Exponential Moving Average) filter for grid power signal. Smooths fast load changes (e.g., TV, microwave) while maintaining responsiveness. Configurable alpha (0.1-1.0, default 0.5) in admin UI. Set to 1.0 to disable filter completely.",
+        "de": "Konfigurierbarer EMA (Exponential Moving Average) Filter für Netzleistungs-Signal hinzugefügt. Glättet schnelle Laständerungen (z.B. TV, Mikrowelle) bei gleichzeitiger Reaktionsfähigkeit. Konfigurierbares Alpha (0.1-1.0, Standard 0.5) in Admin UI. Auf 1.0 setzen um Filter komplett zu deaktivieren."
+      },
       "0.6.1": {
         "en": "Added operating deadband protection: Maintains minimum power (±5W) before allowing mode transitions through 0W. Prevents excessive relay switching during regulation oscillations while existing relay protection ensures safe switching at low current.",
         "de": "Operating Deadband Schutz hinzugefügt: Hält Mindestleistung (±5W) bevor Moduswechsel durch 0W erlaubt wird. Verhindert exzessives Relais-Schalten bei Regel-Oszillationen, während bestehender Relais-Schutz sicheres Schalten bei niedrigem Strom gewährleistet."

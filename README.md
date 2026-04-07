@@ -16,6 +16,7 @@ Steuert deine Zendure Solarflow Batterie vollautomatisch für **Null-Einspeisung
 
 ### 🎯 Intelligente Regelung
 - **I-Regler Algorithmus** (inspiriert von OpenDTU-OnBattery) – stabile, präzise Regelung
+- **EMA Filter für Grid Power** – glättet schnelle Laständerungen (TV, Mikrowelle), konfigurierbar (0.1-1.0)
 - **5s Update-Intervall** – schnelle Reaktion auf Lastwechsel
 - **Operating Deadband** – verhindert Relais-Flattern bei Schwingung um 0W
 - **Asymmetrische Rampen** – sanftes Laden (100W/Zyklus), schnelles Entladen (400W/Zyklus)
@@ -122,8 +123,27 @@ Schützt Hardware vor übermäßigem Schalten, speziell bei wechselhaftem Wetter
 | **Hysteresis** | 50W | Mindest-Änderung für Reaktion |
 | **Charge Ramp** | 100W/Zyklus | Sanftes Laden |
 | **Discharge Ramp** | 400W/Zyklus | Schnelle Last-Reaktion |
+| **EMA Filter Alpha** | 0.5 | Glättung der Netzleistung (0.1-1.0) |
 
 **Tipp:** Höhere Rampen = aggressiver, niedrigere = sanfter & hardware-schonend
+
+### 📊 EMA Filter (Exponential Moving Average)
+
+Glättet das Grid Power Signal um auf schnelle Lastspitzen (TV, Mikrowelle) nicht zu reagieren:
+
+| Alpha | Verhalten | Einsatzbereich |
+|-------|-----------|----------------|
+| **0.1 - 0.3** | Sehr träge, starke Glättung | Häufige Lastspitzen, gemütliche Regelung |
+| **0.4 - 0.6** | ⭐ Ausgewogen (empfohlen) | Standard-Anwendung |
+| **0.7 - 0.9** | Schnell, wenig Glättung | Schnelle Reaktion gewünscht |
+| **1.0** | Keine Filterung | Purer I-Regler wie v0.6.0 |
+
+**Formel:** `filtered = alpha × new + (1 - alpha) × old`
+
+**Wann anpassen?**
+- **Zu träge?** → Alpha erhöhen (z.B. 0.5 → 0.7)
+- **Zu zappelig?** → Alpha verringern (z.B. 0.5 → 0.3)
+- **Kein Filter?** → Alpha = 1.0 (legacy behavior)
 
 ### 🚨 Emergency & Recovery
 
