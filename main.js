@@ -307,6 +307,7 @@ class ZendureAutomation extends utils.Adapter {
             // Update counter states for visibility
             await this.setStateAsync('status.feedInCounter', relayResult.feedInCounter, true);
             await this.setStateAsync('status.dischargeCounter', relayResult.dischargeCounter, true);
+            await this.setStateAsync('status.deadbandCounter', relayResult.deadbandCounter, true);
 
             // ========== SAFETY CHECKS (HIGHEST PRIORITY) ==========
             const safetyResult = await this.safetyLimiter.applySafetyLimits({

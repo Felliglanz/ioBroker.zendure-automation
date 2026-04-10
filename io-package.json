@@ -317,6 +317,20 @@
       "native": {}
     },
     {
+      "_id": "status.deadbandCounter",
+      "type": "state",
+      "common": {
+        "name": "Operating deadband hold counter",
+        "type": "number",
+        "role": "value",
+        "read": true,
+        "write": false,
+        "def": 0,
+        "unit": "ticks"
+      },
+      "native": {}
+    },
+    {
       "_id": "status.voltageRecoveryActive",
       "type": "state",
       "common": {

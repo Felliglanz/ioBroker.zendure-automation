@@ -495,7 +495,7 @@
                 "en": "Operating deadband (W)",
                 "de": "Betriebs-Deadband (W)"
               },
-              "sm": 12,
+              "sm": 6,
               "min": 0,
               "max": 50,
               "help": {
@@ -503,11 +503,25 @@
                 "de": "Mindestleistung im aktuellen Modus vor Erlaubnis von 0W oder Vorzeichenwechsel. Verhindert Relais-Schalten durch 0W während Regelung. Höher = mehr Relais-Schutz, aber weniger präzise Nulleinspeisung."
               }
             },
+            "deadbandHoldTicks": {
+              "type": "number",
+              "label": {
+                "en": "Deadband hold duration (ticks)",
+                "de": "Deadband-Haltedauer (Ticks)"
+              },
+              "sm": 6,
+              "min": 1,
+              "max": 20,
+              "help": {
+                "en": "How many cycles to hold at minimum power before allowing transition through 0W. Higher = longer wait at low power (better relay protection in changing conditions). 1 tick = update interval.",
+                "de": "Wie viele Zyklen bei minimaler Leistung gehalten wird, bevor Übergang durch 0W erlaubt wird. Höher = längeres Warten bei niedriger Leistung (besserer Relais-Schutz bei wechselnden Bedingungen). 1 Tick = Update-Intervall."
+              }
+            },
             "_deadbandHint": {
               "type": "staticText",
               "text": {
-                "en": "⚙️ When power drops below this value, system holds at ±deadband for 1 cycle before allowing transition to 0W or opposite sign. Reduces relay wear during oscillating regulation. Recommended: 5W (= ~0.02A @ 230V).",
-                "de": "⚙️ Wenn Leistung unter diesen Wert fällt, hält System für 1 Zyklus bei ±Deadband, bevor Übergang zu 0W oder umgekehrtem Vorzeichen erlaubt wird. Reduziert Relais-Verschleiß bei schwankender Regelung. Empfohlen: 5W (= ~0,02A @ 230V)."
+                "en": "💡 Example: 5W deadband + 3 ticks + 5s interval = holds at ±5W for 15s before switching through 0W. Recommended for stable weather: 1-2 ticks, for changing clouds: 5-10 ticks.",
+                "de": "💡 Beispiel: 5W Deadband + 3 Ticks + 5s Intervall = hält bei ±5W für 15s vor Durchgang durch 0W. Empfohlen bei stabilem Wetter: 1-2 Ticks, bei wechselnden Wolken: 5-10 Ticks."
               },
               "sm": 12,
               "style": {
