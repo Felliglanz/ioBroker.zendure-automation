@@ -512,6 +512,7 @@
               "sm": 6,
               "min": 1,
               "max": 20,
+              "def": 3,
               "help": {
                 "en": "How many cycles to hold at minimum power before allowing transition through 0W. Higher = longer wait at low power (better relay protection in changing conditions). 1 tick = update interval.",
                 "de": "Wie viele Zyklen bei minimaler Leistung gehalten wird, bevor Übergang durch 0W erlaubt wird. Höher = längeres Warten bei niedriger Leistung (besserer Relais-Schutz bei wechselnden Bedingungen). 1 Tick = Update-Intervall."
