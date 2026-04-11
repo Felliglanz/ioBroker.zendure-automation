@@ -9,6 +9,7 @@ const RelayProtection = require('./lib/RelayProtection');
 const SafetyLimiter = require('./lib/SafetyLimiter');
 const PowerRegulator = require('./lib/PowerRegulator');
 const ValidationService = require('./lib/ValidationService');
+const MultiDeviceManager = require('./lib/MultiDeviceManager');
 
 /**
  * Battery Automation Engine
@@ -47,17 +48,20 @@ class ZendureAutomation extends utils.Adapter {
         this._updateTimer = null;
         this._isRunning = false;
         this._deviceBasePath = null;
+        this._isMultiDevice = false;
         
         // I-Regulator state
         this._filteredGridPower = null;  // EMA-filtered grid power for stability
         
         // Modular components (initialized in onReady)
         this.dataReader = null;
-        this.emergencyMgr = null;
+        this.emergencyMgr = null;  // Single device mode
+        this.emergencyManagers = null;  // Multi-device mode: Map<deviceId, EmergencyManager>
         this.relayProtection = null;
         this.safetyLimiter = null;
         this.powerRegulator = null;
         this.validationService = null;
+        this.multiDeviceMgr = null;  // Multi-device manager
     }
 
     /**
@@ -72,56 +76,118 @@ class ZendureAutomation extends utils.Adapter {
             return;
         }
 
-        // Build device base path
         const instance = this.config.zendureSolarflowInstance || 'zendure-solarflow.0';
-        const productKey = this.config.deviceProductKey || '';
-        const deviceKey = this.config.deviceKey || '';
+        this._isMultiDevice = this.config.multiDeviceEnabled === true;
 
-        if (!productKey || !deviceKey) {
-            this.log.error('Device ProductKey and DeviceKey must be configured!');
-            return;
+        // ========== MULTI-DEVICE MODE ==========
+        if (this._isMultiDevice) {
+            this.log.info('🔄 Multi-Device Mode enabled');
+            
+            try {
+                // Initialize Multi-Device Manager
+                this.multiDeviceMgr = new MultiDeviceManager(
+                    this,
+                    instance,
+                    this.config.devices || []
+                );
+
+                // Initialize per-device Emergency Managers
+                this.emergencyManagers = new Map();
+                for (const device of this.multiDeviceMgr.devices) {
+                    const emergencyMgr = new EmergencyManager(this, device.basePath);
+                    this.emergencyManagers.set(device.id, emergencyMgr);
+                }
+
+                // Initialize shared components (use first device for validation service)
+                const firstDevice = this.multiDeviceMgr.devices[0];
+                this.relayProtection = new RelayProtection(this);
+                this.safetyLimiter = new SafetyLimiter(this, firstDevice.basePath);  // Note: Will be called per-device
+                this.powerRegulator = new PowerRegulator(this);
+                this.validationService = new ValidationService(this);
+                
+                this.log.info('✓ Multi-Device components initialized');
+
+                // Initialize control states
+                await this.setStateAsync('control.enabled', true, true);
+                await this.setStateAsync('control.targetGridPowerW', this.config.targetGridPowerW || 0, true);
+                await this.setStateAsync('status.mode', 'idle', true);
+                await this.setStateAsync('info.connection', true, true);
+
+                // Restore emergency recovery states for all devices
+                for (const [deviceId, emergencyMgr] of this.emergencyManagers) {
+                    await emergencyMgr.restoreRecoveryStates();
+                }
+
+                // Subscribe to control states
+                this.subscribeStates('control.*');
+
+                // Subscribe to grid power meter
+                if (this.config.powerMeterDp) {
+                    await this.subscribeForeignStatesAsync(this.config.powerMeterDp);
+                }
+
+                // Subscribe to all device states
+                await this.multiDeviceMgr.subscribeToDevices();
+
+            } catch (err) {
+                this.log.error(`Multi-Device initialization failed: ${err.message}`);
+                return;
+            }
+
+        // ========== SINGLE-DEVICE MODE ==========
+        } else {
+            this.log.info('📱 Single-Device Mode');
+            
+            // Build device base path
+            const productKey = this.config.deviceProductKey || '';
+            const deviceKey = this.config.deviceKey || '';
+
+            if (!productKey || !deviceKey) {
+                this.log.error('Device ProductKey and DeviceKey must be configured!');
+                return;
+            }
+
+            this._deviceBasePath = `${instance}.${productKey}.${deviceKey}`;
+            this.log.info(`Using device path: ${this._deviceBasePath}`);
+
+            // Initialize modular components
+            this.dataReader = new DataReader(this, this._deviceBasePath);
+            this.emergencyMgr = new EmergencyManager(this, this._deviceBasePath);
+            this.relayProtection = new RelayProtection(this);
+            this.safetyLimiter = new SafetyLimiter(this, this._deviceBasePath);
+            this.powerRegulator = new PowerRegulator(this);
+            this.validationService = new ValidationService(this);
+            
+            this.log.info('✓ Modular components initialized');
+
+            // Initialize control states
+            await this.setStateAsync('control.enabled', true, true);
+            await this.setStateAsync('control.targetGridPowerW', this.config.targetGridPowerW || 0, true);
+            await this.setStateAsync('status.mode', 'idle', true);
+            await this.setStateAsync('info.connection', true, true);
+
+            // Restore emergency recovery states from persistent storage
+            await this.emergencyMgr.restoreRecoveryStates();
+
+            // Subscribe to control states
+            this.subscribeStates('control.*');
+
+            // Subscribe to foreign states (grid power and battery power)
+            if (this.config.powerMeterDp) {
+                await this.subscribeForeignStatesAsync(this.config.powerMeterDp);
+            }
+
+            // Subscribe to device states to track current power
+            await this.subscribeForeignStatesAsync(`${this._deviceBasePath}.packPower`);
+            await this.subscribeForeignStatesAsync(`${this._deviceBasePath}.electricLevel`);
+
+            // Subscribe to pack voltage states (for all packs)
+            await this.subscribeForeignStatesAsync(`${this._deviceBasePath}.packData.*.minVol`);
+
+            // Subscribe to device protection flags
+            await this.subscribeForeignStatesAsync(`${this._deviceBasePath}.control.lowVoltageBlock`);
+            await this.subscribeForeignStatesAsync(`${this._deviceBasePath}.control.fullChargeNeeded`);
         }
-
-        this._deviceBasePath = `${instance}.${productKey}.${deviceKey}`;
-        this.log.info(`Using device path: ${this._deviceBasePath}`);
-
-        // Initialize modular components
-        this.dataReader = new DataReader(this, this._deviceBasePath);
-        this.emergencyMgr = new EmergencyManager(this, this._deviceBasePath);
-        this.relayProtection = new RelayProtection(this);
-        this.safetyLimiter = new SafetyLimiter(this, this._deviceBasePath);
-        this.powerRegulator = new PowerRegulator(this);
-        this.validationService = new ValidationService(this);
-        
-        this.log.info('✓ Modular components initialized');
-
-        // Initialize control states
-        await this.setStateAsync('control.enabled', true, true);
-        await this.setStateAsync('control.targetGridPowerW', this.config.targetGridPowerW || 0, true);
-        await this.setStateAsync('status.mode', 'idle', true);
-        await this.setStateAsync('info.connection', true, true);
-
-        // Restore emergency recovery states from persistent storage
-        await this.emergencyMgr.restoreRecoveryStates();
-
-        // Subscribe to control states
-        this.subscribeStates('control.*');
-
-        // Subscribe to foreign states (grid power and battery power)
-        if (this.config.powerMeterDp) {
-            await this.subscribeForeignStatesAsync(this.config.powerMeterDp);
-        }
-
-        // Subscribe to device states to track current power
-        await this.subscribeForeignStatesAsync(`${this._deviceBasePath}.packPower`);
-        await this.subscribeForeignStatesAsync(`${this._deviceBasePath}.electricLevel`);
-
-        // Subscribe to pack voltage states (for all packs)
-        await this.subscribeForeignStatesAsync(`${this._deviceBasePath}.packData.*.minVol`);
-
-        // Subscribe to device protection flags
-        await this.subscribeForeignStatesAsync(`${this._deviceBasePath}.control.lowVoltageBlock`);
-        await this.subscribeForeignStatesAsync(`${this._deviceBasePath}.control.fullChargeNeeded`);
 
         // Start automation loop
         this.startAutomation();
@@ -136,9 +202,26 @@ class ZendureAutomation extends utils.Adapter {
             return false;
         }
 
-        if (!this.config.deviceProductKey || !this.config.deviceKey) {
-            this.log.error('Device ProductKey and DeviceKey must be configured!');
-            return false;
+        if (this.config.multiDeviceEnabled) {
+            // Multi-device validation
+            if (!this.config.devices || this.config.devices.length === 0) {
+                this.log.error('Multi-Device enabled but no devices configured!');
+                return false;
+            }
+
+            const enabledDevices = this.config.devices.filter(d => d.enabled && d.productKey && d.deviceKey);
+            if (enabledDevices.length === 0) {
+                this.log.error('No valid devices configured (need ProductKey and DeviceKey)!');
+                return false;
+            }
+
+            this.log.info(`Multi-Device: ${enabledDevices.length} device(s) configured`);
+        } else {
+            // Single-device validation
+            if (!this.config.deviceProductKey || !this.config.deviceKey) {
+                this.log.error('Device ProductKey and DeviceKey must be configured!');
+                return false;
+            }
         }
 
         return true;
