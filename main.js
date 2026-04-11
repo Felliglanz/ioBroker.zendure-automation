@@ -260,6 +260,24 @@ class ZendureAutomation extends utils.Adapter {
                 return;
             }
 
+            // Route to appropriate cycle based on mode
+            if (this._isMultiDevice) {
+                await this.runMultiDeviceAutomationCycle();
+            } else {
+                await this.runSingleDeviceAutomationCycle();
+            }
+
+        } catch (err) {
+            this.log.error(`Automation cycle error: ${err.message}`);
+            await this.setStateAsync('status.mode', 'error', true);
+        }
+    }
+
+    /**
+     * Single-device automation cycle (original logic)
+     */
+    async runSingleDeviceAutomationCycle() {
+
             // ========== POWER SETPOINT VALIDATION (NON-BLOCKING) ==========
             const currentBatteryPowerW = await this.dataReader.getCurrentBatteryPowerW();
             await this.validationService.validateSetpoint(this.config, currentBatteryPowerW);
@@ -454,11 +472,15 @@ class ZendureAutomation extends utils.Adapter {
             }
             
             await this.setStateAsync('status.mode', mode, true);
+    }
 
-        } catch (err) {
-            this.log.error(`Automation cycle error: ${err.message}`);
-            await this.setStateAsync('status.mode', 'error', true);
-        }
+    /**
+     * Multi-device automation cycle
+     */
+    async runMultiDeviceAutomationCycle() {
+        // TODO: Implement multi-device cycle
+        // This will be implemented next
+        this.log.warn('Multi-device cycle not yet implemented');
     }
 
     /**
