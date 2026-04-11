@@ -51,6 +51,18 @@
                 "de": "Der Instanzname des nograx zendure-solarflow Adapters"
               }
             },
+            "multiDeviceEnabled": {
+              "type": "checkbox",
+              "label": {
+                "en": "Enable Multi-Device Support",
+                "de": "Multi-Device Support aktivieren"
+              },
+              "sm": 12,
+              "help": {
+                "en": "Control multiple Zendure devices as one system (power split, SOC-weighted distribution)",
+                "de": "Mehrere Zendure Geräte als ein System steuern (Power-Aufteilung, SOC-gewichtete Verteilung)"
+              }
+            },
             "deviceProductKey": {
               "type": "text",
               "label": {
@@ -58,6 +70,7 @@
                 "de": "Gerät ProductKey"
               },
               "sm": 6,
+              "hidden": "data.multiDeviceEnabled",
               "help": {
                 "en": "The ProductKey of your Zendure device",
                 "de": "Der ProductKey deines Zendure Geräts"
@@ -70,6 +83,7 @@
                 "de": "Gerät DeviceKey"
               },
               "sm": 6,
+              "hidden": "data.multiDeviceEnabled",
               "help": {
                 "en": "The DeviceKey of your Zendure device",
                 "de": "Der DeviceKey deines Zendure Geräts"
@@ -82,11 +96,77 @@
                 "de": "💡 ProductKey und DeviceKey findest du im zendure-solarflow Adapter unter deinem Gerät im Objektbaum."
               },
               "sm": 12,
+              "hidden": "data.multiDeviceEnabled",
               "style": {
                 "fontSize": "0.85em",
                 "fontStyle": "italic",
                 "color": "#666",
                 "marginTop": "5px"
+              }
+            },
+            "devices": {
+              "type": "table",
+              "hidden": "!data.multiDeviceEnabled",
+              "sm": 12,
+              "label": {
+                "en": "Devices",
+                "de": "Geräte"
+              },
+              "items": [
+                {
+                  "type": "text",
+                  "attr": "productKey",
+                  "title": {
+                    "en": "ProductKey",
+                    "de": "ProductKey"
+                  },
+                  "width": "35%"
+                },
+                {
+                  "type": "text",
+                  "attr": "deviceKey",
+                  "title": {
+                    "en": "DeviceKey",
+                    "de": "DeviceKey"
+                  },
+                  "width": "35%"
+                },
+                {
+                  "type": "text",
+                  "attr": "name",
+                  "title": {
+                    "en": "Name (optional)",
+                    "de": "Name (optional)"
+                  },
+                  "width": "20%"
+                },
+                {
+                  "type": "checkbox",
+                  "attr": "enabled",
+                  "title": {
+                    "en": "Enabled",
+                    "de": "Aktiv"
+                  },
+                  "default": true,
+                  "width": "10%"
+                }
+              ]
+            },
+            "_multiDeviceInfo": {
+              "type": "staticText",
+              "text": {
+                "en": "⚡ Multi-Device: Power is distributed SOC-weighted across all enabled devices. Devices at safety limits are automatically excluded from distribution.",
+                "de": "⚡ Multi-Device: Leistung wird SOC-gewichtet auf alle aktiven Geräte verteilt. Geräte an Sicherheitsgrenzen werden automatisch von der Verteilung ausgeschlossen."
+              },
+              "sm": 12,
+              "hidden": "!data.multiDeviceEnabled",
+              "style": {
+                "fontSize": "0.85em",
+                "backgroundColor": "#fff3e0",
+                "padding": "10px",
+                "borderRadius": "4px",
+                "color": "#e65100",
+                "marginTop": "10px"
               }
             }
           }
