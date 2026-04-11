@@ -529,8 +529,8 @@ class ZendureAutomation extends utils.Adapter {
         await this.updateDeviceStates(aggregatedState.devices);
 
         // ========== CHECK EMERGENCY FOR EACH DEVICE ==========
-        let anyDeviceInEmergency = false;
         const emergencyDevices = [];
+        const normalDevices = [];
 
         for (const device of aggregatedState.devices) {
             if (!device.available) continue;
@@ -538,17 +538,19 @@ class ZendureAutomation extends utils.Adapter {
             const emergencyMgr = this.emergencyManagers.get(device.id);
             if (!emergencyMgr) continue;
 
-            // Check if already in recovery
+            // Update recovery states first
+            await emergencyMgr.updateEmergencyRecovery(this.config, device.soc);
+            await emergencyMgr.updateVoltageRecovery(this.config, device.minPackVoltageV);
+
+            // Check if in recovery after update
             if (emergencyMgr.inEmergencyRecovery) {
+                emergencyDevices.push(device);
                 const emergencyExitSoc = this.config.emergencyExitSoc || 20;
-                if (device.soc >= emergencyExitSoc) {
-                    this.log.info(`✓ ${device.name} emergency exit SOC reached (${device.soc}% >= ${emergencyExitSoc}%)`);
-                    // Exit still handled by updateEmergencyRecovery below
-                } else {
-                    anyDeviceInEmergency = true;
-                    emergencyDevices.push(device.name);
-                    this.log.warn(`⚡ ${device.name} emergency charging: ${device.soc}% → ${emergencyExitSoc}%`);
-                }
+                this.log.warn(`⚡ ${device.name} emergency charging: ${device.soc}% → ${emergencyExitSoc}%`);
+            } else if (emergencyMgr.inVoltageRecovery) {
+                emergencyDevices.push(device);
+                const emergencyExitVoltage = this.config.emergencyExitVoltage || 3.1;
+                this.log.warn(`⚡ ${device.name} voltage recovery: ${device.minPackVoltageV?.toFixed(2) || 'N/A'}V → ${emergencyExitVoltage}V`);
             } else {
                 // Check for new emergency
                 const emergencyState = await emergencyMgr.checkEmergencyConditions(
@@ -560,49 +562,55 @@ class ZendureAutomation extends utils.Adapter {
                 if (emergencyState.isEmergency) {
                     this.log.warn(`🚨 ${device.name} EMERGENCY: ${emergencyState.reason}`);
                     await emergencyMgr.activateEmergencyRecovery();
-                    anyDeviceInEmergency = true;
-                    emergencyDevices.push(device.name);
+                    emergencyDevices.push(device);
+                } else {
+                    normalDevices.push(device);
                 }
             }
-
-            // Update recovery states
-            await emergencyMgr.updateEmergencyRecovery(this.config, device.soc);
-            await emergencyMgr.updateVoltageRecovery(this.config, device.minPackVoltageV);
         }
 
-        // If any device in emergency, charge all eligible devices
-        if (anyDeviceInEmergency) {
-            // Emergency charge power is per device, multiply by available devices
-            const emergencyChargePowerPerDevice = -(this.config.emergencyChargePowerW || 800);
-            const totalEmergencyPower = emergencyChargePowerPerDevice * aggregatedState.availableDevicesCount;
+        // ========== HANDLE EMERGENCY DEVICES ==========
+        if (emergencyDevices.length > 0) {
+            const emergencyChargePower = -(this.config.emergencyChargePowerW || 800);
+            const emergencyDeviceNames = emergencyDevices.map(d => d.name).join(', ');
             
-            await this.setStateAsync('status.mode', 'emergency-charging', true);
-            await this.setStateAsync('status.emergencyReason', `Devices: ${emergencyDevices.join(', ')}`, true);
+            this.log.warn(`🚨 Emergency Charging: ${emergencyDeviceNames} at ${Math.abs(emergencyChargePower)}W each`);
+            await this.setStateAsync('status.emergencyReason', `Devices: ${emergencyDeviceNames}`, true);
 
-            // Distribute emergency charging to eligible devices
-            const distribution = await this.multiDeviceMgr.distributePower(
-                totalEmergencyPower,
-                aggregatedState,
-                this.config,
-                this.emergencyManagers,
-                this.safetyLimiters
-            );
-
-            await this.multiDeviceMgr.writePowerSetpoints(distribution, this.validationService);
-            return;
+            // Write emergency charge power to each emergency device
+            for (const device of emergencyDevices) {
+                const deviceConfig = this.multiDeviceMgr.devices.find(d => d.id === device.id);
+                if (deviceConfig) {
+                    await this.validationService.writePowerSetpoint(deviceConfig.basePath, emergencyChargePower);
+                }
+            }
         } else {
             await this.setStateAsync('status.emergencyReason', '', true);
         }
 
-        // ========== I-REGULATOR: CALCULATE TARGET POWER ==========
+        // ========== HANDLE NORMAL DEVICES WITH I-REGULATOR ==========
+        if (normalDevices.length === 0) {
+            // All devices in emergency - set mode and return
+            if (emergencyDevices.length > 0) {
+                await this.setStateAsync('status.mode', 'emergency-charging', true);
+            }
+            return;
+        }
+
+        // Continue with I-Regulator for normal devices only
+
+        // Continue with I-Regulator for normal devices only
+
+        // ========== I-REGULATOR: CALCULATE TARGET POWER FOR NORMAL DEVICES ==========
         // Use sum of last written limits as base
         let lastSetPowerW = this.validationService.lastWrittenLimit !== null 
             ? this.validationService.lastWrittenLimit 
             : 0;
 
-        // ========== ANTI-WINDUP: Limit lastSetPowerW ==========
-        const maxChargePowerW = -(this.config.maxChargePowerW || 1200) * aggregatedState.availableDevicesCount;
-        const maxDischargePowerW = (this.config.maxDischargePowerW || 1200) * aggregatedState.availableDevicesCount;
+        // ========== ANTI-WINDUP: Limit based on NORMAL devices count ==========
+        const normalDevicesCount = normalDevices.length;
+        const maxChargePowerW = -(this.config.maxChargePowerW || 1200) * normalDevicesCount;
+        const maxDischargePowerW = (this.config.maxDischargePowerW || 1200) * normalDevicesCount;
 
         if (lastSetPowerW < maxChargePowerW) {
             this.log.debug(`Anti-windup: Limiting lastSetPowerW from ${lastSetPowerW}W to ${maxChargePowerW}W`);
@@ -632,11 +640,14 @@ class ZendureAutomation extends utils.Adapter {
 
         this.log.debug(`Calculated total battery power: ${newTotalBatteryPowerW}W (after anti-windup, before relay protection)`);
 
-        // ========== GLOBAL RELAY PROTECTION ==========
+        // ========== GLOBAL RELAY PROTECTION (only for normal devices) ==========
+        // Calculate current power only from normal devices
+        const normalDevicesCurrentPowerW = normalDevices.reduce((sum, d) => sum + (d.powerW || 0), 0);
+        
         const relayResult = this.relayProtection.applyProtection({
             config: this.config,
             gridPowerW: filteredGridPowerW,
-            currentBatteryPowerW: aggregatedState.totalPowerW,
+            currentBatteryPowerW: normalDevicesCurrentPowerW,
             lastSetPowerW,
             newBatteryPowerW: newTotalBatteryPowerW
         });
@@ -660,37 +671,64 @@ class ZendureAutomation extends utils.Adapter {
             `Setting total battery power: ${newTotalBatteryPowerW}W (Grid: ${gridPowerW}W → ${targetGridPowerW}W)`
         );
 
-        // ========== DISTRIBUTE POWER TO DEVICES ==========
+        // ========== DISTRIBUTE POWER TO NORMAL DEVICES ONLY ==========
+        // Emergency devices already handled above - distribute only to normal devices
+        const normalDeviceIds = normalDevices.map(d => d.id);
+        const normalDevicesAggregatedState = {
+            devices: aggregatedState.devices.filter(d => normalDeviceIds.includes(d.id)),
+            totalPowerW: normalDevicesCurrentPowerW,
+            avgSoc: normalDevices.reduce((sum, d) => sum + (d.soc || 0), 0) / normalDevices.length,
+            minPackVoltageV: Math.min(...normalDevices.map(d => d.minPackVoltageV).filter(v => v !== null)),
+            availableDevicesCount: normalDevices.length
+        };
+
         const distribution = await this.multiDeviceMgr.distributePower(
             newTotalBatteryPowerW,
-            aggregatedState,
+            normalDevicesAggregatedState,
             this.config,
             this.emergencyManagers,
             this.safetyLimiters
         );
 
-        // ========== WRITE TO ALL DEVICES ==========
+        // ========== WRITE TO NORMAL DEVICES ==========
         await this.multiDeviceMgr.writePowerSetpoints(distribution, this.validationService);
 
-        // Update device states with exclusion info
-        await this.updateDeviceStates(aggregatedState.devices, distribution);
+        // ========== UPDATE DEVICE STATES ==========
+        // Create combined distribution for state updates (emergency + normal)
+        const emergencyDistribution = emergencyDevices.map(d => ({
+            id: d.id,
+            powerW: -this.config.emergencyChargePowerW,
+            excluded: false,
+            reason: 'emergency'
+        }));
+        const fullDistribution = [...emergencyDistribution, ...distribution];
+        
+        await this.updateDeviceStates(aggregatedState.devices, fullDistribution);
 
-        // Store total for next cycle
-        const actualTotal = distribution.reduce((sum, d) => sum + d.powerW, 0);
+        // Store total for next cycle (emergency + normal power)
+        const emergencyTotalW = emergencyDevices.length * (-this.config.emergencyChargePowerW);
+        const normalTotalW = distribution.reduce((sum, d) => sum + d.powerW, 0);
+        const actualTotal = emergencyTotalW + normalTotalW;
         this.validationService.lastWrittenLimit = actualTotal;
 
         // ========== UPDATE MODE STATUS ==========
         let mode = 'standby';
-        if (newTotalBatteryPowerW < -10) {
+        
+        // Emergency mode has highest priority
+        if (emergencyDevices.length > 0) {
+            mode = 'emergency-charging';
+        } else if (newTotalBatteryPowerW < -10) {
             mode = 'charging';
         } else if (newTotalBatteryPowerW > 10) {
             mode = 'discharging';
         }
 
-        // Override if any device in recovery
-        const anyInRecovery = Array.from(this.emergencyManagers.values()).some(m => m.inEmergencyRecovery || m.inVoltageRecovery);
-        if (anyInRecovery && mode === 'standby') {
-            mode = 'recovery';
+        // Override if any device in recovery (but not in emergency)
+        if (emergencyDevices.length === 0) {
+            const anyInRecovery = Array.from(this.emergencyManagers.values()).some(m => m.inEmergencyRecovery || m.inVoltageRecovery);
+            if (anyInRecovery && mode === 'standby') {
+                mode = 'recovery';
+            }
         }
 
         await this.setStateAsync('status.mode', mode, true);
