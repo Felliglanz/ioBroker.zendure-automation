@@ -119,6 +119,9 @@ class ZendureAutomation extends utils.Adapter {
                 await this.setStateAsync('status.mode', 'idle', true);
                 await this.setStateAsync('info.connection', true, true);
 
+                // Create device channels and states
+                await this.createDeviceStates();
+
                 // Restore emergency recovery states for all devices
                 for (const [deviceId, emergencyMgr] of this.emergencyManagers) {
                     await emergencyMgr.restoreRecoveryStates();
@@ -569,13 +572,16 @@ class ZendureAutomation extends utils.Adapter {
 
         // If any device in emergency, charge all eligible devices
         if (anyDeviceInEmergency) {
-            const emergencyChargePower = -(this.config.emergencyChargePowerW || 800);
+            // Emergency charge power is per device, multiply by available devices
+            const emergencyChargePowerPerDevice = -(this.config.emergencyChargePowerW || 800);
+            const totalEmergencyPower = emergencyChargePowerPerDevice * aggregatedState.availableDevicesCount;
+            
             await this.setStateAsync('status.mode', 'emergency-charging', true);
             await this.setStateAsync('status.emergencyReason', `Devices: ${emergencyDevices.join(', ')}`, true);
 
             // Distribute emergency charging to eligible devices
             const distribution = await this.multiDeviceMgr.distributePower(
-                emergencyChargePower,
+                totalEmergencyPower,
                 aggregatedState,
                 this.config,
                 this.emergencyManagers,
@@ -666,6 +672,9 @@ class ZendureAutomation extends utils.Adapter {
         // ========== WRITE TO ALL DEVICES ==========
         await this.multiDeviceMgr.writePowerSetpoints(distribution, this.validationService);
 
+        // Update device states with exclusion info
+        await this.updateDeviceStates(aggregatedState.devices, distribution);
+
         // Store total for next cycle
         const actualTotal = distribution.reduce((sum, d) => sum + d.powerW, 0);
         this.validationService.lastWrittenLimit = actualTotal;
@@ -715,7 +724,7 @@ class ZendureAutomation extends utils.Adapter {
     /**
      * Helper: Update per-device status states in object tree
      */
-    async updateDeviceStates(devices) {
+    async updateDeviceStates(devices, distribution = null) {
         for (const device of devices) {
             try {
                 await this.setStateAsync(`status.devices.${device.id}.name`, device.name, true);
@@ -730,10 +739,176 @@ class ZendureAutomation extends utils.Adapter {
                     await this.setStateAsync(`status.devices.${device.id}.emergency`, emergencyMgr.inEmergencyRecovery, true);
                     await this.setStateAsync(`status.devices.${device.id}.voltageRecovery`, emergencyMgr.inVoltageRecovery, true);
                 }
+
+                // Update excluded flag from distribution
+                if (distribution) {
+                    const distItem = distribution.find(d => d.deviceId === device.id);
+                    if (distItem) {
+                        await this.setStateAsync(`status.devices.${device.id}.excluded`, distItem.excluded, true);
+                    }
+                }
             } catch (err) {
                 this.log.warn(`Failed to update states for ${device.id}: ${err.message}`);
             }
         }
+    }
+
+    /**
+     * Create device channels and states for multi-device mode
+     */
+    async createDeviceStates() {
+        if (!this._isMultiDevice || !this.multiDeviceMgr) return;
+
+        // Create devices channel
+        await this.setObjectNotExistsAsync('status.devices', {
+            type: 'channel',
+            common: {
+                name: 'Multi-Device States'
+            },
+            native: {}
+        });
+
+        // Create per-device channels and states
+        for (const device of this.multiDeviceMgr.devices) {
+            // Device channel
+            await this.setObjectNotExistsAsync(`status.devices.${device.id}`, {
+                type: 'channel',
+                common: {
+                    name: device.name
+                },
+                native: {}
+            });
+
+            // Device states
+            await this.setObjectNotExistsAsync(`status.devices.${device.id}.name`, {
+                type: 'state',
+                common: {
+                    name: 'Device Name',
+                    type: 'string',
+                    role: 'text',
+                    read: true,
+                    write: false
+                },
+                native: {}
+            });
+
+            await this.setObjectNotExistsAsync(`status.devices.${device.id}.available`, {
+                type: 'state',
+                common: {
+                    name: 'Device Available',
+                    type: 'boolean',
+                    role: 'indicator.reachable',
+                    read: true,
+                    write: false
+                },
+                native: {}
+            });
+
+            await this.setObjectNotExistsAsync(`status.devices.${device.id}.soc`, {
+                type: 'state',
+                common: {
+                    name: 'Battery SOC',
+                    type: 'number',
+                    role: 'value.battery',
+                    unit: '%',
+                    read: true,
+                    write: false
+                },
+                native: {}
+            });
+
+            await this.setObjectNotExistsAsync(`status.devices.${device.id}.powerW`, {
+                type: 'state',
+                common: {
+                    name: 'Battery Power',
+                    type: 'number',
+                    role: 'value.power',
+                    unit: 'W',
+                    read: true,
+                    write: false
+                },
+                native: {}
+            });
+
+            await this.setObjectNotExistsAsync(`status.devices.${device.id}.minPackVoltageV`, {
+                type: 'state',
+                common: {
+                    name: 'Minimum Pack Voltage',
+                    type: 'number',
+                    role: 'value.voltage',
+                    unit: 'V',
+                    read: true,
+                    write: false
+                },
+                native: {}
+            });
+
+            await this.setObjectNotExistsAsync(`status.devices.${device.id}.emergency`, {
+                type: 'state',
+                common: {
+                    name: 'Emergency Recovery Active',
+                    type: 'boolean',
+                    role: 'indicator.alarm',
+                    read: true,
+                    write: false
+                },
+                native: {}
+            });
+
+            await this.setObjectNotExistsAsync(`status.devices.${device.id}.voltageRecovery`, {
+                type: 'state',
+                common: {
+                    name: 'Voltage Recovery Active',
+                    type: 'boolean',
+                    role: 'indicator',
+                    read: true,
+                    write: false
+                },
+                native: {}
+            });
+
+            await this.setObjectNotExistsAsync(`status.devices.${device.id}.excluded`, {
+                type: 'state',
+                common: {
+                    name: 'Excluded from Distribution',
+                    type: 'boolean',
+                    role: 'indicator',
+                    read: true,
+                    write: false,
+                    def: false
+                },
+                native: {}
+            });
+        }
+
+        // Create additional multi-device global states
+        await this.setObjectNotExistsAsync('status.totalPowerW', {
+            type: 'state',
+            common: {
+                name: 'Total Battery Power (all devices)',
+                type: 'number',
+                role: 'value.power',
+                unit: 'W',
+                read: true,
+                write: false
+            },
+            native: {}
+        });
+
+        await this.setObjectNotExistsAsync('status.avgSoc', {
+            type: 'state',
+            common: {
+                name: 'Average Battery SOC',
+                type: 'number',
+                role: 'value.battery',
+                unit: '%',
+                read: true,
+                write: false
+            },
+            native: {}
+        });
+
+        this.log.info(`✓ Created states for ${this.multiDeviceMgr.devices.length} device(s)`);
     }
 
     /**
