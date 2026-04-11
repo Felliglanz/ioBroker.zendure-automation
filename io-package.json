@@ -2,8 +2,12 @@
   "common": {
     "name": "zendure-automation",
     "title": "Zendure Automation",
-    "version": "0.6.3",
+    "version": "0.6.4",
     "news": {
+      "0.6.4": {
+        "en": "Enhanced relay protection with configurable deadband range and persistent counters. Added UI controls for fine-tuning mode switching behavior to prevent rapid oscillations.",
+        "de": "Verbesserte Relay-Protection mit konfigurierbarer Deadband und persistenten Zählern. UI-Kontrollen für Feinabstimmung des Mode-Switching-Verhaltens zur Vermeidung schneller Oszillationen hinzugefügt."
+      },
       "0.6.3": {
         "en": "Bugfix: Ramping limit can now be disabled by setting to 0. Fixed || operator preventing 0 values and added proper disable check. Users can now set rampChargeWPerCycle or rampDischargeWPerCycle to 0 for instant response without ramp limiting.",
         "de": "Bugfix: Ramping-Limit kann nun durch Setzen auf 0 deaktiviert werden. || Operator korrigiert der 0-Werte verhinderte und proper Disable-Check hinzugefügt. Benutzer können nun rampChargeWPerCycle oder rampDischargeWPerCycle auf 0 setzen für sofortige Reaktion ohne Rampen-Begrenzung."
