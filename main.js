@@ -218,22 +218,13 @@ class ZendureAutomation extends utils.Adapter {
             await this.setStateAsync('status.lastUpdate', Date.now(), true);
 
             // ========== EMERGENCY & RECOVERY CHECK (HIGHEST PRIORITY) ==========
-            const emergencyState = await this.emergencyMgr.checkEmergencyConditions(
-                this.config,
-                batterySoc,
-                minPackVoltageV
-            );
-            
-            if (emergencyState.isEmergency) {
-                // EMERGENCY DETECTED
-                if (!this.emergencyMgr.inEmergencyRecovery) {
-                    this.log.warn(`🚨 EMERGENCY TRIGGERED: ${emergencyState.reason}`);
-                    this.log.warn(`🔒 Activating persistent emergency recovery mode`);
-                    await this.emergencyMgr.activateEmergencyRecovery();
-                }
+            // Check if already in emergency recovery (persistent state)
+            if (this.emergencyMgr.inEmergencyRecovery) {
+                // ALREADY IN EMERGENCY RECOVERY
+                // Ignore current emergency conditions - only check SOC-based exit
+                // This prevents premature exit when voltage recovers during charging!
                 
                 await this.setStateAsync('status.mode', 'emergency-charging', true);
-                await this.setStateAsync('status.emergencyReason', emergencyState.reason, true);
                 
                 const emergencyExitSoc = this.config.emergencyExitSoc || 20;
                 if (batterySoc >= emergencyExitSoc) {
@@ -241,14 +232,38 @@ class ZendureAutomation extends utils.Adapter {
                     await this.setStateAsync('status.mode', 'recovery', true);
                     await this.setStateAsync('status.emergencyReason', '', true);
                 } else {
-                    // Continue emergency charging
+                    // Continue emergency charging (ignore current conditions)
                     const emergencyChargePower = -(this.config.emergencyChargePowerW || 800);
                     this.log.warn(`⚡ Emergency charging at ${Math.abs(emergencyChargePower)}W (${batterySoc}% → ${emergencyExitSoc}%)`);
                     await this.validationService.writePowerSetpoint(this._deviceBasePath, emergencyChargePower);
                     return;
                 }
             } else {
-                await this.setStateAsync('status.emergencyReason', '', true);
+                // NOT IN RECOVERY - Check for new emergency conditions
+                const emergencyState = await this.emergencyMgr.checkEmergencyConditions(
+                    this.config,
+                    batterySoc,
+                    minPackVoltageV
+                );
+                
+                if (emergencyState.isEmergency) {
+                    // NEW EMERGENCY DETECTED
+                    this.log.warn(`🚨 EMERGENCY TRIGGERED: ${emergencyState.reason}`);
+                    this.log.warn(`🔒 Activating persistent emergency recovery mode`);
+                    await this.emergencyMgr.activateEmergencyRecovery();
+                    
+                    await this.setStateAsync('status.mode', 'emergency-charging', true);
+                    await this.setStateAsync('status.emergencyReason', emergencyState.reason, true);
+                    
+                    // Start emergency charging immediately
+                    const emergencyChargePower = -(this.config.emergencyChargePowerW || 800);
+                    const emergencyExitSoc = this.config.emergencyExitSoc || 20;
+                    this.log.warn(`⚡ Emergency charging at ${Math.abs(emergencyChargePower)}W (${batterySoc}% → ${emergencyExitSoc}%)`);
+                    await this.validationService.writePowerSetpoint(this._deviceBasePath, emergencyChargePower);
+                    return;
+                } else {
+                    await this.setStateAsync('status.emergencyReason', '', true);
+                }
             }
 
             // Update recovery modes
