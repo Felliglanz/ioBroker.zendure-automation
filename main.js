@@ -58,7 +58,8 @@ class ZendureAutomation extends utils.Adapter {
         this.emergencyMgr = null;  // Single device mode
         this.emergencyManagers = null;  // Multi-device mode: Map<deviceId, EmergencyManager>
         this.relayProtection = null;
-        this.safetyLimiter = null;
+        this.safetyLimiter = null;  // Single device mode
+        this.safetyLimiters = null;  // Multi-device mode: Map<deviceId, SafetyLimiter>
         this.powerRegulator = null;
         this.validationService = null;
         this.multiDeviceMgr = null;  // Multi-device manager
@@ -98,10 +99,15 @@ class ZendureAutomation extends utils.Adapter {
                     this.emergencyManagers.set(device.id, emergencyMgr);
                 }
 
-                // Initialize shared components (use first device for validation service)
-                const firstDevice = this.multiDeviceMgr.devices[0];
+                // Initialize per-device Safety Limiters
+                this.safetyLimiters = new Map();
+                for (const device of this.multiDeviceMgr.devices) {
+                    const safetyLimiter = new SafetyLimiter(this, device.basePath);
+                    this.safetyLimiters.set(device.id, safetyLimiter);
+                }
+
+                // Initialize shared components
                 this.relayProtection = new RelayProtection(this);
-                this.safetyLimiter = new SafetyLimiter(this, firstDevice.basePath);  // Note: Will be called per-device
                 this.powerRegulator = new PowerRegulator(this);
                 this.validationService = new ValidationService(this);
                 
@@ -478,9 +484,256 @@ class ZendureAutomation extends utils.Adapter {
      * Multi-device automation cycle
      */
     async runMultiDeviceAutomationCycle() {
-        // TODO: Implement multi-device cycle
-        // This will be implemented next
-        this.log.warn('Multi-device cycle not yet implemented');
+        // ========== READ GRID POWER ==========
+        const gridPowerW = await this.getGridPowerForMultiDevice(this.config.powerMeterDp);
+        const targetGridPowerW = await this.getTargetGridPowerForMultiDevice(this.config.targetGridPowerW);
+
+        if (gridPowerW === null) {
+            this.log.warn('Could not read grid power, skipping cycle');
+            await this.setStateAsync('status.mode', 'error', true);
+            return;
+        }
+
+        // ========== EMA FILTER FOR GRID POWER ==========
+        const emaAlpha = this.config.emaFilterAlpha || 0.5;
+        if (this._filteredGridPower === null) {
+            this._filteredGridPower = gridPowerW;
+        } else {
+            this._filteredGridPower = emaAlpha * gridPowerW + (1 - emaAlpha) * this._filteredGridPower;
+        }
+        const filteredGridPowerW = Math.round(this._filteredGridPower);
+        this.log.debug(`Grid power: raw=${gridPowerW}W, filtered=${filteredGridPowerW}W`);
+
+        // ========== AGGREGATE DEVICE STATES ==========
+        const aggregatedState = await this.multiDeviceMgr.aggregateDeviceStates();
+
+        if (aggregatedState.availableDevicesCount === 0) {
+            this.log.warn('No available devices, skipping cycle');
+            await this.setStateAsync('status.mode', 'error', true);
+            return;
+        }
+
+        // Update global status states
+        await this.setStateAsync('status.gridPowerW', gridPowerW, true);
+        await this.setStateAsync('status.totalPowerW', aggregatedState.totalPowerW, true);
+        await this.setStateAsync('status.avgSoc', aggregatedState.avgSoc, true);
+        await this.setStateAsync('status.lastUpdate', Date.now(), true);
+        if (aggregatedState.minPackVoltageV !== null) {
+            await this.setStateAsync('status.minPackVoltageV', aggregatedState.minPackVoltageV, true);
+        }
+
+        // Update per-device status states
+        await this.updateDeviceStates(aggregatedState.devices);
+
+        // ========== CHECK EMERGENCY FOR EACH DEVICE ==========
+        let anyDeviceInEmergency = false;
+        const emergencyDevices = [];
+
+        for (const device of aggregatedState.devices) {
+            if (!device.available) continue;
+
+            const emergencyMgr = this.emergencyManagers.get(device.id);
+            if (!emergencyMgr) continue;
+
+            // Check if already in recovery
+            if (emergencyMgr.inEmergencyRecovery) {
+                const emergencyExitSoc = this.config.emergencyExitSoc || 20;
+                if (device.soc >= emergencyExitSoc) {
+                    this.log.info(`✓ ${device.name} emergency exit SOC reached (${device.soc}% >= ${emergencyExitSoc}%)`);
+                    // Exit still handled by updateEmergencyRecovery below
+                } else {
+                    anyDeviceInEmergency = true;
+                    emergencyDevices.push(device.name);
+                    this.log.warn(`⚡ ${device.name} emergency charging: ${device.soc}% → ${emergencyExitSoc}%`);
+                }
+            } else {
+                // Check for new emergency
+                const emergencyState = await emergencyMgr.checkEmergencyConditions(
+                    this.config,
+                    device.soc,
+                    device.minPackVoltageV
+                );
+
+                if (emergencyState.isEmergency) {
+                    this.log.warn(`🚨 ${device.name} EMERGENCY: ${emergencyState.reason}`);
+                    await emergencyMgr.activateEmergencyRecovery();
+                    anyDeviceInEmergency = true;
+                    emergencyDevices.push(device.name);
+                }
+            }
+
+            // Update recovery states
+            await emergencyMgr.updateEmergencyRecovery(this.config, device.soc);
+            await emergencyMgr.updateVoltageRecovery(this.config, device.minPackVoltageV);
+        }
+
+        // If any device in emergency, charge all eligible devices
+        if (anyDeviceInEmergency) {
+            const emergencyChargePower = -(this.config.emergencyChargePowerW || 800);
+            await this.setStateAsync('status.mode', 'emergency-charging', true);
+            await this.setStateAsync('status.emergencyReason', `Devices: ${emergencyDevices.join(', ')}`, true);
+
+            // Distribute emergency charging to eligible devices
+            const distribution = await this.multiDeviceMgr.distributePower(
+                emergencyChargePower,
+                aggregatedState,
+                this.config,
+                this.emergencyManagers,
+                this.safetyLimiters
+            );
+
+            await this.multiDeviceMgr.writePowerSetpoints(distribution, this.validationService);
+            return;
+        } else {
+            await this.setStateAsync('status.emergencyReason', '', true);
+        }
+
+        // ========== I-REGULATOR: CALCULATE TARGET POWER ==========
+        // Use sum of last written limits as base
+        let lastSetPowerW = this.validationService.lastWrittenLimit !== null 
+            ? this.validationService.lastWrittenLimit 
+            : 0;
+
+        // ========== ANTI-WINDUP: Limit lastSetPowerW ==========
+        const maxChargePowerW = -(this.config.maxChargePowerW || 1200) * aggregatedState.availableDevicesCount;
+        const maxDischargePowerW = (this.config.maxDischargePowerW || 1200) * aggregatedState.availableDevicesCount;
+
+        if (lastSetPowerW < maxChargePowerW) {
+            this.log.debug(`Anti-windup: Limiting lastSetPowerW from ${lastSetPowerW}W to ${maxChargePowerW}W`);
+            lastSetPowerW = maxChargePowerW;
+        } else if (lastSetPowerW > maxDischargePowerW) {
+            this.log.debug(`Anti-windup: Limiting lastSetPowerW from ${lastSetPowerW}W to ${maxDischargePowerW}W`);
+            lastSetPowerW = maxDischargePowerW;
+        }
+
+        this.log.debug(
+            `Cycle: Grid_raw=${gridPowerW}W, Grid_filtered=${filteredGridPowerW}W, ` +
+            `Total_measured=${aggregatedState.totalPowerW}W, Total_set=${lastSetPowerW}W, ` +
+            `Avg_SOC=${aggregatedState.avgSoc.toFixed(1)}%, Target=${targetGridPowerW}W, Devices=${aggregatedState.availableDevicesCount}`
+        );
+
+        // I-Regulator formula (using filtered grid power)
+        let newTotalBatteryPowerW = lastSetPowerW + (filteredGridPowerW - targetGridPowerW);
+
+        // ========== ANTI-WINDUP: Limit newTotalBatteryPowerW ==========
+        if (newTotalBatteryPowerW < maxChargePowerW) {
+            this.log.debug(`Anti-windup: Limiting newTotalBatteryPowerW from ${newTotalBatteryPowerW}W to ${maxChargePowerW}W`);
+            newTotalBatteryPowerW = maxChargePowerW;
+        } else if (newTotalBatteryPowerW > maxDischargePowerW) {
+            this.log.debug(`Anti-windup: Limiting newTotalBatteryPowerW from ${newTotalBatteryPowerW}W to ${maxDischargePowerW}W`);
+            newTotalBatteryPowerW = maxDischargePowerW;
+        }
+
+        this.log.debug(`Calculated total battery power: ${newTotalBatteryPowerW}W (after anti-windup, before relay protection)`);
+
+        // ========== GLOBAL RELAY PROTECTION ==========
+        const relayResult = this.relayProtection.applyProtection({
+            config: this.config,
+            gridPowerW: filteredGridPowerW,
+            currentBatteryPowerW: aggregatedState.totalPowerW,
+            lastSetPowerW,
+            newBatteryPowerW: newTotalBatteryPowerW
+        });
+        newTotalBatteryPowerW = relayResult.powerW;
+
+        // Update counter states
+        await this.setStateAsync('status.feedInCounter', relayResult.feedInCounter, true);
+        await this.setStateAsync('status.dischargeCounter', relayResult.dischargeCounter, true);
+        await this.setStateAsync('status.deadbandCounter', relayResult.deadbandCounter, true);
+
+        // ========== POWER REGULATION (Hysteresis, Ramping, Limits) ==========
+        const regResult = this.powerRegulator.applyRegulation({
+            config: this.config,
+            powerW: newTotalBatteryPowerW,
+            lastSetPowerW,
+            safetyActive: false  // Safety handled per-device in distribution
+        });
+        newTotalBatteryPowerW = regResult.powerW;
+
+        this.log.debug(
+            `Setting total battery power: ${newTotalBatteryPowerW}W (Grid: ${gridPowerW}W → ${targetGridPowerW}W)`
+        );
+
+        // ========== DISTRIBUTE POWER TO DEVICES ==========
+        const distribution = await this.multiDeviceMgr.distributePower(
+            newTotalBatteryPowerW,
+            aggregatedState,
+            this.config,
+            this.emergencyManagers,
+            this.safetyLimiters
+        );
+
+        // ========== WRITE TO ALL DEVICES ==========
+        await this.multiDeviceMgr.writePowerSetpoints(distribution, this.validationService);
+
+        // Store total for next cycle
+        const actualTotal = distribution.reduce((sum, d) => sum + d.powerW, 0);
+        this.validationService.lastWrittenLimit = actualTotal;
+
+        // ========== UPDATE MODE STATUS ==========
+        let mode = 'standby';
+        if (newTotalBatteryPowerW < -10) {
+            mode = 'charging';
+        } else if (newTotalBatteryPowerW > 10) {
+            mode = 'discharging';
+        }
+
+        // Override if any device in recovery
+        const anyInRecovery = Array.from(this.emergencyManagers.values()).some(m => m.inEmergencyRecovery || m.inVoltageRecovery);
+        if (anyInRecovery && mode === 'standby') {
+            mode = 'recovery';
+        }
+
+        await this.setStateAsync('status.mode', mode, true);
+    }
+
+    /**
+     * Helper: Get grid power for multi-device (same as single device)
+     */
+    async getGridPowerForMultiDevice(powerMeterDp) {
+        try {
+            const state = await this.getForeignStateAsync(powerMeterDp);
+            return state?.val ?? null;
+        } catch (err) {
+            this.log.error(`Failed to read grid power: ${err.message}`);
+            return null;
+        }
+    }
+
+    /**
+     * Helper: Get target grid power for multi-device
+     */
+    async getTargetGridPowerForMultiDevice(configValue) {
+        try {
+            const state = await this.getStateAsync('control.targetGridPowerW');
+            return state?.val ?? configValue ?? 0;
+        } catch (err) {
+            return configValue ?? 0;
+        }
+    }
+
+    /**
+     * Helper: Update per-device status states in object tree
+     */
+    async updateDeviceStates(devices) {
+        for (const device of devices) {
+            try {
+                await this.setStateAsync(`status.devices.${device.id}.name`, device.name, true);
+                await this.setStateAsync(`status.devices.${device.id}.available`, device.available, true);
+                await this.setStateAsync(`status.devices.${device.id}.soc`, device.soc ?? 0, true);
+                await this.setStateAsync(`status.devices.${device.id}.powerW`, device.powerW ?? 0, true);
+                await this.setStateAsync(`status.devices.${device.id}.minPackVoltageV`, device.minPackVoltageV ?? 0, true);
+
+                // Update emergency/recovery flags
+                const emergencyMgr = this.emergencyManagers.get(device.id);
+                if (emergencyMgr) {
+                    await this.setStateAsync(`status.devices.${device.id}.emergency`, emergencyMgr.inEmergencyRecovery, true);
+                    await this.setStateAsync(`status.devices.${device.id}.voltageRecovery`, emergencyMgr.inVoltageRecovery, true);
+                }
+            } catch (err) {
+                this.log.warn(`Failed to update states for ${device.id}: ${err.message}`);
+            }
+        }
     }
 
     /**
@@ -494,7 +747,14 @@ class ZendureAutomation extends utils.Adapter {
             this.log.info(`Automation ${state.val ? 'enabled' : 'disabled'}`);
             if (!state.val) {
                 // Stop battery when disabled
-                await this.validationService.writePowerSetpoint(this._deviceBasePath, 0);
+                if (this._isMultiDevice) {
+                    // Stop all devices
+                    for (const device of this.multiDeviceMgr.devices) {
+                        await this.validationService.writePowerSetpoint(device.basePath, 0);
+                    }
+                } else {
+                    await this.validationService.writePowerSetpoint(this._deviceBasePath, 0);
+                }
                 await this.setStateAsync('status.mode', 'idle', true);
             }
         }
@@ -530,7 +790,15 @@ class ZendureAutomation extends utils.Adapter {
             }
 
             // Set battery to standby
-            await this.validationService.writePowerSetpoint(this._deviceBasePath, 0);
+            if (this._isMultiDevice) {
+                // Stop all devices
+                for (const device of this.multiDeviceMgr.devices) {
+                    await this.validationService.writePowerSetpoint(device.basePath, 0);
+                }
+            } else {
+                await this.validationService.writePowerSetpoint(this._deviceBasePath, 0);
+            }
+            
             await this.setStateAsync('status.mode', 'idle', true);
             await this.setStateAsync('info.connection', false, true);
 
