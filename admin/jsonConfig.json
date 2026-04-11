@@ -592,7 +592,7 @@
           "items": {
             "dischargeProtectionMode": {
               "type": "select",
-              "label": {
+              "labaultel": {
                 "en": "Protection mode",
                 "de": "Schutzmodus"
               },
