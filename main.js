@@ -696,7 +696,8 @@ class ZendureAutomation extends utils.Adapter {
         // ========== UPDATE DEVICE STATES ==========
         // Create combined distribution for state updates (emergency + normal)
         const emergencyDistribution = emergencyDevices.map(d => ({
-            id: d.id,
+            deviceId: d.id,
+            deviceName: d.name,
             powerW: -this.config.emergencyChargePowerW,
             excluded: false,
             reason: 'emergency'
