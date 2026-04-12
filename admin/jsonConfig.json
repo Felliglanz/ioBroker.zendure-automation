@@ -498,6 +498,7 @@
               "sm": 6,
               "min": 0,
               "max": 50,
+              "def": 0,
               "help": {
                 "en": "Minimum power to maintain in current mode before allowing 0W or sign change. Prevents relay switching through 0W during regulation. Higher = more relay protection, but less precise zero-grid control.",
                 "de": "Mindestleistung im aktuellen Modus vor Erlaubnis von 0W oder Vorzeichenwechsel. Verhindert Relais-Schalten durch 0W während Regelung. Höher = mehr Relais-Schutz, aber weniger präzise Nulleinspeisung."
