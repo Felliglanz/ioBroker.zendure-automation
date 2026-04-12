@@ -665,6 +665,7 @@
               "min": 0,
               "max": 20,
               "step": 1,
+              "def": 5,
               "help": {
                 "en": "SOC must rise min+hysteresis before discharge allowed again (prevents oscillation)",
                 "de": "SOC muss min+Hysterese überschreiten vor erneuter Entladung (verhindert Oszillation)"
