@@ -2,8 +2,12 @@
   "common": {
     "name": "zendure-automation",
     "title": "Zendure Automation",
-    "version": "0.6.4",
+    "version": "0.6.5",
     "news": {
+      "0.6.5": {
+        "en": "Added SOC recovery hysteresis (default 5%) to prevent discharge oscillation after reaching minimum SOC. Battery must charge above minSOC + hysteresis before discharge is allowed again. Persistent across adapter restarts.",
+        "de": "SOC Recovery Hysterese hinzugefügt (Standard 5%) um Entlade-Oszillation nach Erreichen des minimalen SOC zu verhindern. Batterie muss über minSOC + Hysterese laden bevor erneute Entladung erlaubt ist. Persistent über Adapter-Neustarts."
+      },
       "0.6.4": {
         "en": "Enhanced relay protection with configurable deadband range and persistent counters. Added UI controls for fine-tuning mode switching behavior to prevent rapid oscillations.",
         "de": "Verbesserte Relay-Protection mit konfigurierbarer Deadband und persistenten Zählern. UI-Kontrollen für Feinabstimmung des Mode-Switching-Verhaltens zur Vermeidung schneller Oszillationen hinzugefügt."
@@ -352,6 +356,19 @@
       "type": "state",
       "common": {
         "name": "Emergency recovery mode active (persistent)",
+        "type": "boolean",
+        "role": "indicator",
+        "read": true,
+        "write": false,
+        "def": false
+      },
+      "native": {}
+    },
+    {
+      "_id": "status.socRecoveryActive",
+      "type": "state",
+      "common": {
+        "name": "SOC recovery mode active (persistent)",
         "type": "boolean",
         "role": "indicator",
         "read": true,

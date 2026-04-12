@@ -654,6 +654,28 @@
                 "en": "Stop charge above this SOC",
                 "de": "Laden stoppen über diesem SOC"
               }
+            },
+            "socRecoveryHysteresis": {
+              "type": "number",
+              "label": {
+                "en": "SOC recovery hysteresis (%)",
+                "de": "SOC Recovery-Hysterese (%)"
+              },
+              "sm": 6,
+              "min": 0,
+              "max": 20,
+              "step": 1,
+              "help": {
+                "en": "SOC must rise min+hysteresis before discharge allowed again (prevents oscillation)",
+                "de": "SOC muss min+Hysterese überschreiten vor erneuter Entladung (verhindert Oszillation)"
+              }
+            },
+            "_socHint": {
+              "type": "staticText",
+              "text": {
+                "en": "Example: min=20%, hysteresis=5% → discharge blocked until SOC reaches 25%",
+                "de": "Beispiel: min=20%, Hysterese=5% → Entladung blockiert bis SOC 25% erreicht"
+              }
             }
           }
         },

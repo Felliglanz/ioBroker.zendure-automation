@@ -269,6 +269,7 @@ class ZendureAutomation extends utils.Adapter {
             // Update recovery modes
             await this.emergencyMgr.updateEmergencyRecovery(this.config, batterySoc);
             await this.emergencyMgr.updateVoltageRecovery(this.config, minPackVoltageV);
+            await this.emergencyMgr.updateSocRecovery(this.config, batterySoc);
             // ================================================================
 
             // ========== I-REGULATOR: CALCULATE TARGET POWER ==========
@@ -364,7 +365,7 @@ class ZendureAutomation extends utils.Adapter {
             }
             
             // Override mode display if in recovery
-            if (this.emergencyMgr.inEmergencyRecovery || this.emergencyMgr.inVoltageRecovery) {
+            if (this.emergencyMgr.inEmergencyRecovery || this.emergencyMgr.inVoltageRecovery || this.emergencyMgr.inSocRecovery) {
                 if (mode === 'standby') {
                     mode = 'recovery';
                 }
