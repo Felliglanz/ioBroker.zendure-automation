@@ -2,8 +2,16 @@
   "common": {
     "name": "zendure-automation",
     "title": "Zendure Automation",
-    "version": "0.6.3",
+    "version": "0.6.5",
     "news": {
+      "0.6.5": {
+        "en": "Added SOC recovery hysteresis (default 5%) to prevent discharge oscillation after reaching minimum SOC. Battery must charge above minSOC + hysteresis before discharge is allowed again. Persistent across adapter restarts.",
+        "de": "SOC Recovery Hysterese hinzugefügt (Standard 5%) um Entlade-Oszillation nach Erreichen des minimalen SOC zu verhindern. Batterie muss über minSOC + Hysterese laden bevor erneute Entladung erlaubt ist. Persistent über Adapter-Neustarts."
+      },
+      "0.6.4": {
+        "en": "Enhanced relay protection with configurable deadband range and persistent counters. Added UI controls for fine-tuning mode switching behavior to prevent rapid oscillations.",
+        "de": "Verbesserte Relay-Protection mit konfigurierbarer Deadband und persistenten Zählern. UI-Kontrollen für Feinabstimmung des Mode-Switching-Verhaltens zur Vermeidung schneller Oszillationen hinzugefügt."
+      },
       "0.6.3": {
         "en": "Bugfix: Ramping limit can now be disabled by setting to 0. Fixed || operator preventing 0 values and added proper disable check. Users can now set rampChargeWPerCycle or rampDischargeWPerCycle to 0 for instant response without ramp limiting.",
         "de": "Bugfix: Ramping-Limit kann nun durch Setzen auf 0 deaktiviert werden. || Operator korrigiert der 0-Werte verhinderte und proper Disable-Check hinzugefügt. Benutzer können nun rampChargeWPerCycle oder rampDischargeWPerCycle auf 0 setzen für sofortige Reaktion ohne Rampen-Begrenzung."
@@ -348,6 +356,19 @@
       "type": "state",
       "common": {
         "name": "Emergency recovery mode active (persistent)",
+        "type": "boolean",
+        "role": "indicator",
+        "read": true,
+        "write": false,
+        "def": false
+      },
+      "native": {}
+    },
+    {
+      "_id": "status.socRecoveryActive",
+      "type": "state",
+      "common": {
+        "name": "SOC recovery mode active (persistent)",
         "type": "boolean",
         "role": "indicator",
         "read": true,
