@@ -51,6 +51,9 @@ class ZendureAutomation extends utils.Adapter {
         // I-Regulator state
         this._filteredGridPower = null;  // EMA-filtered grid power for stability
         
+        // Log spam prevention
+        this._emergencyChargingLogged = false;
+        
         // Modular components (initialized in onReady)
         this.dataReader = null;
         this.emergencyMgr = null;
@@ -231,10 +234,15 @@ class ZendureAutomation extends utils.Adapter {
                     this.log.info(`✓ Emergency exit SOC reached (${batterySoc}% >= ${emergencyExitSoc}%)`);
                     await this.setStateAsync('status.mode', 'recovery', true);
                     await this.setStateAsync('status.emergencyReason', '', true);
+                    this._emergencyChargingLogged = false;
                 } else {
                     // Continue emergency charging (ignore current conditions)
                     const emergencyChargePower = -(this.config.emergencyChargePowerW || 800);
-                    this.log.warn(`⚡ Emergency charging at ${Math.abs(emergencyChargePower)}W (${batterySoc}% → ${emergencyExitSoc}%)`);
+                    // Log only once to prevent spam
+                    if (!this._emergencyChargingLogged) {
+                        this.log.warn(`⚡ Emergency charging at ${Math.abs(emergencyChargePower)}W (${batterySoc}% → ${emergencyExitSoc}%)`);
+                        this._emergencyChargingLogged = true;
+                    }
                     await this.validationService.writePowerSetpoint(this._deviceBasePath, emergencyChargePower);
                     return;
                 }
@@ -259,6 +267,7 @@ class ZendureAutomation extends utils.Adapter {
                     const emergencyChargePower = -(this.config.emergencyChargePowerW || 800);
                     const emergencyExitSoc = this.config.emergencyExitSoc || 20;
                     this.log.warn(`⚡ Emergency charging at ${Math.abs(emergencyChargePower)}W (${batterySoc}% → ${emergencyExitSoc}%)`);
+                    this._emergencyChargingLogged = true;
                     await this.validationService.writePowerSetpoint(this._deviceBasePath, emergencyChargePower);
                     return;
                 } else {
