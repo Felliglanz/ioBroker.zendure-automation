@@ -617,10 +617,11 @@ class ZendureAutomation extends utils.Adapter {
             ? this.validationService.lastWrittenLimit 
             : 0;
 
-        // ========== ANTI-WINDUP: Limit based on NORMAL devices count ==========
-        const normalDevicesCount = normalDevices.length;
-        const maxChargePowerW = -(this.config.maxChargePowerW || 1200) * normalDevicesCount;
-        const maxDischargePowerW = (this.config.maxDischargePowerW || 1200) * normalDevicesCount;
+        // ========== ANTI-WINDUP: Limit based on ALL configured devices ==========
+        // Use total device count, not active count, so limits stay constant
+        const totalDevicesCount = this.multiDeviceMgr.devices.length;
+        const maxChargePowerW = -(this.config.maxChargePowerW || 1200) * totalDevicesCount;
+        const maxDischargePowerW = (this.config.maxDischargePowerW || 1200) * totalDevicesCount;
 
         if (lastSetPowerW < maxChargePowerW) {
             this.log.debug(`Anti-windup: Limiting lastSetPowerW from ${lastSetPowerW}W to ${maxChargePowerW}W`);
