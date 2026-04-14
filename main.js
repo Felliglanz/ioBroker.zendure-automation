@@ -670,8 +670,16 @@ class ZendureAutomation extends utils.Adapter {
         await this.setStateAsync('status.deadbandCounter', relayResult.deadbandCounter, true);
 
         // ========== POWER REGULATION (Hysteresis, Ramping, Limits) ==========
+        // For multi-device: scale power limits by total device count to allow full system capacity
+        // This ensures PowerRegulator doesn't limit to single-device values
+        const multiDeviceConfig = {
+            ...this.config,
+            maxChargePowerW: this.config.maxChargePowerW * totalDevicesCount,
+            maxDischargePowerW: this.config.maxDischargePowerW * totalDevicesCount
+        };
+
         const regResult = this.powerRegulator.applyRegulation({
-            config: this.config,
+            config: multiDeviceConfig,
             powerW: newTotalBatteryPowerW,
             lastSetPowerW,
             safetyActive: false  // Safety handled per-device in distribution
