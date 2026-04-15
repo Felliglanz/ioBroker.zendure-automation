@@ -60,8 +60,8 @@
               },
               "sm": 12,
               "help": {
-                "en": "Control multiple Zendure devices as one system (equal-split power distribution, dynamic exclusion at limits)",
-                "de": "Mehrere Zendure Geräte als ein System steuern (gleichmäßige Leistungsverteilung, dynamische Exclusion an Grenzen)"
+                "en": "Control multiple Zendure devices as one system (power split, SOC-weighted distribution)",
+                "de": "Mehrere Zendure Geräte als ein System steuern (Power-Aufteilung, SOC-gewichtete Verteilung)"
               }
             },
             "deviceProductKey": {
@@ -737,8 +737,8 @@
               "max": 100,
               "default": 20,
               "help": {
-                "en": "Stop discharge below this SOC",
-                "de": "Entladung stoppen unter diesem SOC"
+                "en": "Stop discharge below this SOC (Zendure app limits must allow this value)",
+                "de": "Entladung stoppen unter diesem SOC (Zendure-App Grenzen müssen diesen Wert erlauben)"
               }
             },
             "maxBatterySoc": {
@@ -752,8 +752,8 @@
               "max": 100,
               "default": 100,
               "help": {
-                "en": "Stop charge above this SOC",
-                "de": "Laden stoppen über diesem SOC"
+                "en": "Stop charge above this SOC (Zendure app limits must allow this value)",
+                "de": "Laden stoppen über diesem SOC (Zendure-App Grenzen müssen diesen Wert erlauben)"
               }
             },
             "socRecoveryHysteresis": {

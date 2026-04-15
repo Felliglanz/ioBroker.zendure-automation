@@ -134,10 +134,11 @@ Das System multipliziert automatisch:
 - 2 Devices × 2400W = **4800W Gesamt-Entladung**
 - 2 Devices × 1200W = **2400W Gesamt-Ladung**
 
-> **⚠️ SOC-Grenzen müssen auch im Zendure-System gesetzt werden!**  
-> Der Adapter setzt diese Werte nur für seine eigene Regelung.  
-> Konfiguriere die **gleichen Werte** in der Zendure App oder im zendure-solarflow Adapter.  
-> Siehe Abschnitt "🔋 Batterieschutz-Modi" für Details!
+> **⚠️ Zusammenspiel mit Zendure-App SOC-Grenzen**  
+> Der Adapter regelt via ZenSDK (Power-Setpoints in Watt).  
+> Die Zendure-App definiert den erlaubten SOC-Bereich.  
+> Die **Adapter-Werte müssen innerhalb der Zendure-App Grenzen** liegen!  
+> Siehe Abschnitt "🔋 Batterieschutz-Modi" für technische Details.
 
 ### States (Object-Tree)
 
@@ -193,30 +194,44 @@ Ein Gerät wird automatisch aus der Distribution ausgeschlossen wenn:
 
 ### 🔋 Batterieschutz-Modi im Detail
 
-> **⚠️ WICHTIG: SOC-Grenzen im Zendure-System**  
+> **⚠️ WICHTIG: Zusammenspiel Adapter ↔ Zendure-System**  
 > 
-> **Dieser Adapter setzt die SOC-Limits NUR für seine eigene Regelung!**  
-> Die Werte werden **NICHT** ins Zendure-System übertragen.
+> **Was macht der Adapter?**
+> - Schreibt **nur Power-Setpoints** (Watt) via ZenSDK: `setDeviceAutomationInOutLimit`
+> - Liest SOC, Voltage, etc. zum Überwachen
+> - Setzt **NICHT** die SOC-Boundaries im Zendure-System
 > 
-> **Du MUSST die SOC-Grenzen auch im Zendure-System konfigurieren:**
-> - In der Zendure App: Geräteeinstellungen → Batterie-Limits
-> - Oder im zendure-solarflow Adapter: `control` States
-> 
-> **Die Werte MÜSSEN übereinstimmen, sonst:**
-> - ❌ Adapter denkt "darf noch entladen" → Zendure blockt → Regelung funktioniert nicht
-> - ❌ Zendure entlädt tiefer als Adapter erwartet → Emergency-Modus wird nicht ausgelöst
-> 
-> **Beispiel korrekte Konfiguration:**
+> **Wie funktioniert die Regelung?**
+> ```  
+> Zendure-App:  Definiert erlaubten SOC-Bereich (Hardware-Limit)
+> Adapter:      Regelt innerhalb dieses Bereichs (Software-Limit)
 > ```
-> Adapter:  minBatterySoc = 10%,  maxBatterySoc = 95%
-> Zendure:  minBatterySoc = 10%,  maxBatterySoc = 95%  ✅ IDENTISCH!
+> 
+> **Technischer Ablauf:**
+> 1. Du konfigurierst in der Zendure-App: z.B. 5% - 100%
+> 2. Du konfigurierst im Adapter: z.B. 10% - 90%
+> 3. Adapter regelt zwischen 10% und 90%
+> 4. Zendure-Hardware erlaubt maximal 5% bis 100%
+> 
+> **Was passiert bei Konflikt?**
 > ```
+> Zendure-App:  10% - 90%   ← Enge Grenzen
+> Adapter:       5% - 95%   ← Will mehr nutzen
+> → Adapter sendet Lade-Befehl bei 91% SOC
+> → Zendure-Hardware blockiert (Max 90%)
+> → Validation-Fehler im Adapter-Log
+> → Regelung funktioniert nicht korrekt
+> ```
+> 
+> **Konfigurationsregel:**
+> Die Adapter-Werte müssen **innerhalb** der Zendure-App Grenzen liegen.  
+> Wo genau du deine Limits setzt, hängt von deinem Anwendungsfall ab.
 
-**SOC-Modus (Empfohlen für Single-Pack)**
+**SOC-Modus**
 - Einfach, zuverlässig
 - Min/Max SOC Prozent-Grenzen
 - Nutzt SOC vom Gerät
-- **ACHTUNG:** Werte müssen mit Zendure-System übereinstimmen (siehe Warnung oben!)
+- **ACHTUNG:** Adapter-Werte müssen innerhalb der Zendure-App Grenzen liegen (siehe Warnung oben!)
 
 **Voltage-Modus (Empfohlen für Multi-Pack)**
 - Überwacht `packData.*.minVol` jedes Packs
