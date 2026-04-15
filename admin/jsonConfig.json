@@ -60,8 +60,8 @@
               },
               "sm": 12,
               "help": {
-                "en": "Control multiple Zendure devices as one system (power split, SOC-weighted distribution)",
-                "de": "Mehrere Zendure Geräte als ein System steuern (Power-Aufteilung, SOC-gewichtete Verteilung)"
+                "en": "Control multiple Zendure devices as one system (equal-split power distribution, dynamic exclusion at limits)",
+                "de": "Mehrere Zendure Geräte als ein System steuern (gleichmäßige Leistungsverteilung, dynamische Exclusion an Grenzen)"
               }
             },
             "deviceProductKey": {
