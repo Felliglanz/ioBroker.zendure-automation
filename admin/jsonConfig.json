@@ -45,6 +45,7 @@
                 "de": "Zendure Solarflow Adapter-Instanz"
               },
               "placeholder": "zendure-solarflow.0",
+              "default": "zendure-solarflow.0",
               "sm": 12,
               "help": {
                 "en": "The instance name of the nograx zendure-solarflow adapter",
@@ -232,6 +233,7 @@
               "sm": 6,
               "min": -5000,
               "max": 5000,
+              "default": 0,
               "help": {
                 "en": "0 = zero grid, positive = allow grid draw, negative = allow feed-in",
                 "de": "0 = Nulleinspeisung, positiv = Netzbezug erlaubt, negativ = Einspeisung erlaubt"
@@ -246,6 +248,7 @@
               "sm": 6,
               "min": 1,
               "max": 300,
+              "default": 5,
               "help": {
                 "en": "How often to adjust battery power (recommended: 5s)",
                 "de": "Wie oft Batterieleistung angepasst wird (empfohlen: 5s)"
@@ -260,6 +263,7 @@
               "sm": 6,
               "min": 1,
               "max": 10,
+              "default": 5,
               "help": {
                 "en": "How many times to retry if device doesn't accept power setpoint. Silent retries, only final error logged. Accounts for mode-switching (~25s with 5 retries at 5s interval).",
                 "de": "Wie oft wiederholen, wenn Gerät Leistungsvorgabe nicht annimmt. Stille Wiederholungen, nur finaler Fehler geloggt. Berücksichtigt Mode-Switching (~25s bei 5 Versuchen mit 5s Intervall)."
@@ -274,6 +278,7 @@
               "sm": 6,
               "min": 0,
               "max": 200,
+              "default": 50,
               "help": {
                 "en": "Acceptable deviation between setpoint and actual power",
                 "de": "Akzeptable Abweichung zwischen Vorgabe und Ist-Leistung"
@@ -315,6 +320,7 @@
               "sm": 4,
               "min": 0,
               "max": 500,
+              "default": 20,
               "help": {
                 "en": "Minimum power change to react (avoids small adjustments)",
                 "de": "Minimale Leistungsänderung zum Reagieren (vermeidet kleine Anpassungen)"
@@ -329,6 +335,7 @@
               "sm": 4,
               "min": 0,
               "max": 2000,
+              "default": 200,
               "help": {
                 "en": "Max charge power change per cycle (higher = faster)",
                 "de": "Max. Ladeänderung pro Zyklus (höher = schneller)"
@@ -343,6 +350,7 @@
               "sm": 4,
               "min": 0,
               "max": 2000,
+              "default": 400,
               "help": {
                 "en": "Max discharge power change per cycle (higher = faster)",
                 "de": "Max. Entladeänderung pro Zyklus (höher = schneller)"
@@ -358,6 +366,7 @@
               "min": 0.1,
               "max": 1.0,
               "step": 0.05,
+              "default": 0.5,
               "help": {
                 "en": "EMA filter for grid power (0.1 = very smooth/slow, 1.0 = no filter/instant). Higher = faster reaction to load changes.",
                 "de": "EMA-Filter für Netzleistung (0.1 = sehr glatt/langsam, 1.0 = kein Filter/sofort). Höher = schnellere Reaktion auf Laständerungen."
@@ -413,6 +422,7 @@
                 "de": "Laden aktivieren"
               },
               "sm": 6,
+              "default": true,
               "help": {
                 "en": "Allow battery charging",
                 "de": "Batterie-Laden erlauben"
@@ -425,6 +435,7 @@
                 "de": "Entladen aktivieren"
               },
               "sm": 6,
+              "default": true,
               "help": {
                 "en": "Allow battery discharge",
                 "de": "Batterie-Entladung erlauben"
@@ -472,6 +483,7 @@
               "sm": 6,
               "min": -5000,
               "max": 0,
+              "default": -150,
               "help": {
                 "en": "Start charging when feed-in exceeds this (negative value, e.g. -150W)",
                 "de": "Laden starten bei Überschreitung (negativer Wert, z.B. -150W)"
@@ -486,6 +498,7 @@
               "sm": 6,
               "min": 0,
               "max": 20,
+              "default": 3,
               "help": {
                 "en": "Cycles feed-in must persist before switching (1 tick = interval)",
                 "de": "Zyklen die Einspeisung anhalten muss (1 Tick = Intervall)"
@@ -525,6 +538,7 @@
               "sm": 6,
               "min": 0,
               "max": 5000,
+              "default": 200,
               "help": {
                 "en": "Start discharging when grid draw exceeds this (positive value, e.g. 200W)",
                 "de": "Entladen starten bei Überschreitung (positiver Wert, z.B. 200W)"
@@ -539,6 +553,7 @@
               "sm": 6,
               "min": 0,
               "max": 20,
+              "default": 3,
               "help": {
                 "en": "Cycles grid draw must persist before switching (1 tick = interval)",
                 "de": "Zyklen die Netzbezug anhalten muss (1 Tick = Intervall)"
@@ -578,7 +593,7 @@
               "sm": 6,
               "min": 0,
               "max": 50,
-              "def": 0,
+              "default": 0,
               "help": {
                 "en": "Minimum power to maintain in current mode before allowing 0W or sign change. Prevents relay switching through 0W during regulation. Higher = more relay protection, but less precise zero-grid control.",
                 "de": "Mindestleistung im aktuellen Modus vor Erlaubnis von 0W oder Vorzeichenwechsel. Verhindert Relais-Schalten durch 0W während Regelung. Höher = mehr Relais-Schutz, aber weniger präzise Nulleinspeisung."
@@ -593,7 +608,7 @@
               "sm": 6,
               "min": 1,
               "max": 20,
-              "def": 3,
+              "default": 3,
               "help": {
                 "en": "How many cycles to hold at minimum power before allowing transition through 0W. Higher = longer wait at low power (better relay protection in changing conditions). 1 tick = update interval.",
                 "de": "Wie viele Zyklen bei minimaler Leistung gehalten wird, bevor Übergang durch 0W erlaubt wird. Höher = längeres Warten bei niedriger Leistung (besserer Relais-Schutz bei wechselnden Bedingungen). 1 Tick = Update-Intervall."
@@ -643,6 +658,7 @@
               "sm": 6,
               "min": 0,
               "max": 3000,
+              "default": 1200,
               "help": {
                 "en": "Maximum charging power",
                 "de": "Maximale Ladeleistung"
@@ -657,6 +673,7 @@
               "sm": 6,
               "min": 0,
               "max": 3000,
+              "default": 1200,
               "help": {
                 "en": "Maximum discharging power",
                 "de": "Maximale Entladeleistung"
@@ -673,7 +690,7 @@
           "items": {
             "dischargeProtectionMode": {
               "type": "select",
-              "labaultel": {
+              "label": {
                 "en": "Protection mode",
                 "de": "Schutzmodus"
               },
@@ -694,6 +711,7 @@
                   "value": "voltage" 
                 }
               ],
+              "default": "soc",
               "help": {
                 "en": "Choose discharge protection method: SOC percentage or pack voltage",
                 "de": "Wähle Entladeschutz-Methode: SOC-Prozent oder Pack-Spannung"
@@ -717,6 +735,7 @@
               "sm": 6,
               "min": 0,
               "max": 100,
+              "default": 20,
               "help": {
                 "en": "Stop discharge below this SOC",
                 "de": "Entladung stoppen unter diesem SOC"
@@ -731,6 +750,7 @@
               "sm": 6,
               "min": 0,
               "max": 100,
+              "default": 100,
               "help": {
                 "en": "Stop charge above this SOC",
                 "de": "Laden stoppen über diesem SOC"
@@ -746,7 +766,7 @@
               "min": 0,
               "max": 20,
               "step": 1,
-              "def": 5,
+              "default": 5,
               "help": {
                 "en": "SOC must rise min+hysteresis before discharge allowed again (prevents oscillation)",
                 "de": "SOC muss min+Hysterese überschreiten vor erneuter Entladung (verhindert Oszillation)"
@@ -778,6 +798,7 @@
               "min": 2.5,
               "max": 3.5,
               "step": 0.01,
+              "default": 3.0,
               "help": {
                 "en": "Stop discharge when ANY pack drops below (typical: 3.0V for LFP)",
                 "de": "Entladung stoppen wenn IRGENDEIN Pack darunter fällt (typisch: 3.0V für LFP)"
@@ -793,6 +814,7 @@
               "min": 0.0,
               "max": 0.5,
               "step": 0.01,
+              "default": 0.1,
               "help": {
                 "en": "Voltage must rise min+hysteresis before discharge allowed again (prevents oscillation)",
                 "de": "Spannung muss min+Hysterese überschreiten vor erneuter Entladung (verhindert Oszillation)"
@@ -852,6 +874,7 @@
                 "de": "Geräte-Unterspannungs-Flag beachten"
               },
               "sm": 6,
+              "default": true,
               "help": {
                 "en": "When device reports 'lowVoltageBlock=true', stop discharge immediately",
                 "de": "Wenn Gerät 'lowVoltageBlock=true' meldet, Entladung sofort stoppen"
@@ -864,6 +887,7 @@
                 "de": "Geräte-Vollladungs-Anfrage beachten"
               },
               "sm": 6,
+              "default": true,
               "help": {
                 "en": "When device reports 'fullChargeNeeded=true', force full charge (calibration)",
                 "de": "Wenn Gerät 'fullChargeNeeded=true' meldet, Vollladung erzwingen (Kalibrierung)"
@@ -879,6 +903,7 @@
               "min": 2.5,
               "max": 3.0,
               "step": 0.1,
+              "default": 2.8,
               "help": {
                 "en": "Emergency charging when ANY pack below this (typical: 2.8V for LFP)",
                 "de": "Notladen wenn IRGENDEIN Pack darunter (typisch: 2.8V für LFP)"
@@ -893,6 +918,7 @@
               "sm": 6,
               "min": 0,
               "max": 3000,
+              "default": 800,
               "help": {
                 "en": "Charging power during emergency (ignores grid)",
                 "de": "Ladeleistung während Notladen (ignoriert Netz)"
@@ -916,6 +942,7 @@
               "sm": 6,
               "min": 5,
               "max": 50,
+              "default": 20,
               "help": {
                 "en": "Exit emergency at this SOC, enter recovery mode",
                 "de": "Notladen beenden bei diesem SOC, Recovery-Mode starten"
@@ -930,6 +957,7 @@
               "sm": 6,
               "min": 10,
               "max": 80,
+              "default": 30,
               "help": {
                 "en": "In recovery: only charging allowed until this SOC (prevents emergency loops)",
                 "de": "Im Recovery: nur Laden erlaubt bis dieser SOC (verhindert Notlade-Schleifen)"
@@ -982,6 +1010,7 @@
                 { "label": "Info", "value": "info" },
                 { "label": "Debug", "value": "debug" }
               ],
+              "default": "info",
               "help": {
                 "en": "Verbosity of adapter logging (debug = very detailed)",
                 "de": "Ausführlichkeit der Adapter-Protokollierung (debug = sehr detailliert)"
