@@ -322,13 +322,13 @@ neueBatterieLeistung = letzteBatterieLeistung + (aktuelleNetzleistung - ZielNetz
 ## 📜 Changelog
 
 ### v0.7.0 (2026-04-15) - Controller Refactoring
-- 🏗️ **Major Architecture Improvement** – Extract Controllers from main.js
-- ✨ **SingleDeviceController** – Complete single-device automation cycle in dedicated module
-- ✨ **MultiDeviceController** – Complete multi-device automation cycle in dedicated module
-- 📉 **47% Code Reduction in main.js** – from 1052 to 554 lines
-- 📚 **Business Logic Extraction** – All automation logic moved to testable controllers
-- 🧪 **Improved Testability** – Controllers are independent and easily unit-testable
-- 🎯 **Clear Separation** – main.js handles only adapter lifecycle, controllers handle automation
+- 🏗️ **Große Architektur-Verbesserung** – Controller aus main.js extrahiert
+- ✨ **SingleDeviceController** – Kompletter Single-Device Zyklus in dediziertem Modul
+- ✨ **MultiDeviceController** – Kompletter Multi-Device Zyklus in dediziertem Modul
+- 📉 **47% Code-Reduktion in main.js** – von 1052 auf 554 Zeilen
+- 📚 **Business-Logic Extraktion** – Alle Automatisierungs-Logik in testbare Controller verschoben
+- 🧪 **Verbesserte Testbarkeit** – Controller sind unabhängig und einfach unit-testbar
+- 🎯 **Klare Trennung** – main.js nur noch Adapter-Lifecycle, Controller übernehmen Automation
 
 ### v0.6.1 (2026-04-03)
 - ✨ **Operating Deadband Protection** – verhindert Relais-Flattern bei Oszillation
