@@ -38,8 +38,9 @@ Steuert deine Zendure Solarflow Batterie vollautomatisch für **Null-Einspeisung
 - **Operating Deadband (neu)** – hält bei ±5W für 1 Tick vor Nulldurchgang
 
 ### 🏗️ Moderne Architektur
-- **Modulare Struktur** – 6 spezialisierte Module (v0.6.0 Refactoring)
-- **59% Code-Reduktion** – von 948 auf 388 Zeilen in main.js
+- **Modulare Struktur** – 9 spezialisierte Module (v0.7.0 Controller Extraction)
+- **47% Code-Reduktion** – von 1052 auf 554 Zeilen in main.js
+- **Controller-basiert** – SingleDeviceController & MultiDeviceController
 - **Testbar & Wartbar** – klare Trennung der Verantwortlichkeiten
 - **Vollständig dokumentiert** – JSDoc, inline comments, deutsch/englisch
 
@@ -133,6 +134,11 @@ Das System multipliziert automatisch:
 - 2 Devices × 2400W = **4800W Gesamt-Entladung**
 - 2 Devices × 1200W = **2400W Gesamt-Ladung**
 
+> **⚠️ SOC-Grenzen müssen auch im Zendure-System gesetzt werden!**  
+> Der Adapter setzt diese Werte nur für seine eigene Regelung.  
+> Konfiguriere die **gleichen Werte** in der Zendure App oder im zendure-solarflow Adapter.  
+> Siehe Abschnitt "🔋 Batterieschutz-Modi" für Details!
+
 ### States (Object-Tree)
 
 Multi-Device erstellt zusätzliche States:
@@ -187,16 +193,37 @@ Ein Gerät wird automatisch aus der Distribution ausgeschlossen wenn:
 
 ### 🔋 Batterieschutz-Modi im Detail
 
+> **⚠️ WICHTIG: SOC-Grenzen im Zendure-System**  
+> 
+> **Dieser Adapter setzt die SOC-Limits NUR für seine eigene Regelung!**  
+> Die Werte werden **NICHT** ins Zendure-System übertragen.
+> 
+> **Du MUSST die SOC-Grenzen auch im Zendure-System konfigurieren:**
+> - In der Zendure App: Geräteeinstellungen → Batterie-Limits
+> - Oder im zendure-solarflow Adapter: `control` States
+> 
+> **Die Werte MÜSSEN übereinstimmen, sonst:**
+> - ❌ Adapter denkt "darf noch entladen" → Zendure blockt → Regelung funktioniert nicht
+> - ❌ Zendure entlädt tiefer als Adapter erwartet → Emergency-Modus wird nicht ausgelöst
+> 
+> **Beispiel korrekte Konfiguration:**
+> ```
+> Adapter:  minBatterySoc = 10%,  maxBatterySoc = 95%
+> Zendure:  minBatterySoc = 10%,  maxBatterySoc = 95%  ✅ IDENTISCH!
+> ```
+
 **SOC-Modus (Empfohlen für Single-Pack)**
 - Einfach, zuverlässig
 - Min/Max SOC Prozent-Grenzen
 - Nutzt SOC vom Gerät
+- **ACHTUNG:** Werte müssen mit Zendure-System übereinstimmen (siehe Warnung oben!)
 
 **Voltage-Modus (Empfohlen für Multi-Pack)**
 - Überwacht `packData.*.minVol` jedes Packs
 - Verwendet niedrigsten Wert (schützt schwächstes Pack)
 - Voltage Recovery Hysterese verhindert Oszillation durch Relaxation
 - Beispiel: Min 3.0V + Hysterese 0.1V → Recovery erst bei 3.1V
+- **Zusätzliche Sicherheit** neben SOC-Limits (beide Modi parallel aktiv!)
 
 ### ⚡ Relay Protection (Anti-Verschleiß)
 
@@ -293,6 +320,15 @@ neueBatterieLeistung = letzteBatterieLeistung + (aktuelleNetzleistung - ZielNetz
 ---
 
 ## 📜 Changelog
+
+### v0.7.0 (2026-04-15) - Controller Refactoring
+- 🏗️ **Major Architecture Improvement** – Extract Controllers from main.js
+- ✨ **SingleDeviceController** – Complete single-device automation cycle in dedicated module
+- ✨ **MultiDeviceController** – Complete multi-device automation cycle in dedicated module
+- 📉 **47% Code Reduction in main.js** – from 1052 to 554 lines
+- 📚 **Business Logic Extraction** – All automation logic moved to testable controllers
+- 🧪 **Improved Testability** – Controllers are independent and easily unit-testable
+- 🎯 **Clear Separation** – main.js handles only adapter lifecycle, controllers handle automation
 
 ### v0.6.1 (2026-04-03)
 - ✨ **Operating Deadband Protection** – verhindert Relais-Flattern bei Oszillation
