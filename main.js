@@ -10,6 +10,7 @@ const SafetyLimiter = require('./lib/SafetyLimiter');
 const PowerRegulator = require('./lib/PowerRegulator');
 const ValidationService = require('./lib/ValidationService');
 const MultiDeviceManager = require('./lib/MultiDeviceManager');
+const SingleDeviceController = require('./lib/SingleDeviceController');
 
 /**
  * Battery Automation Engine
@@ -51,10 +52,7 @@ class ZendureAutomation extends utils.Adapter {
         this._isMultiDevice = false;
         
         // I-Regulator state
-        this._filteredGridPower = null;  // EMA-filtered grid power for stability
-        
-        // Log spam prevention
-        this._emergencyChargingLogged = false;
+        this._filteredGridPower = null;  // EMA-filtered grid power for multi-device
         
         // Modular components (initialized in onReady)
         this.dataReader = null;
@@ -66,6 +64,7 @@ class ZendureAutomation extends utils.Adapter {
         this.powerRegulator = null;
         this.validationService = null;
         this.multiDeviceMgr = null;  // Multi-device manager
+        this.singleDeviceController = null;  // Single-device automation controller
     }
 
     /**
@@ -169,6 +168,20 @@ class ZendureAutomation extends utils.Adapter {
             this.safetyLimiter = new SafetyLimiter(this, this._deviceBasePath);
             this.powerRegulator = new PowerRegulator(this);
             this.validationService = new ValidationService(this);
+            
+            // Initialize single-device controller
+            this.singleDeviceController = new SingleDeviceController(
+                this,
+                {
+                    dataReader: this.dataReader,
+                    emergencyMgr: this.emergencyMgr,
+                    relayProtection: this.relayProtection,
+                    safetyLimiter: this.safetyLimiter,
+                    powerRegulator: this.powerRegulator,
+                    validationService: this.validationService
+                },
+                this._deviceBasePath
+            );
             
             this.log.info('✓ Modular components initialized');
 
@@ -276,7 +289,7 @@ class ZendureAutomation extends utils.Adapter {
             if (this._isMultiDevice) {
                 await this.runMultiDeviceAutomationCycle();
             } else {
-                await this.runSingleDeviceAutomationCycle();
+                await this.singleDeviceController.runCycle(this.config);
             }
 
         } catch (err) {
@@ -285,213 +298,7 @@ class ZendureAutomation extends utils.Adapter {
         }
     }
 
-    /**
-     * Single-device automation cycle (original logic)
-     */
-    async runSingleDeviceAutomationCycle() {
 
-            // ========== POWER SETPOINT VALIDATION (NON-BLOCKING) ==========
-            const currentBatteryPowerW = await this.dataReader.getCurrentBatteryPowerW();
-            await this.validationService.validateSetpoint(this.config, currentBatteryPowerW);
-            // ================================================================
-
-            // ========== READ CURRENT VALUES ==========
-            const gridPowerW = await this.dataReader.getGridPowerW(this.config.powerMeterDp);
-            const batterySoc = await this.dataReader.getBatterySoc();
-            const targetGridPowerW = await this.dataReader.getTargetGridPowerW(this.config.targetGridPowerW);
-            const minPackVoltageV = await this.dataReader.getMinimumPackVoltageV();
-
-            if (gridPowerW === null || batterySoc === null || currentBatteryPowerW === null) {
-                this.log.warn('Could not read all required values, skipping cycle');
-                await this.setStateAsync('status.mode', 'error', true);
-                return;
-            }
-
-            // ========== EMA FILTER FOR GRID POWER ==========
-            // Apply Exponential Moving Average to smooth fast load changes (e.g., OLED TV)
-            // Higher alpha = faster response, lower = more smoothing (configurable in admin UI)
-            const emaAlpha = this.config.emaFilterAlpha || 0.5;
-            if (this._filteredGridPower === null) {
-                // Initialize filter with first value
-                this._filteredGridPower = gridPowerW;
-            } else {
-                // EMA formula: filtered = alpha * new + (1 - alpha) * old
-                this._filteredGridPower = emaAlpha * gridPowerW + (1 - emaAlpha) * this._filteredGridPower;
-            }
-            const filteredGridPowerW = Math.round(this._filteredGridPower);
-            this.log.debug(`Grid power: raw=${gridPowerW}W, filtered=${filteredGridPowerW}W`);
-
-            // Update status states
-            await this.setStateAsync('status.gridPowerW', gridPowerW, true);
-            await this.setStateAsync('status.batterySoc', batterySoc, true);
-            await this.setStateAsync('status.currentPowerW', currentBatteryPowerW, true);
-            if (minPackVoltageV !== null) {
-                await this.setStateAsync('status.minPackVoltageV', minPackVoltageV, true);
-            }
-            await this.setStateAsync('status.lastUpdate', Date.now(), true);
-
-            // ========== EMERGENCY & RECOVERY CHECK (HIGHEST PRIORITY) ==========
-            // Check if already in emergency recovery (persistent state)
-            if (this.emergencyMgr.inEmergencyRecovery) {
-                // ALREADY IN EMERGENCY RECOVERY
-                // Ignore current emergency conditions - only check SOC-based exit
-                // This prevents premature exit when voltage recovers during charging!
-                
-                await this.setStateAsync('status.mode', 'emergency-charging', true);
-                
-                const emergencyExitSoc = this.config.emergencyExitSoc || 20;
-                if (batterySoc >= emergencyExitSoc) {
-                    this.log.info(`✓ Emergency exit SOC reached (${batterySoc}% >= ${emergencyExitSoc}%)`);
-                    await this.setStateAsync('status.mode', 'recovery', true);
-                    await this.setStateAsync('status.emergencyReason', '', true);
-                    this._emergencyChargingLogged = false;
-                } else {
-                    // Continue emergency charging (ignore current conditions)
-                    const emergencyChargePower = -(this.config.emergencyChargePowerW || 800);
-                    // Log only once to prevent spam
-                    if (!this._emergencyChargingLogged) {
-                        this.log.warn(`⚡ Emergency charging at ${Math.abs(emergencyChargePower)}W (${batterySoc}% → ${emergencyExitSoc}%)`);
-                        this._emergencyChargingLogged = true;
-                    }
-                    await this.validationService.writePowerSetpoint(this._deviceBasePath, emergencyChargePower);
-                    return;
-                }
-            } else {
-                // NOT IN RECOVERY - Check for new emergency conditions
-                const emergencyState = await this.emergencyMgr.checkEmergencyConditions(
-                    this.config,
-                    batterySoc,
-                    minPackVoltageV
-                );
-                
-                if (emergencyState.isEmergency) {
-                    // NEW EMERGENCY DETECTED
-                    this.log.warn(`🚨 EMERGENCY TRIGGERED: ${emergencyState.reason}`);
-                    this.log.warn(`🔒 Activating persistent emergency recovery mode`);
-                    await this.emergencyMgr.activateEmergencyRecovery();
-                    
-                    await this.setStateAsync('status.mode', 'emergency-charging', true);
-                    await this.setStateAsync('status.emergencyReason', emergencyState.reason, true);
-                    
-                    // Start emergency charging immediately
-                    const emergencyChargePower = -(this.config.emergencyChargePowerW || 800);
-                    const emergencyExitSoc = this.config.emergencyExitSoc || 20;
-                    this.log.warn(`⚡ Emergency charging at ${Math.abs(emergencyChargePower)}W (${batterySoc}% → ${emergencyExitSoc}%)`);
-                    this._emergencyChargingLogged = true;
-                    await this.validationService.writePowerSetpoint(this._deviceBasePath, emergencyChargePower);
-                    return;
-                } else {
-                    await this.setStateAsync('status.emergencyReason', '', true);
-                }
-            }
-
-            // Update recovery modes
-            await this.emergencyMgr.updateEmergencyRecovery(this.config, batterySoc);
-            await this.emergencyMgr.updateVoltageRecovery(this.config, minPackVoltageV);
-            await this.emergencyMgr.updateSocRecovery(this.config, batterySoc);
-            // ================================================================
-
-            // ========== I-REGULATOR: CALCULATE TARGET POWER ==========
-            let lastSetPowerW = this.validationService.lastWrittenLimit !== null 
-                ? this.validationService.lastWrittenLimit 
-                : 0;
-
-            // ========== ANTI-WINDUP: Limit lastSetPowerW to prevent integrator windup ==========
-            const maxChargePowerW = -(this.config.maxChargePowerW || 1200);
-            const maxDischargePowerW = this.config.maxDischargePowerW || 1200;
-            
-            // Clamp lastSetPowerW to valid range to prevent integrator windup
-            if (lastSetPowerW < maxChargePowerW) {
-                this.log.debug(`Anti-windup: Limiting lastSetPowerW from ${lastSetPowerW}W to ${maxChargePowerW}W`);
-                lastSetPowerW = maxChargePowerW;
-            } else if (lastSetPowerW > maxDischargePowerW) {
-                this.log.debug(`Anti-windup: Limiting lastSetPowerW from ${lastSetPowerW}W to ${maxDischargePowerW}W`);
-                lastSetPowerW = maxDischargePowerW;
-            }
-
-            this.log.debug(
-                `Cycle: Grid_raw=${gridPowerW}W, Grid_filtered=${filteredGridPowerW}W, ` +
-                `Battery_measured=${currentBatteryPowerW}W, Battery_set=${lastSetPowerW}W, ` +
-                `SOC=${batterySoc}%, Target=${targetGridPowerW}W`
-            );
-
-            // I-Regulator formula (using filtered grid power)
-            let newBatteryPowerW = lastSetPowerW + (filteredGridPowerW - targetGridPowerW);
-            
-            // ========== ANTI-WINDUP: Limit newBatteryPowerW immediately ==========
-            if (newBatteryPowerW < maxChargePowerW) {
-                this.log.debug(`Anti-windup: Limiting newBatteryPowerW from ${newBatteryPowerW}W to ${maxChargePowerW}W`);
-                newBatteryPowerW = maxChargePowerW;
-            } else if (newBatteryPowerW > maxDischargePowerW) {
-                this.log.debug(`Anti-windup: Limiting newBatteryPowerW from ${newBatteryPowerW}W to ${maxDischargePowerW}W`);
-                newBatteryPowerW = maxDischargePowerW;
-            }
-            
-            this.log.debug(`Calculated new battery power: ${newBatteryPowerW}W (after anti-windup, before relay protection)`);
-
-            // ========== MODE SWITCHING PROTECTION (RELAY PROTECTION) ==========
-            const relayResult = this.relayProtection.applyProtection({
-                config: this.config,
-                gridPowerW: filteredGridPowerW,  // Use filtered value for relay protection too
-                currentBatteryPowerW,
-                lastSetPowerW,
-                newBatteryPowerW
-            });
-            newBatteryPowerW = relayResult.powerW;
-            
-            // Update counter states for visibility
-            await this.setStateAsync('status.feedInCounter', relayResult.feedInCounter, true);
-            await this.setStateAsync('status.dischargeCounter', relayResult.dischargeCounter, true);
-            await this.setStateAsync('status.deadbandCounter', relayResult.deadbandCounter, true);
-
-            // ========== SAFETY CHECKS (HIGHEST PRIORITY) ==========
-            const safetyResult = await this.safetyLimiter.applySafetyLimits({
-                config: this.config,
-                emergencyManager: this.emergencyMgr,
-                batterySoc,
-                minPackVoltageV,
-                powerW: newBatteryPowerW
-            });
-            newBatteryPowerW = safetyResult.powerW;
-            const safetyActive = safetyResult.safetyActive;
-
-            if (safetyActive) {
-                this.log.debug('Safety limit active, regulation bypassed');
-            }
-
-            // ========== POWER REGULATION (Hysteresis, Ramping, Limits) ==========
-            const regResult = this.powerRegulator.applyRegulation({
-                config: this.config,
-                powerW: newBatteryPowerW,
-                lastSetPowerW,
-                safetyActive
-            });
-            newBatteryPowerW = regResult.powerW;
-
-            this.log.debug(
-                `Setting battery power: ${newBatteryPowerW}W (Grid: ${gridPowerW}W → ${targetGridPowerW}W)`
-            );
-
-            // ========== WRITE TO DEVICE ==========
-            await this.validationService.writePowerSetpoint(this._deviceBasePath, newBatteryPowerW);
-
-            // ========== UPDATE MODE STATUS ==========
-            let mode = 'standby';
-            if (newBatteryPowerW < -10) {
-                mode = 'charging';
-            } else if (newBatteryPowerW > 10) {
-                mode = 'discharging';
-            }
-            
-            // Override mode display if in recovery
-            if (this.emergencyMgr.inEmergencyRecovery || this.emergencyMgr.inVoltageRecovery || this.emergencyMgr.inSocRecovery) {
-                if (mode === 'standby') {
-                    mode = 'recovery';
-                }
-            }
-            
-            await this.setStateAsync('status.mode', mode, true);
-    }
 
     /**
      * Multi-device automation cycle
