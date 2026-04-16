@@ -38,8 +38,9 @@ Steuert deine Zendure Solarflow Batterie vollautomatisch für **Null-Einspeisung
 - **Operating Deadband (neu)** – hält bei ±5W für 1 Tick vor Nulldurchgang
 
 ### 🏗️ Moderne Architektur
-- **Modulare Struktur** – 6 spezialisierte Module (v0.6.0 Refactoring)
-- **59% Code-Reduktion** – von 948 auf 388 Zeilen in main.js
+- **Modulare Struktur** – 9 spezialisierte Module (v0.7.0 Controller Extraction)
+- **47% Code-Reduktion** – von 1052 auf 554 Zeilen in main.js
+- **Controller-basiert** – SingleDeviceController & MultiDeviceController
 - **Testbar & Wartbar** – klare Trennung der Verantwortlichkeiten
 - **Vollständig dokumentiert** – JSDoc, inline comments, deutsch/englisch
 
@@ -84,20 +85,160 @@ https://github.com/Felliglanz/iobroker.zendure-automation
 
 ---
 
+## 🔄 Multi-Device Support
+
+**Steuere mehrere Zendure Geräte als ein gemeinsames System** – perfekt für 2x Solarflow 2400 oder größere Installationen.
+
+### Aktivierung
+
+**⚙️ Basic Settings**
+1. Aktiviere Checkbox **"Multi-Device Support aktivieren"**
+2. In der Device-Tabelle Geräte hinzufügen:
+   - ProductKey (aus zendure-solarflow Objektbaum)
+   - DeviceKey (aus zendure-solarflow Objektbaum)
+   - Name (optional, z.B. "Garage", "Keller")
+   - Enabled (Haken setzen)
+
+### Wie es funktioniert
+
+**Power Distribution:**
+- **Equal Split** – Leistung wird gleichmäßig auf alle aktiven Geräte verteilt
+- **Dynamische Exclusion** – Geräte an Limits werden automatisch ausgeschlossen
+- **Pro-Device Tracking** – Jedes Gerät hat eigene States im Object-Tree
+
+**Beispiel mit 2x Solarflow 2400:**
+```
+I-Regler berechnet: -1800W (Laden)
+→ Device 1: -900W
+→ Device 2: -900W
+
+Device 2 erreicht max SOC (95%):
+→ Device 1: -1800W (bekommt volle Leistung)
+→ Device 2: 0W (excluded)
+```
+
+### Konfiguration
+
+**Wichtig:** Alle Einstellungen gelten **global für ALLE Geräte**!
+
+Konfiguriere die Werte so, als hättest du **ein einzelnes Gerät**:
+
+| Parameter | Beispiel 2400AC+ | Erklärung |
+|-----------|------------------|-----------|
+| **maxDischargePowerW** | 2400 | Leistung **pro Gerät** |
+| **maxChargePowerW** | 1200 | Leistung **pro Gerät** |
+| **minBatterySoc** | 10% | Gilt für **alle Geräte** |
+| **maxBatterySoc** | 95% | Gilt für **alle Geräte** |
+
+Das System multipliziert automatisch:
+- 2 Devices × 2400W = **4800W Gesamt-Entladung**
+- 2 Devices × 1200W = **2400W Gesamt-Ladung**
+
+> **⚠️ Zusammenspiel mit Zendure-App SOC-Grenzen**  
+> Der Adapter regelt via ZenSDK (Power-Setpoints in Watt).  
+> Die Zendure-App definiert den erlaubten SOC-Bereich.  
+> Die **Adapter-Werte müssen innerhalb der Zendure-App Grenzen** liegen!  
+> Siehe Abschnitt "🔋 Batterieschutz-Modi" für technische Details.
+
+### States (Object-Tree)
+
+Multi-Device erstellt zusätzliche States:
+
+**Global:**
+- `status.totalPowerW` – Summe aller Geräte
+- `status.avgSoc` – Durchschnittlicher SOC
+
+**Pro Gerät (device1, device2, ...):**
+- `status.devices.device1.soc` – SOC des Geräts
+- `status.devices.device1.powerW` – Aktuelle Leistung
+- `status.devices.device1.emergency` – Emergency-Status
+- `status.devices.device1.excluded` – Aus Distribution ausgeschlossen?
+
+### Emergency Handling
+
+**Pro-Device Emergency:**
+- Jedes Gerät wird individuell überwacht (SOC, Voltage, Flags)
+- **Wenn EIN Gerät Emergency hat** → ALLE eligible Geräte laden
+- Emergency-Ladeleistung wird auf aktive Geräte verteilt
+
+**Beispiel:**
+```
+Device 1: Pack-Spannung 2.95V → EMERGENCY!
+System: Lädt beide Geräte mit je 800W (wenn aktiv)
+Device 2 erreicht max SOC → Wird excluded, Device 1 lädt allein weiter
+```
+
+### Limits & Exclusion
+
+Ein Gerät wird automatisch aus der Distribution ausgeschlossen wenn:
+- ✅ **Emergency Recovery aktiv** (darf nur laden)
+- ✅ **Voltage Recovery aktiv** (darf nur laden)
+- ✅ **Max SOC erreicht** (kein Laden mehr)
+- ✅ **Min SOC erreicht** (kein Entladen mehr)
+
+**Ausgeschlossene Geräte** werden auf **0W** gesetzt, die anderen regeln normal weiter.
+
+### Hardware-Schutz
+
+**The Good News:** Die Solarflow Hardware hat eigene Limits!
+- Auch wenn du "zu hohe" Werte konfigurierst → Hardware blockt ab
+- Maximale Sicherheit durch doppelten Schutz (Software + Hardware)
+
+**Best Practice:**
+- Konfiguriere korrekte Werte für optimale Regelgüte
+- Bei Unsicherheit: Hardware schützt sich selbst ✓
+
+---
+
 ## ⚙️ Erweiterte Konfiguration
 
 ### 🔋 Batterieschutz-Modi im Detail
 
-**SOC-Modus (Empfohlen für Single-Pack)**
+> **⚠️ WICHTIG: Zusammenspiel Adapter ↔ Zendure-System**  
+> 
+> **Was macht der Adapter?**
+> - Schreibt **nur Power-Setpoints** (Watt) via ZenSDK: `setDeviceAutomationInOutLimit`
+> - Liest SOC, Voltage, etc. zum Überwachen
+> - Setzt **NICHT** die SOC-Boundaries im Zendure-System
+> 
+> **Wie funktioniert die Regelung?**
+> ```  
+> Zendure-App:  Definiert erlaubten SOC-Bereich (Hardware-Limit)
+> Adapter:      Regelt innerhalb dieses Bereichs (Software-Limit)
+> ```
+> 
+> **Technischer Ablauf:**
+> 1. Du konfigurierst in der Zendure-App: z.B. 5% - 100%
+> 2. Du konfigurierst im Adapter: z.B. 10% - 90%
+> 3. Adapter regelt zwischen 10% und 90%
+> 4. Zendure-Hardware erlaubt maximal 5% bis 100%
+> 
+> **Was passiert bei Konflikt?**
+> ```
+> Zendure-App:  10% - 90%   ← Enge Grenzen
+> Adapter:       5% - 95%   ← Will mehr nutzen
+> → Adapter sendet Lade-Befehl bei 91% SOC
+> → Zendure-Hardware blockiert (Max 90%)
+> → Validation-Fehler im Adapter-Log
+> → Regelung funktioniert nicht korrekt
+> ```
+> 
+> **Konfigurationsregel:**
+> Die Adapter-Werte müssen **innerhalb** der Zendure-App Grenzen liegen.  
+> Wo genau du deine Limits setzt, hängt von deinem Anwendungsfall ab.
+
+**SOC-Modus**
 - Einfach, zuverlässig
 - Min/Max SOC Prozent-Grenzen
 - Nutzt SOC vom Gerät
+- **ACHTUNG:** Adapter-Werte müssen innerhalb der Zendure-App Grenzen liegen (siehe Warnung oben!)
 
 **Voltage-Modus (Empfohlen für Multi-Pack)**
 - Überwacht `packData.*.minVol` jedes Packs
 - Verwendet niedrigsten Wert (schützt schwächstes Pack)
 - Voltage Recovery Hysterese verhindert Oszillation durch Relaxation
 - Beispiel: Min 3.0V + Hysterese 0.1V → Recovery erst bei 3.1V
+- **Zusätzliche Sicherheit** neben SOC-Limits (beide Modi parallel aktiv!)
 
 ### ⚡ Relay Protection (Anti-Verschleiß)
 
@@ -194,6 +335,15 @@ neueBatterieLeistung = letzteBatterieLeistung + (aktuelleNetzleistung - ZielNetz
 ---
 
 ## 📜 Changelog
+
+### v0.7.0 (2026-04-15) - Controller Refactoring
+- 🏗️ **Große Architektur-Verbesserung** – Controller aus main.js extrahiert
+- ✨ **SingleDeviceController** – Kompletter Single-Device Zyklus in dediziertem Modul
+- ✨ **MultiDeviceController** – Kompletter Multi-Device Zyklus in dediziertem Modul
+- 📉 **47% Code-Reduktion in main.js** – von 1052 auf 554 Zeilen
+- 📚 **Business-Logic Extraktion** – Alle Automatisierungs-Logik in testbare Controller verschoben
+- 🧪 **Verbesserte Testbarkeit** – Controller sind unabhängig und einfach unit-testbar
+- 🎯 **Klare Trennung** – main.js nur noch Adapter-Lifecycle, Controller übernehmen Automation
 
 ### v0.6.1 (2026-04-03)
 - ✨ **Operating Deadband Protection** – verhindert Relais-Flattern bei Oszillation
