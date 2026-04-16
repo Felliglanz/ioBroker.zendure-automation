@@ -2,8 +2,12 @@
   "common": {
     "name": "zendure-automation",
     "title": "Zendure Automation",
-    "version": "0.6.5",
+    "version": "0.7.0",
     "news": {
+      "0.7.0": {
+        "en": "Multi-Device Support: Control multiple Zendure devices as one system with equal-split power distribution and dynamic exclusion at limits. Architecture Refactoring: Extracted controllers from main.js (47% code reduction), improved testability and maintainability with 9 specialized modules.",
+        "de": "Multi-Device Unterstützung: Mehrere Zendure-Geräte als ein System steuern mit gleichmäßiger Leistungsverteilung und dynamischer Exclusion an Grenzen. Architektur-Refactoring: Controller aus main.js extrahiert (47% Code-Reduktion), verbesserte Testbarkeit und Wartbarkeit mit 9 spezialisierten Modulen."
+      },
       "0.6.5": {
         "en": "Added SOC recovery hysteresis (default 5%) to prevent discharge oscillation after reaching minimum SOC. Battery must charge above minSOC + hysteresis before discharge is allowed again. Persistent across adapter restarts.",
         "de": "SOC Recovery Hysterese hinzugefügt (Standard 5%) um Entlade-Oszillation nach Erreichen des minimalen SOC zu verhindern. Batterie muss über minSOC + Hysterese laden bevor erneute Entladung erlaubt ist. Persistent über Adapter-Neustarts."
