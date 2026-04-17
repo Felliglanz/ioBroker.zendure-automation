@@ -79,7 +79,7 @@ https://github.com/Felliglanz/iobroker.zendure-automation
 3. **🔋 Battery Protection**
    - Wähle Schutz-Modus: **SOC** (einfach) oder **Voltage** (präzise)
    - **SOC-Modus**: Min SOC 10%, Max SOC 100%
-   - **Voltage-Modus**: Min Voltage 3.0V (LFP), Hysterese 0.1V
+   - **Voltage-Modus**: Min Voltage 3.18V (LFP), Hysterese 0.1V
 
 **Das war's!** Standardwerte für Relay Protection, Regulation und Emergency sind bereits optimal eingestellt.
 
@@ -237,7 +237,7 @@ Ein Gerät wird automatisch aus der Distribution ausgeschlossen wenn:
 - Überwacht `packData.*.minVol` jedes Packs
 - Verwendet niedrigsten Wert (schützt schwächstes Pack)
 - Voltage Recovery Hysterese verhindert Oszillation durch Relaxation
-- Beispiel: Min 3.0V + Hysterese 0.1V → Recovery erst bei 3.1V
+- Beispiel: Min 3.18V + Hysterese 0.1V → Recovery erst bei 3.28V
 - **Zusätzliche Sicherheit** neben SOC-Limits (beide Modi parallel aktiv!)
 
 ### ⚡ Relay Protection (Anti-Verschleiß)
@@ -289,7 +289,7 @@ Glättet das Grid Power Signal um auf schnelle Lastspitzen (TV, Mikrowelle) nich
 ### 🚨 Emergency & Recovery
 
 **Emergency Charging** (höchste Priorität):
-- Aktiviert bei: `lowVoltageBlock` Flag ODER Spannung < 2.8V
+- Aktiviert bei: `lowVoltageBlock` Flag ODER Spannung < 3.0V
 - Lädt mit 800W bis Exit-SOC (20%)
 - Übersteuert alle anderen Automatisierungen
 
