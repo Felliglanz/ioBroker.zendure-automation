@@ -591,12 +591,12 @@
                 "de": "Betriebs-Deadband (W)"
               },
               "sm": 6,
-              "min": 0,
+              "min": 10,
               "max": 50,
-              "default": 0,
+              "default": 10,
               "help": {
-                "en": "Minimum power to maintain in current mode before allowing 0W or sign change. Prevents relay switching through 0W during regulation. Higher = more relay protection, but less precise zero-grid control.",
-                "de": "Mindestleistung im aktuellen Modus vor Erlaubnis von 0W oder Vorzeichenwechsel. Verhindert Relais-Schalten durch 0W während Regelung. Höher = mehr Relais-Schutz, aber weniger präzise Nulleinspeisung."
+                "en": "Minimum power to maintain in current mode before allowing 0W or sign change. Prevents relay switching through 0W during regulation. IMPORTANT: Must be ≥10W to survive 10W power rounding! Recommended: 10-20W for stable relay protection.",
+                "de": "Mindestleistung im aktuellen Modus vor Erlaubnis von 0W oder Vorzeichenwechsel. Verhindert Relais-Schalten durch 0W während Regelung. WICHTIG: Muss ≥10W sein, um 10W-Rundung zu überstehen! Empfohlen: 10-20W für stabilen Relais-Schutz."
               }
             },
             "deadbandHoldTicks": {
@@ -617,8 +617,8 @@
             "_deadbandHint": {
               "type": "staticText",
               "text": {
-                "en": "💡 Example: 5W deadband + 3 ticks + 5s interval = holds at ±5W for 15s before switching through 0W. Recommended for stable weather: 1-2 ticks, for changing clouds: 5-10 ticks.",
-                "de": "💡 Beispiel: 5W Deadband + 3 Ticks + 5s Intervall = hält bei ±5W für 15s vor Durchgang durch 0W. Empfohlen bei stabilem Wetter: 1-2 Ticks, bei wechselnden Wolken: 5-10 Ticks."
+                "en": "💡 Example: 10W deadband + 3 ticks + 5s interval = holds at ±10W for 15s before switching through 0W. Recommended for stable weather: 1-2 ticks, for changing clouds: 5-10 ticks.",
+                "de": "💡 Beispiel: 10W Deadband + 3 Ticks + 5s Intervall = hält bei ±10W für 15s vor Durchgang durch 0W. Empfohlen bei stabilem Wetter: 1-2 Ticks, bei wechselnden Wolken: 5-10 Ticks."
               },
               "sm": 12,
               "style": {
