@@ -93,8 +93,8 @@
             "_deviceHint": {
               "type": "staticText",
               "text": {
-                "en": "💡 Find ProductKey and DeviceKey in the zendure-solarflow adapter object tree under your device.",
-                "de": "💡 ProductKey und DeviceKey findest du im zendure-solarflow Adapter unter deinem Gerät im Objektbaum."
+                "en": "💡 Navigate to: Objects → zendure-solarflow.0 → {ProductKey} → {DeviceKey}<br/>Example: zendure-solarflow.0.A8B3C1 (ProductKey) → 7Df2KpQ9 (DeviceKey)<br/>The ProductKey is product-specific, the DeviceKey is unique to your device.",
+                "de": "💡 Navigation: Objekte → zendure-solarflow.0 → {ProductKey} → {DeviceKey}<br/>Beispiel: zendure-solarflow.0.A8B3C1 (ProductKey) → 7Df2KpQ9 (DeviceKey)<br/>Der ProductKey ist produktspezifisch, der DeviceKey ist einmalig für dein Gerät."
               },
               "sm": 12,
               "hidden": "data.multiDeviceEnabled",
@@ -152,6 +152,22 @@
                   "width": "10%"
                 }
               ]
+            },
+            "_multiDeviceHint": {
+              "type": "staticText",
+              "text": {
+                "en": "💡 Navigate to: Objects → zendure-solarflow.0 → {ProductKey} → {DeviceKey}<br/>Example: zendure-solarflow.0.A8B3C1 (ProductKey) → 7Df2KpQ9 (DeviceKey)",
+                "de": "💡 Navigation: Objekte → zendure-solarflow.0 → {ProductKey} → {DeviceKey}<br/>Beispiel: zendure-solarflow.0.A8B3C1 (ProductKey) → 7Df2KpQ9 (DeviceKey)"
+              },
+              "sm": 12,
+              "hidden": "!data.multiDeviceEnabled",
+              "style": {
+                "fontSize": "0.85em",
+                "fontStyle": "italic",
+                "color": "#666",
+                "marginTop": "5px",
+                "marginBottom": "10px"
+              }
             },
             "_multiDeviceInfo": {
               "type": "staticText",
