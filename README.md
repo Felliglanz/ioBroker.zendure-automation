@@ -1,7 +1,10 @@
 # ioBroker.zendure-automation
 
-[![en](https://img.shields.io/badge/lang-en-red.svg)](README.en.md)
-[![de](https://img.shields.io/badge/lang-de-green.svg)](README.md)
+## 🌍 Language / Sprache
+
+🇩🇪 **[Deutsche Version](README.md)** | 🇬🇧 **[English Version](README.en.md)**
+
+---
 
 ![Logo](admin/zendure-automation.png)
 
