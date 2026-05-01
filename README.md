@@ -1,5 +1,8 @@
 # ioBroker.zendure-automation
 
+[![en](https://img.shields.io/badge/lang-en-red.svg)](README.en.md)
+[![de](https://img.shields.io/badge/lang-de-green.svg)](README.md)
+
 ![Logo](admin/zendure-automation.png)
 
 **Intelligente Zero-Grid Automation für Zendure Solarflow** – Automatische Batteriesteuerung für maximale Autarkie mit lokaler ZenSDK-Kontrolle.
