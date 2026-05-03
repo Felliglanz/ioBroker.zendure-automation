@@ -849,6 +849,51 @@
                 "color": "#666",
                 "marginTop": "5px"
               }
+            },
+            "useZendureMinSoc": {
+              "type": "checkbox",
+              "label": {
+                "en": "Use Zendure minSoc as additional limit",
+                "de": "Zendure minSoc als zusätzliche Grenze verwenden"
+              },
+              "sm": 6,
+              "default": true,
+              "help": {
+                "en": "Reads device minSoc and stops discharge at minSoc+margin (prevents Zendure hardware block ~5%)",
+                "de": "Liest Geräte-minSoc und stoppt Entladung bei minSoc+Margin (verhindert Zendure Hardware-Block ~5%)"
+              }
+            },
+            "zendureMinSocMargin": {
+              "type": "number",
+              "label": {
+                "en": "minSoc safety margin (%)",
+                "de": "minSoc Sicherheitsmarge (%)"
+              },
+              "sm": 6,
+              "min": 0,
+              "max": 10,
+              "step": 1,
+              "default": 1,
+              "help": {
+                "en": "Stop discharge at minSoc + margin (e.g. 5% + 1% = 6%)",
+                "de": "Entladung stoppen bei minSoc + Margin (z.B. 5% + 1% = 6%)"
+              }
+            },
+            "zendureMinSocRecoveryHysteresis": {
+              "type": "number",
+              "label": {
+                "en": "minSoc recovery hysteresis (%)",
+                "de": "minSoc Recovery-Hysterese (%)"
+              },
+              "sm": 6,
+              "min": 0,
+              "max": 10,
+              "step": 1,
+              "default": 2,
+              "help": {
+                "en": "SOC must rise limit+hysteresis before discharge allowed again (e.g. 6% + 2% = 8%)",
+                "de": "SOC muss limit+Hysterese überschreiten vor erneuter Entladung (z.B. 6% + 2% = 8%)"
+              }
             }
           }
         }

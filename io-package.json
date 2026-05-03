@@ -386,6 +386,19 @@
       "native": {}
     },
     {
+      "_id": "status.minSocRecoveryActive",
+      "type": "state",
+      "common": {
+        "name": "MinSoc recovery mode active (Zendure hardware protection)",
+        "type": "boolean",
+        "role": "indicator",
+        "read": true,
+        "write": false,
+        "def": false
+      },
+      "native": {}
+    },
+    {
       "_id": "status.lastUpdate",
       "type": "state",
       "common": {
