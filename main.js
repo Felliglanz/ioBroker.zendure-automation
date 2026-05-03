@@ -440,6 +440,20 @@ class ZendureAutomation extends utils.Adapter {
                 },
                 native: {}
             });
+
+            await this.setObjectNotExistsAsync(`status.devices.${device.id}.effectiveMinSoc`, {
+                type: 'state',
+                common: {
+                    name: 'Effective minSoc limit (minSoc + margin)',
+                    type: 'number',
+                    role: 'value.battery',
+                    unit: '%',
+                    read: true,
+                    write: false,
+                    def: 0
+                },
+                native: {}
+            });
         }
 
         // Create additional multi-device global states

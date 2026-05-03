@@ -2,8 +2,12 @@
   "common": {
     "name": "zendure-automation",
     "title": "Zendure Automation",
-    "version": "0.7.1",
+    "version": "0.7.2",
     "news": {
+      "0.7.2": {
+        "en": "Zendure minSoc Protection: Prevents hardware block at ~5% SOC when using voltage-based discharge protection. Reads device minSoc dynamically and stops discharge at minSoc+margin (default: +1%) with recovery hysteresis (+2%) to prevent flipping. New state: status.effectiveMinSoc shows actual stop limit.",
+        "de": "Zendure minSoc Schutz: Verhindert Hardware-Block bei ~5% SOC im Voltage-Modus. Liest Geräte-minSoc dynamisch und stoppt Entladung bei minSoc+Margin (Standard: +1%) mit Recovery-Hysterese (+2%) gegen Flipping. Neuer State: status.effectiveMinSoc zeigt effektive Stopp-Grenze."
+      },
       "0.7.1": {
         "en": "Critical Fix: Enhanced operating deadband to prevent relay switching at high power loads. Now catches ALL transitions to 0W and direction changes, holding at minimum 10W before allowing relay state changes. Eliminates rapid relay cycling during fluctuating conditions.",
         "de": "Kritischer Fix: Verbessertes Operating Deadband verhindert Relaisschalten bei hoher Last. Erkennt nun ALLE Übergänge zu 0W und Richtungswechsel, hält bei minimum 10W vor Relais-Zustandswechsel. Eliminiert schnelles Relais-Takten bei schwankenden Bedingungen."
@@ -395,6 +399,20 @@
         "read": true,
         "write": false,
         "def": false
+      },
+      "native": {}
+    },
+    {
+      "_id": "status.effectiveMinSoc",
+      "type": "state",
+      "common": {
+        "name": "Effective minSoc limit (minSoc + margin)",
+        "type": "number",
+        "role": "value.battery",
+        "unit": "%",
+        "read": true,
+        "write": false,
+        "def": 0
       },
       "native": {}
     },

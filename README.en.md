@@ -246,6 +246,24 @@ A device is automatically excluded from distribution when:
 - Example: Min 3.18V + Hysteresis 0.1V → Recovery only at 3.28V
 - **Additional safety** beside SOC limits (both modes active in parallel!)
 
+**🛡️ Zendure minSoc Protection (NEW in v0.7.2)**
+
+Prevents hardware block from Zendure's internal 5% SOC protection:
+
+- **Problem:** Zendure blocks hardware-side at ~5% SOC, even when minVol is still OK (inaccurate SOC algorithm)
+- **Solution:** Reads `minSoc` state from Zendure device dynamically
+- **How it works:** Stops discharge at `minSoc + margin` (default: 5% + 1% = **6%**)
+- **Recovery:** Discharge allowed again at `6% + hysteresis` (default: +2% = **8%**)
+- **Transparency:** State `status.effectiveMinSoc` shows current effective limit
+
+**Configuration:**
+- **Use Zendure minSoc:** On/Off (default: **enabled**)
+- **minSoc Margin:** Safety margin in % (default: **1%**)
+- **Recovery Hysteresis:** Prevents flipping in % (default: **2%**)
+
+**Example:** Device minSoc=5%, Margin=1%, Hysteresis=2%
+- Stop at 6% → Battery charges → Release at 8% → No flipping! ✅
+
 ### ⚡ Relay Protection (Anti-Wear)
 
 Protects hardware from excessive switching, especially in variable weather:
