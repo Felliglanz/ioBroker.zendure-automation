@@ -333,9 +333,15 @@ class ZendureAutomation extends utils.Adapter {
         await this.setStateAsync('status.mode', 'max-charging', true);
 
         const maxChargePowerW = -(this.config.maxChargePowerW || 1200);
-        const batterySoc = this._isMultiDevice 
-            ? (await this.dataReader.getAggregatedState())?.avgSoc 
-            : await this.dataReader.getBatterySoc();
+        
+        // Get current SOC
+        let batterySoc;
+        if (this._isMultiDevice) {
+            const aggregated = await this.multiDeviceMgr.aggregateDeviceStates();
+            batterySoc = aggregated?.avgSoc;
+        } else {
+            batterySoc = await this.dataReader.getBatterySoc();
+        }
 
         // Auto-reset when max SOC reached
         const maxBatterySoc = this.config.maxBatterySoc || 100;
@@ -373,24 +379,61 @@ class ZendureAutomation extends utils.Adapter {
     /**
      * Handle Max Discharge Override Mode
      * Discharges all batteries at maximum configured power
+     * Respects discharge protection mode (SOC/Voltage/Both) and emergency/recovery states
      */
     async handleMaxDischargeMode() {
         this.log.debug('Max Discharge Override active');
         await this.setStateAsync('status.mode', 'max-discharging', true);
 
         const maxDischargePowerW = this.config.maxDischargePowerW || 1200;
+        const dischargeProtectionMode = this.config.dischargeProtectionMode || 'soc';
         
-        // Get current SOC
+        // ========== CHECK EMERGENCY/RECOVERY (BLOCKS DISCHARGE) ==========
+        let inRecovery = false;
+        if (this._isMultiDevice) {
+            // Check if ANY device is in recovery
+            for (const [deviceId, emergencyMgr] of this.emergencyManagers.entries()) {
+                if (emergencyMgr.inEmergencyRecovery || emergencyMgr.inVoltageRecovery) {
+                    inRecovery = true;
+                    this.log.info(`Device in recovery mode, disabling Max Discharge`);
+                    break;
+                }
+            }
+        } else {
+            if (this.emergencyMgr.inEmergencyRecovery || this.emergencyMgr.inVoltageRecovery) {
+                inRecovery = true;
+                this.log.info(`Battery in recovery mode, disabling Max Discharge`);
+            }
+        }
+
+        if (inRecovery) {
+            await this.setStateAsync('control.maxDischarge', false, true);
+            await this.setStateAsync('status.mode', 'idle', true);
+            // Set all devices to 0W and let normal cycle handle recovery
+            if (this._isMultiDevice) {
+                for (const device of this.multiDeviceMgr.devices) {
+                    await this.validationService.writePowerSetpoint(device.basePath, 0);
+                }
+            } else {
+                await this.validationService.writePowerSetpoint(this._deviceBasePath, 0);
+            }
+            return;
+        }
+
+        // ========== GET BATTERY STATE ==========
         let batterySoc;
+        let minPackVoltageV = null;
         let effectiveMinSoc;
         
         if (this._isMultiDevice) {
-            const aggregated = await this.dataReader.getAggregatedState();
+            const aggregated = await this.multiDeviceMgr.aggregateDeviceStates();
             batterySoc = aggregated?.avgSoc;
-            // Use global minSoc for multi-device (individual devices handle their own limits)
+            minPackVoltageV = aggregated?.minPackVoltageV;
             effectiveMinSoc = this.config.minBatterySoc || 10;
         } else {
             batterySoc = await this.dataReader.getBatterySoc();
+            minPackVoltageV = await this.dataReader.getMinimumPackVoltageV();
+            
             // Check for Zendure minSoc protection
             const minSocState = await this.getForeignStateAsync(`${this._deviceBasePath}.minSoc`);
             const deviceMinSoc = minSocState?.val ?? null;
@@ -404,26 +447,47 @@ class ZendureAutomation extends utils.Adapter {
             }
         }
 
-        // Auto-reset when min SOC reached
-        if (batterySoc !== null && batterySoc <= effectiveMinSoc) {
-            this.log.info(`Min SOC ${effectiveMinSoc}% reached, disabling Max Discharge mode`);
-            await this.setStateAsync('control.maxDischarge', false, true);
-            await this.setStateAsync('status.mode', 'idle', true);
-            
-            // Set all devices to 0W
-            if (this._isMultiDevice) {
-                for (const device of this.multiDeviceMgr.devices) {
-                    await this.validationService.writePowerSetpoint(device.basePath, 0);
+        // ========== CHECK SOC LIMIT (soc, both) ==========
+        if (dischargeProtectionMode === 'soc' || dischargeProtectionMode === 'both') {
+            if (batterySoc !== null && batterySoc <= effectiveMinSoc) {
+                this.log.info(`Min SOC ${effectiveMinSoc}% reached, disabling Max Discharge mode`);
+                await this.setStateAsync('control.maxDischarge', false, true);
+                await this.setStateAsync('status.mode', 'idle', true);
+                
+                // Set all devices to 0W
+                if (this._isMultiDevice) {
+                    for (const device of this.multiDeviceMgr.devices) {
+                        await this.validationService.writePowerSetpoint(device.basePath, 0);
+                    }
+                } else {
+                    await this.validationService.writePowerSetpoint(this._deviceBasePath, 0);
                 }
-            } else {
-                await this.validationService.writePowerSetpoint(this._deviceBasePath, 0);
+                return;
             }
-            return;
         }
 
-        // Apply max discharge power
+        // ========== CHECK VOLTAGE LIMIT (voltage, both) ==========
+        if (dischargeProtectionMode === 'voltage' || dischargeProtectionMode === 'both') {
+            const minBatteryVoltageV = this.config.minBatteryVoltageV || 3.0;
+            if (minPackVoltageV !== null && minPackVoltageV <= minBatteryVoltageV) {
+                this.log.info(`Min voltage ${minBatteryVoltageV}V reached (current: ${minPackVoltageV}V), disabling Max Discharge mode`);
+                await this.setStateAsync('control.maxDischarge', false, true);
+                await this.setStateAsync('status.mode', 'idle', true);
+                
+                // Set all devices to 0W and let normal cycle trigger voltage recovery
+                if (this._isMultiDevice) {
+                    for (const device of this.multiDeviceMgr.devices) {
+                        await this.validationService.writePowerSetpoint(device.basePath, 0);
+                    }
+                } else {
+                    await this.validationService.writePowerSetpoint(this._deviceBasePath, 0);
+                }
+                return;
+            }
+        }
+
+        // ========== APPLY MAX DISCHARGE POWER ==========
         if (this._isMultiDevice) {
-            // Distribute equally across all devices
             const powerPerDevice = Math.round(maxDischargePowerW / this.multiDeviceMgr.devices.length);
             this.log.debug(`Max Discharge: ${maxDischargePowerW}W total (${powerPerDevice}W per device)`);
             

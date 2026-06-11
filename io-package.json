@@ -2,8 +2,12 @@
   "common": {
     "name": "zendure-automation",
     "title": "Zendure Automation",
-    "version": "0.7.3",
+    "version": "0.7.4",
     "news": {
+      "0.7.4": {
+        "en": "Max Discharge Safety: Respects configured discharge protection mode (SOC/Voltage/Both). Blocks maxDischarge during emergency/voltage recovery and auto-resets when limits reached. Simple and safe.",
+        "de": "Max Discharge Sicherheit: Respektiert konfigurierten Entladeschutz-Modus (SOC/Spannung/Beide). Blockiert maxDischarge während Emergency/Voltage Recovery und Reset bei Limits. Einfach und sicher."
+      },
       "0.7.3": {
         "en": "Manual Override Controls: Added control.maxCharge and control.maxDischarge switches for manual full-power battery operations. Auto-resets at SOC limits. Works in both single-device and multi-device modes.",
         "de": "Manuelle Override-Steuerung: control.maxCharge und control.maxDischarge Schalter für manuelles Volllast-Laden/-Entladen hinzugefügt. Auto-Reset bei SOC-Grenzen. Funktioniert in Single- und Multi-Device Modus."
