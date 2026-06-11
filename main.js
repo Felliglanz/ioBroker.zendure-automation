@@ -710,6 +710,15 @@ class ZendureAutomation extends utils.Adapter {
                 });
             } else {
                 this.log.info('Max Charge Override disabled');
+                // Set all devices to 0W
+                if (this._isMultiDevice) {
+                    for (const device of this.multiDeviceMgr.devices) {
+                        await this.validationService.writePowerSetpoint(device.basePath, 0);
+                    }
+                } else {
+                    await this.validationService.writePowerSetpoint(this._deviceBasePath, 0);
+                }
+                await this.setStateAsync('status.mode', 'idle', true);
             }
         }
 
@@ -724,6 +733,15 @@ class ZendureAutomation extends utils.Adapter {
                 });
             } else {
                 this.log.info('Max Discharge Override disabled');
+                // Set all devices to 0W
+                if (this._isMultiDevice) {
+                    for (const device of this.multiDeviceMgr.devices) {
+                        await this.validationService.writePowerSetpoint(device.basePath, 0);
+                    }
+                } else {
+                    await this.validationService.writePowerSetpoint(this._deviceBasePath, 0);
+                }
+                await this.setStateAsync('status.mode', 'idle', true);
             }
         }
 

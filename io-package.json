@@ -2,8 +2,12 @@
   "common": {
     "name": "zendure-automation",
     "title": "Zendure Automation",
-    "version": "0.7.4",
+    "version": "0.7.5",
     "news": {
+      "0.7.5": {
+        "en": "Bugfix: Set devices to 0W when manually disabling maxCharge/maxDischarge overrides (before limits reached).",
+        "de": "Bugfix: Geräte auf 0W setzen beim manuellen Deaktivieren von maxCharge/maxDischarge (vor Limit-Erreichen)."
+      },
       "0.7.4": {
         "en": "Max Discharge Safety: Respects configured discharge protection mode (SOC/Voltage/Both). Blocks maxDischarge during emergency/voltage recovery and auto-resets when limits reached. Simple and safe.",
         "de": "Max Discharge Sicherheit: Respektiert konfigurierten Entladeschutz-Modus (SOC/Spannung/Beide). Blockiert maxDischarge während Emergency/Voltage Recovery und Reset bei Limits. Einfach und sicher."
