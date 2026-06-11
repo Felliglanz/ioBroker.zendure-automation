@@ -297,6 +297,20 @@ class ZendureAutomation extends utils.Adapter {
                 return;
             }
 
+            // Check for manual override modes (highest priority)
+            const maxChargeState = await this.getStateAsync('control.maxCharge');
+            const maxDischargeState = await this.getStateAsync('control.maxDischarge');
+
+            if (maxChargeState?.val) {
+                await this.handleMaxChargeMode();
+                return;
+            }
+
+            if (maxDischargeState?.val) {
+                await this.handleMaxDischargeMode();
+                return;
+            }
+
             // Route to appropriate cycle based on mode
             if (this._isMultiDevice) {
                 await this.multiDeviceController.runCycle(this.config);
@@ -307,6 +321,118 @@ class ZendureAutomation extends utils.Adapter {
         } catch (err) {
             this.log.error(`Automation cycle error: ${err.message}`);
             await this.setStateAsync('status.mode', 'error', true);
+        }
+    }
+
+    /**
+     * Handle Max Charge Override Mode
+     * Charges all batteries at maximum configured power
+     */
+    async handleMaxChargeMode() {
+        this.log.debug('Max Charge Override active');
+        await this.setStateAsync('status.mode', 'max-charging', true);
+
+        const maxChargePowerW = -(this.config.maxChargePowerW || 1200);
+        const batterySoc = this._isMultiDevice 
+            ? (await this.dataReader.getAggregatedState())?.avgSoc 
+            : await this.dataReader.getBatterySoc();
+
+        // Auto-reset when max SOC reached
+        const maxBatterySoc = this.config.maxBatterySoc || 100;
+        if (batterySoc !== null && batterySoc >= maxBatterySoc) {
+            this.log.info(`Max SOC ${maxBatterySoc}% reached, disabling Max Charge mode`);
+            await this.setStateAsync('control.maxCharge', false, true);
+            await this.setStateAsync('status.mode', 'idle', true);
+            
+            // Set all devices to 0W
+            if (this._isMultiDevice) {
+                for (const device of this.multiDeviceMgr.devices) {
+                    await this.validationService.writePowerSetpoint(device.basePath, 0);
+                }
+            } else {
+                await this.validationService.writePowerSetpoint(this._deviceBasePath, 0);
+            }
+            return;
+        }
+
+        // Apply max charge power
+        if (this._isMultiDevice) {
+            // Distribute equally across all devices
+            const powerPerDevice = Math.round(maxChargePowerW / this.multiDeviceMgr.devices.length);
+            this.log.debug(`Max Charge: ${maxChargePowerW}W total (${powerPerDevice}W per device)`);
+            
+            for (const device of this.multiDeviceMgr.devices) {
+                await this.validationService.writePowerSetpoint(device.basePath, powerPerDevice);
+            }
+        } else {
+            this.log.debug(`Max Charge: ${maxChargePowerW}W`);
+            await this.validationService.writePowerSetpoint(this._deviceBasePath, maxChargePowerW);
+        }
+    }
+
+    /**
+     * Handle Max Discharge Override Mode
+     * Discharges all batteries at maximum configured power
+     */
+    async handleMaxDischargeMode() {
+        this.log.debug('Max Discharge Override active');
+        await this.setStateAsync('status.mode', 'max-discharging', true);
+
+        const maxDischargePowerW = this.config.maxDischargePowerW || 1200;
+        
+        // Get current SOC
+        let batterySoc;
+        let effectiveMinSoc;
+        
+        if (this._isMultiDevice) {
+            const aggregated = await this.dataReader.getAggregatedState();
+            batterySoc = aggregated?.avgSoc;
+            // Use global minSoc for multi-device (individual devices handle their own limits)
+            effectiveMinSoc = this.config.minBatterySoc || 10;
+        } else {
+            batterySoc = await this.dataReader.getBatterySoc();
+            // Check for Zendure minSoc protection
+            const minSocState = await this.getForeignStateAsync(`${this._deviceBasePath}.minSoc`);
+            const deviceMinSoc = minSocState?.val ?? null;
+            const configMinSoc = this.config.minBatterySoc || 10;
+            const minSocMargin = this.config.minSocProtectionMargin ?? 1;
+            
+            if (deviceMinSoc !== null && deviceMinSoc > 0) {
+                effectiveMinSoc = deviceMinSoc + minSocMargin;
+            } else {
+                effectiveMinSoc = configMinSoc;
+            }
+        }
+
+        // Auto-reset when min SOC reached
+        if (batterySoc !== null && batterySoc <= effectiveMinSoc) {
+            this.log.info(`Min SOC ${effectiveMinSoc}% reached, disabling Max Discharge mode`);
+            await this.setStateAsync('control.maxDischarge', false, true);
+            await this.setStateAsync('status.mode', 'idle', true);
+            
+            // Set all devices to 0W
+            if (this._isMultiDevice) {
+                for (const device of this.multiDeviceMgr.devices) {
+                    await this.validationService.writePowerSetpoint(device.basePath, 0);
+                }
+            } else {
+                await this.validationService.writePowerSetpoint(this._deviceBasePath, 0);
+            }
+            return;
+        }
+
+        // Apply max discharge power
+        if (this._isMultiDevice) {
+            // Distribute equally across all devices
+            const powerPerDevice = Math.round(maxDischargePowerW / this.multiDeviceMgr.devices.length);
+            this.log.debug(`Max Discharge: ${maxDischargePowerW}W total (${powerPerDevice}W per device)`);
+            
+            for (const device of this.multiDeviceMgr.devices) {
+                await this.validationService.writePowerSetpoint(device.basePath, powerPerDevice);
+            }
+        } else {
+            this.log.debug(`Max Discharge: ${maxDischargePowerW}W`);
+            await this.validationService.writePowerSetpoint(this._deviceBasePath, maxDischargePowerW);
         }
     }
 
@@ -506,6 +632,34 @@ class ZendureAutomation extends utils.Adapter {
                     await this.validationService.writePowerSetpoint(this._deviceBasePath, 0);
                 }
                 await this.setStateAsync('status.mode', 'idle', true);
+            }
+        }
+
+        if (id.endsWith('.control.maxCharge')) {
+            if (state.val) {
+                this.log.info('Max Charge Override enabled');
+                // Mutual exclusion: Disable maxDischarge
+                await this.setStateAsync('control.maxDischarge', false, true);
+                // Trigger immediate cycle
+                this.runAutomationCycle().catch(err => {
+                    this.log.error(`Automation cycle failed: ${err.message}`);
+                });
+            } else {
+                this.log.info('Max Charge Override disabled');
+            }
+        }
+
+        if (id.endsWith('.control.maxDischarge')) {
+            if (state.val) {
+                this.log.info('Max Discharge Override enabled');
+                // Mutual exclusion: Disable maxCharge
+                await this.setStateAsync('control.maxCharge', false, true);
+                // Trigger immediate cycle
+                this.runAutomationCycle().catch(err => {
+                    this.log.error(`Automation cycle failed: ${err.message}`);
+                });
+            } else {
+                this.log.info('Max Discharge Override disabled');
             }
         }
 

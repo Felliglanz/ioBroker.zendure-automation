@@ -2,8 +2,12 @@
   "common": {
     "name": "zendure-automation",
     "title": "Zendure Automation",
-    "version": "0.7.2",
+    "version": "0.7.3",
     "news": {
+      "0.7.3": {
+        "en": "Manual Override Controls: Added control.maxCharge and control.maxDischarge switches for manual full-power battery operations. Auto-resets at SOC limits. Works in both single-device and multi-device modes.",
+        "de": "Manuelle Override-Steuerung: control.maxCharge und control.maxDischarge Schalter für manuelles Volllast-Laden/-Entladen hinzugefügt. Auto-Reset bei SOC-Grenzen. Funktioniert in Single- und Multi-Device Modus."
+      },
       "0.7.2": {
         "en": "Zendure minSoc Protection: Prevents hardware block at ~5% SOC when using voltage-based discharge protection. Reads device minSoc dynamically and stops discharge at minSoc+margin (default: +1%) with recovery hysteresis (+2%) to prevent flipping. New state: status.effectiveMinSoc shows actual stop limit.",
         "de": "Zendure minSoc Schutz: Verhindert Hardware-Block bei ~5% SOC im Voltage-Modus. Liest Geräte-minSoc dynamisch und stoppt Entladung bei minSoc+Margin (Standard: +1%) mit Recovery-Hysterese (+2%) gegen Flipping. Neuer State: status.effectiveMinSoc zeigt effektive Stopp-Grenze."
@@ -215,6 +219,32 @@
       "native": {}
     },
     {
+      "_id": "control.maxCharge",
+      "type": "state",
+      "common": {
+        "name": "Max Charge Override (Full power charging)",
+        "type": "boolean",
+        "role": "switch",
+        "read": true,
+        "write": true,
+        "def": false
+      },
+      "native": {}
+    },
+    {
+      "_id": "control.maxDischarge",
+      "type": "state",
+      "common": {
+        "name": "Max Discharge Override (Full power discharging)",
+        "type": "boolean",
+        "role": "switch",
+        "read": true,
+        "write": true,
+        "def": false
+      },
+      "native": {}
+    },
+    {
       "_id": "status",
       "type": "channel",
       "common": {
@@ -238,6 +268,8 @@
           "standby": "Standby",
           "emergency-charging": "Emergency Charging",
           "recovery": "Recovery Mode",
+          "max-charging": "Max Charge Override",
+          "max-discharging": "Max Discharge Override",
           "error": "Error"
         }
       },
