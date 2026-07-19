@@ -253,6 +253,94 @@
       "native": {}
     },
     {
+      "_id": "control.maxBatterySoc",
+      "type": "state",
+      "common": {
+        "name": "Max battery SOC (%) - runtime override",
+        "type": "number",
+        "role": "value",
+        "read": true,
+        "write": true,
+        "def": 100,
+        "min": 0,
+        "max": 100,
+        "unit": "%"
+      },
+      "native": {}
+    },
+    {
+      "_id": "control.minBatterySoc",
+      "type": "state",
+      "common": {
+        "name": "Min battery SOC (%) - runtime override",
+        "type": "number",
+        "role": "value",
+        "read": true,
+        "write": true,
+        "def": 10,
+        "min": 0,
+        "max": 100,
+        "unit": "%"
+      },
+      "native": {}
+    },
+    {
+      "_id": "control.enableCharge",
+      "type": "state",
+      "common": {
+        "name": "Enable charging - runtime override",
+        "type": "boolean",
+        "role": "switch.enable",
+        "read": true,
+        "write": true,
+        "def": true
+      },
+      "native": {}
+    },
+    {
+      "_id": "control.enableDischarge",
+      "type": "state",
+      "common": {
+        "name": "Enable discharging - runtime override",
+        "type": "boolean",
+        "role": "switch.enable",
+        "read": true,
+        "write": true,
+        "def": true
+      },
+      "native": {}
+    },
+    {
+      "_id": "control.maxChargePowerW",
+      "type": "state",
+      "common": {
+        "name": "Max charge power (W) - runtime override",
+        "type": "number",
+        "role": "value.power",
+        "read": true,
+        "write": true,
+        "def": 1600,
+        "min": 0,
+        "unit": "W"
+      },
+      "native": {}
+    },
+    {
+      "_id": "control.maxDischargePowerW",
+      "type": "state",
+      "common": {
+        "name": "Max discharge power (W) - runtime override",
+        "type": "number",
+        "role": "value.power",
+        "read": true,
+        "write": true,
+        "def": 1600,
+        "min": 0,
+        "unit": "W"
+      },
+      "native": {}
+    },
+    {
       "_id": "status",
       "type": "channel",
       "common": {

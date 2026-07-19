@@ -130,6 +130,12 @@ class ZendureAutomation extends utils.Adapter {
                 // Initialize control states
                 await this.setStateAsync('control.enabled', true, true);
                 await this.setStateAsync('control.targetGridPowerW', this.config.targetGridPowerW || 0, true);
+                await this.setStateAsync('control.maxBatterySoc', this.config.maxBatterySoc ?? 100, true);
+                await this.setStateAsync('control.minBatterySoc', this.config.minBatterySoc ?? 10, true);
+                await this.setStateAsync('control.enableCharge', this.config.enableCharge !== false, true);
+                await this.setStateAsync('control.enableDischarge', this.config.enableDischarge !== false, true);
+                await this.setStateAsync('control.maxChargePowerW', this.config.maxChargePowerW ?? 1600, true);
+                await this.setStateAsync('control.maxDischargePowerW', this.config.maxDischargePowerW ?? 1600, true);
                 await this.setStateAsync('status.mode', 'idle', true);
                 await this.setStateAsync('info.connection', true, true);
 
@@ -200,6 +206,12 @@ class ZendureAutomation extends utils.Adapter {
             // Initialize control states
             await this.setStateAsync('control.enabled', true, true);
             await this.setStateAsync('control.targetGridPowerW', this.config.targetGridPowerW || 0, true);
+            await this.setStateAsync('control.maxBatterySoc', this.config.maxBatterySoc ?? 100, true);
+            await this.setStateAsync('control.minBatterySoc', this.config.minBatterySoc ?? 10, true);
+            await this.setStateAsync('control.enableCharge', this.config.enableCharge !== false, true);
+            await this.setStateAsync('control.enableDischarge', this.config.enableDischarge !== false, true);
+            await this.setStateAsync('control.maxChargePowerW', this.config.maxChargePowerW ?? 1600, true);
+            await this.setStateAsync('control.maxDischargePowerW', this.config.maxDischargePowerW ?? 1600, true);
             await this.setStateAsync('status.mode', 'idle', true);
             await this.setStateAsync('info.connection', true, true);
 
@@ -286,6 +298,35 @@ class ZendureAutomation extends utils.Adapter {
     }
 
     /**
+     * Build the effective configuration for this cycle.
+     * Starts from the static admin config and overlays runtime overrides
+     * from the writable control.* states (Fixes #9 - runtime-changeable limits).
+     * Falls back to the static config value if a control state is unset.
+     * @returns {Promise<object>} Effective configuration
+     */
+    async getEffectiveConfig() {
+        const effectiveConfig = { ...this.config };
+
+        const overrides = [
+            ['control.maxBatterySoc', 'maxBatterySoc'],
+            ['control.minBatterySoc', 'minBatterySoc'],
+            ['control.enableCharge', 'enableCharge'],
+            ['control.enableDischarge', 'enableDischarge'],
+            ['control.maxChargePowerW', 'maxChargePowerW'],
+            ['control.maxDischargePowerW', 'maxDischargePowerW']
+        ];
+
+        for (const [stateId, configKey] of overrides) {
+            const state = await this.getStateAsync(stateId);
+            if (state && state.val !== null && state.val !== undefined) {
+                effectiveConfig[configKey] = state.val;
+            }
+        }
+
+        return effectiveConfig;
+    }
+
+    /**
      * Main automation cycle - runs periodically
      */
     async runAutomationCycle() {
@@ -297,25 +338,28 @@ class ZendureAutomation extends utils.Adapter {
                 return;
             }
 
+            // Build effective config (static config + runtime control.* overrides)
+            const effectiveConfig = await this.getEffectiveConfig();
+
             // Check for manual override modes (highest priority)
             const maxChargeState = await this.getStateAsync('control.maxCharge');
             const maxDischargeState = await this.getStateAsync('control.maxDischarge');
 
             if (maxChargeState?.val) {
-                await this.handleMaxChargeMode();
+                await this.handleMaxChargeMode(effectiveConfig);
                 return;
             }
 
             if (maxDischargeState?.val) {
-                await this.handleMaxDischargeMode();
+                await this.handleMaxDischargeMode(effectiveConfig);
                 return;
             }
 
             // Route to appropriate cycle based on mode
             if (this._isMultiDevice) {
-                await this.multiDeviceController.runCycle(this.config);
+                await this.multiDeviceController.runCycle(effectiveConfig);
             } else {
-                await this.singleDeviceController.runCycle(this.config);
+                await this.singleDeviceController.runCycle(effectiveConfig);
             }
 
         } catch (err) {
@@ -328,11 +372,11 @@ class ZendureAutomation extends utils.Adapter {
      * Handle Max Charge Override Mode
      * Charges all batteries at maximum configured power
      */
-    async handleMaxChargeMode() {
+    async handleMaxChargeMode(config) {
         this.log.debug('Max Charge Override active');
         await this.setStateAsync('status.mode', 'max-charging', true);
 
-        const maxChargePowerW = -(this.config.maxChargePowerW || 1200);
+        const maxChargePowerW = -(config.maxChargePowerW || 1200);
         
         // Get current SOC
         let batterySoc;
@@ -344,7 +388,7 @@ class ZendureAutomation extends utils.Adapter {
         }
 
         // Auto-reset when max SOC reached
-        const maxBatterySoc = this.config.maxBatterySoc || 100;
+        const maxBatterySoc = config.maxBatterySoc || 100;
         if (batterySoc !== null && batterySoc >= maxBatterySoc) {
             this.log.info(`Max SOC ${maxBatterySoc}% reached, disabling Max Charge mode`);
             await this.setStateAsync('control.maxCharge', false, true);
@@ -381,12 +425,12 @@ class ZendureAutomation extends utils.Adapter {
      * Discharges all batteries at maximum configured power
      * Respects discharge protection mode (SOC/Voltage/Both) and emergency/recovery states
      */
-    async handleMaxDischargeMode() {
+    async handleMaxDischargeMode(config) {
         this.log.debug('Max Discharge Override active');
         await this.setStateAsync('status.mode', 'max-discharging', true);
 
-        const maxDischargePowerW = this.config.maxDischargePowerW || 1200;
-        const dischargeProtectionMode = this.config.dischargeProtectionMode || 'soc';
+        const maxDischargePowerW = config.maxDischargePowerW || 1200;
+        const dischargeProtectionMode = config.dischargeProtectionMode || 'soc';
         
         // ========== CHECK EMERGENCY/RECOVERY (BLOCKS DISCHARGE) ==========
         let inRecovery = false;
@@ -429,7 +473,7 @@ class ZendureAutomation extends utils.Adapter {
             const aggregated = await this.multiDeviceMgr.aggregateDeviceStates();
             batterySoc = aggregated?.avgSoc;
             minPackVoltageV = aggregated?.minPackVoltageV;
-            effectiveMinSoc = this.config.minBatterySoc || 10;
+            effectiveMinSoc = config.minBatterySoc || 10;
         } else {
             batterySoc = await this.dataReader.getBatterySoc();
             minPackVoltageV = await this.dataReader.getMinimumPackVoltageV();
@@ -437,8 +481,8 @@ class ZendureAutomation extends utils.Adapter {
             // Check for Zendure minSoc protection
             const minSocState = await this.getForeignStateAsync(`${this._deviceBasePath}.minSoc`);
             const deviceMinSoc = minSocState?.val ?? null;
-            const configMinSoc = this.config.minBatterySoc || 10;
-            const minSocMargin = this.config.minSocProtectionMargin ?? 1;
+            const configMinSoc = config.minBatterySoc || 10;
+            const minSocMargin = config.minSocProtectionMargin ?? 1;
             
             if (deviceMinSoc !== null && deviceMinSoc > 0) {
                 effectiveMinSoc = deviceMinSoc + minSocMargin;
@@ -468,7 +512,7 @@ class ZendureAutomation extends utils.Adapter {
 
         // ========== CHECK VOLTAGE LIMIT (voltage, both) ==========
         if (dischargeProtectionMode === 'voltage' || dischargeProtectionMode === 'both') {
-            const minBatteryVoltageV = this.config.minBatteryVoltageV || 3.0;
+            const minBatteryVoltageV = config.minBatteryVoltageV || 3.0;
             if (minPackVoltageV !== null && minPackVoltageV <= minBatteryVoltageV) {
                 this.log.info(`Min voltage ${minBatteryVoltageV}V reached (current: ${minPackVoltageV}V), disabling Max Discharge mode`);
                 await this.setStateAsync('control.maxDischarge', false, true);
@@ -748,6 +792,49 @@ class ZendureAutomation extends utils.Adapter {
         if (id.endsWith('.control.targetGridPowerW')) {
             this.log.info(`Target grid power changed to ${state.val}W`);
             // Trigger immediate cycle
+            this.runAutomationCycle().catch(err => {
+                this.log.error(`Automation cycle failed: ${err.message}`);
+            });
+        }
+
+        // Runtime overrides for battery limits (Fixes #9)
+        if (id.endsWith('.control.maxBatterySoc')) {
+            this.log.info(`Max battery SOC changed to ${state.val}%`);
+            this.runAutomationCycle().catch(err => {
+                this.log.error(`Automation cycle failed: ${err.message}`);
+            });
+        }
+
+        if (id.endsWith('.control.minBatterySoc')) {
+            this.log.info(`Min battery SOC changed to ${state.val}%`);
+            this.runAutomationCycle().catch(err => {
+                this.log.error(`Automation cycle failed: ${err.message}`);
+            });
+        }
+
+        if (id.endsWith('.control.enableCharge')) {
+            this.log.info(`Charging ${state.val ? 'enabled' : 'disabled'} (runtime override)`);
+            this.runAutomationCycle().catch(err => {
+                this.log.error(`Automation cycle failed: ${err.message}`);
+            });
+        }
+
+        if (id.endsWith('.control.enableDischarge')) {
+            this.log.info(`Discharging ${state.val ? 'enabled' : 'disabled'} (runtime override)`);
+            this.runAutomationCycle().catch(err => {
+                this.log.error(`Automation cycle failed: ${err.message}`);
+            });
+        }
+
+        if (id.endsWith('.control.maxChargePowerW')) {
+            this.log.info(`Max charge power changed to ${state.val}W`);
+            this.runAutomationCycle().catch(err => {
+                this.log.error(`Automation cycle failed: ${err.message}`);
+            });
+        }
+
+        if (id.endsWith('.control.maxDischargePowerW')) {
+            this.log.info(`Max discharge power changed to ${state.val}W`);
             this.runAutomationCycle().catch(err => {
                 this.log.error(`Automation cycle failed: ${err.message}`);
             });
