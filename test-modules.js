@@ -47,6 +47,8 @@ const mockConfig = {
     targetGridPowerW: 0,
     minBatterySoc: 10,
     maxBatterySoc: 95,
+    enableCharge: true,
+    enableDischarge: true,
     hysteresisW: 50,
     rampChargeWPerCycle: 100,
     rampDischargeWPerCycle: 400,
