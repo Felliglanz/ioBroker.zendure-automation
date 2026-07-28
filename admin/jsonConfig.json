@@ -278,11 +278,11 @@
               },
               "sm": 6,
               "min": 1,
-              "max": 10,
-              "default": 5,
+              "max": 20,
+              "default": 12,
               "help": {
-                "en": "How many times to retry if device doesn't accept power setpoint. Silent retries, only final error logged. Accounts for mode-switching (~25s with 5 retries at 5s interval).",
-                "de": "Wie oft wiederholen, wenn Gerät Leistungsvorgabe nicht annimmt. Stille Wiederholungen, nur finaler Fehler geloggt. Berücksichtigt Mode-Switching (~25s bei 5 Versuchen mit 5s Intervall)."
+                "en": "How many times to retry if device doesn't accept power setpoint. Includes ramping detection (device moving towards target). Default 12 retries = 60s timeout at 5s interval.",
+                "de": "Wie oft wiederholen, wenn Gerät Leistungsvorgabe nicht annimmt. Inkl. Ramping Detection (Gerät nähert sich Ziel). Standard 12 Versuche = 60s Timeout bei 5s Intervall."
               }
             },
             "setPowerValidationToleranceW": {
@@ -293,11 +293,11 @@
               },
               "sm": 6,
               "min": 0,
-              "max": 200,
-              "default": 50,
+              "max": 300,
+              "default": 100,
               "help": {
-                "en": "Acceptable deviation between setpoint and actual power",
-                "de": "Akzeptable Abweichung zwischen Vorgabe und Ist-Leistung"
+                "en": "Acceptable deviation between setpoint and actual power. 100W is recommended for kW-scale charging.",
+                "de": "Akzeptable Abweichung zwischen Vorgabe und Ist-Leistung. 100W empfohlen für kW-Bereich Laden."
               }
             },
             "_validationHint": {
