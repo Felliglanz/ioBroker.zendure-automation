@@ -135,10 +135,12 @@ Konfiguriere die Werte so, als hättest du **ein einzelnes Gerät**:
 | **maxChargePowerW** | 1200 | Leistung **pro Gerät** |
 | **minBatterySoc** | 10% | Gilt für **alle Geräte** |
 | **maxBatterySoc** | 95% | Gilt für **alle Geräte** |
+| **operatingDeadbandW** | 10 | **Pro Gerät** (auto-skaliert) |
 
 Das System multipliziert automatisch:
 - 2 Devices × 2400W = **4800W Gesamt-Entladung**
 - 2 Devices × 1200W = **2400W Gesamt-Ladung**
+- 2 Devices × 10W = **20W Gesamt-Deadband** (für Equal Split)
 
 > **⚠️ Zusammenspiel mit Zendure-App SOC-Grenzen**  
 > Der Adapter regelt via ZenSDK (Power-Setpoints in Watt).  
@@ -274,12 +276,14 @@ Schützt Hardware vor übermäßigem Schalten, speziell bei wechselhaftem Wetter
 | **Feed-in Delay** | 5 Ticks | 25s nachhaltige Einspeisung |
 | **Discharge Threshold** | 200W | Netzbezug nötig für Discharge-Start |
 | **Discharge Delay** | 3 Ticks | 15s nachhaltiger Bezug |
-| **Operating Deadband** | 5W | Minimum-Power vor Nulldurchgang |
+| **Operating Deadband** | 10W | Minimum-Power pro Gerät vor Nulldurchgang |
 
-**Operating Deadband (v0.6.1 neu):**
-- Hält bei ±5W für 1 Tick bevor 0W oder Vorzeichenwechsel erlaubt
+**Operating Deadband (aktualisiert v0.7.6):**
+- Konfigurierbar pro Gerät (Standard: 10W)
+- Automatisch skaliert im Multi-Device-Modus (z.B. 2 Geräte × 10W = 20W gesamt)
 - Verhindert Relais-Flattern bei Oszillation um Zielwert
 - Arbeitet mit 10W Safe-Switch zusammen (Schaltet nur bei ~0.04A)
+- Verfügbar als Runtime-Override: `control.operatingDeadbandW`
 
 ### 🎚️ Regelparameter
 

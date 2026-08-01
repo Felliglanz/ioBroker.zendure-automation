@@ -136,6 +136,7 @@ class ZendureAutomation extends utils.Adapter {
                 await this.setStateAsync('control.enableDischarge', this.config.enableDischarge !== false, true);
                 await this.setStateAsync('control.maxChargePowerW', this.config.maxChargePowerW ?? 1600, true);
                 await this.setStateAsync('control.maxDischargePowerW', this.config.maxDischargePowerW ?? 1600, true);
+                await this.setStateAsync('control.operatingDeadbandW', this.config.operatingDeadbandW ?? 10, true);
                 await this.setStateAsync('status.mode', 'idle', true);
                 await this.setStateAsync('info.connection', true, true);
 
@@ -212,6 +213,7 @@ class ZendureAutomation extends utils.Adapter {
             await this.setStateAsync('control.enableDischarge', this.config.enableDischarge !== false, true);
             await this.setStateAsync('control.maxChargePowerW', this.config.maxChargePowerW ?? 1600, true);
             await this.setStateAsync('control.maxDischargePowerW', this.config.maxDischargePowerW ?? 1600, true);
+            await this.setStateAsync('control.operatingDeadbandW', this.config.operatingDeadbandW ?? 10, true);
             await this.setStateAsync('status.mode', 'idle', true);
             await this.setStateAsync('info.connection', true, true);
 
@@ -313,7 +315,8 @@ class ZendureAutomation extends utils.Adapter {
             ['control.enableCharge', 'enableCharge'],
             ['control.enableDischarge', 'enableDischarge'],
             ['control.maxChargePowerW', 'maxChargePowerW'],
-            ['control.maxDischargePowerW', 'maxDischargePowerW']
+            ['control.maxDischargePowerW', 'maxDischargePowerW'],
+            ['control.operatingDeadbandW', 'operatingDeadbandW']
         ];
 
         for (const [stateId, configKey] of overrides) {
@@ -835,6 +838,13 @@ class ZendureAutomation extends utils.Adapter {
 
         if (id.endsWith('.control.maxDischargePowerW')) {
             this.log.info(`Max discharge power changed to ${state.val}W`);
+            this.runAutomationCycle().catch(err => {
+                this.log.error(`Automation cycle failed: ${err.message}`);
+            });
+        }
+
+        if (id.endsWith('.control.operatingDeadbandW')) {
+            this.log.info(`Operating deadband changed to ${state.val}W per device`);
             this.runAutomationCycle().catch(err => {
                 this.log.error(`Automation cycle failed: ${err.message}`);
             });

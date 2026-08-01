@@ -135,10 +135,12 @@ Configure values as if you had **a single device**:
 | **maxChargePowerW** | 1200 | Power **per device** |
 | **minBatterySoc** | 10% | Applies to **all devices** |
 | **maxBatterySoc** | 95% | Applies to **all devices** |
+| **operatingDeadbandW** | 10 | **Per device** (auto-scaled) |
 
 The system automatically multiplies:
 - 2 Devices × 2400W = **4800W Total Discharge**
 - 2 Devices × 1200W = **2400W Total Charge**
+- 2 Devices × 10W = **20W Total Deadband** (for equal split)
 
 > **⚠️ Interaction with Zendure App SOC Limits**  
 > The adapter controls via ZenSDK (power setpoints in watts).  
@@ -274,12 +276,14 @@ Protects hardware from excessive switching, especially in variable weather:
 | **Feed-in Delay** | 5 Ticks | 25s sustained feed-in |
 | **Discharge Threshold** | 200W | Grid consumption needed for discharge start |
 | **Discharge Delay** | 3 Ticks | 15s sustained consumption |
-| **Operating Deadband** | 5W | Minimum power before zero crossing |
+| **Operating Deadband** | 10W | Minimum power per device before zero crossing |
 
-**Operating Deadband (v0.6.1 new):**
-- Holds at ±5W for 1 tick before allowing 0W or sign change
+**Operating Deadband (updated v0.7.6):**
+- Configurable per device (default: 10W)
+- Automatically scaled in multi-device mode (e.g., 2 devices × 10W = 20W total)
 - Prevents relay chattering during oscillation around target
 - Works together with 10W safe-switch (switches only at ~0.04A)
+- Available as runtime override: `control.operatingDeadbandW`
 
 ### 🎚️ Control Parameters
 

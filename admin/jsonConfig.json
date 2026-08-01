@@ -603,16 +603,16 @@
             "operatingDeadbandW": {
               "type": "number",
               "label": {
-                "en": "Operating deadband (W)",
-                "de": "Betriebs-Deadband (W)"
+                "en": "Operating deadband (W) per device",
+                "de": "Betriebs-Deadband (W) pro Gerät"
               },
               "sm": 6,
               "min": 10,
               "max": 50,
               "default": 10,
               "help": {
-                "en": "Minimum power to maintain in current mode before allowing 0W or sign change. Prevents relay switching through 0W during regulation. IMPORTANT: Must be ≥10W to survive 10W power rounding! Recommended: 10-20W for stable relay protection.",
-                "de": "Mindestleistung im aktuellen Modus vor Erlaubnis von 0W oder Vorzeichenwechsel. Verhindert Relais-Schalten durch 0W während Regelung. WICHTIG: Muss ≥10W sein, um 10W-Rundung zu überstehen! Empfohlen: 10-20W für stabilen Relais-Schutz."
+                "en": "Minimum power per device before allowing 0W or sign change. In multi-device mode: automatically scaled by device count (e.g., 2 devices × 10W = 20W total). Prevents relay switching during regulation. Recommended: 10W per device.",
+                "de": "Mindestleistung pro Gerät vor Erlaubnis von 0W oder Vorzeichenwechsel. Im Multi-Device-Modus: automatisch mit Geräteanzahl skaliert (z.B. 2 Geräte × 10W = 20W gesamt). Verhindert Relais-Schalten während Regelung. Empfohlen: 10W pro Gerät."
               }
             },
             "deadbandHoldTicks": {
@@ -645,6 +645,24 @@
                 "backgroundColor": "#e3f2fd",
                 "borderRadius": "4px",
                 "borderLeft": "3px solid #1976d2"
+              }
+            },
+            "_deadbandMultiDeviceHint": {
+              "type": "staticText",
+              "text": {
+                "en": "⚙️ Multi-Device: The deadband is automatically scaled by the number of configured devices. With 2 devices and 10W setting, the total system uses 20W deadband, ensuring each device gets 10W minimum (equal split distribution).",
+                "de": "⚙️ Multi-Device: Das Deadband wird automatisch mit der Anzahl konfigurierter Geräte skaliert. Bei 2 Geräten und 10W Einstellung nutzt das Gesamtsystem 20W Deadband, sodass jedes Gerät mindestens 10W erhält (Equal-Split-Verteilung)."
+              },
+              "sm": 12,
+              "hidden": "data.multiDeviceMode !== true",
+              "style": {
+                "fontSize": "0.85em",
+                "color": "#f57c00",
+                "marginTop": "8px",
+                "padding": "8px",
+                "backgroundColor": "#fff3e0",
+                "borderRadius": "4px",
+                "borderLeft": "3px solid #ff9800"
               }
             }
           }
