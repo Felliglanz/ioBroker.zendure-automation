@@ -135,10 +135,12 @@ Configure values as if you had **a single device**:
 | **maxChargePowerW** | 1200 | Power **per device** |
 | **minBatterySoc** | 10% | Applies to **all devices** |
 | **maxBatterySoc** | 95% | Applies to **all devices** |
+| **operatingDeadbandW** | 10 | **Per device** (auto-scaled) |
 
 The system automatically multiplies:
 - 2 Devices × 2400W = **4800W Total Discharge**
 - 2 Devices × 1200W = **2400W Total Charge**
+- 2 Devices × 10W = **20W Total Deadband** (for equal split)
 
 > **⚠️ Interaction with Zendure App SOC Limits**  
 > The adapter controls via ZenSDK (power setpoints in watts).  
@@ -274,12 +276,14 @@ Protects hardware from excessive switching, especially in variable weather:
 | **Feed-in Delay** | 5 Ticks | 25s sustained feed-in |
 | **Discharge Threshold** | 200W | Grid consumption needed for discharge start |
 | **Discharge Delay** | 3 Ticks | 15s sustained consumption |
-| **Operating Deadband** | 5W | Minimum power before zero crossing |
+| **Operating Deadband** | 10W | Minimum power per device before zero crossing |
 
-**Operating Deadband (v0.6.1 new):**
-- Holds at ±5W for 1 tick before allowing 0W or sign change
+**Operating Deadband (updated v0.7.6):**
+- Configurable per device (default: 10W)
+- Automatically scaled in multi-device mode (e.g., 2 devices × 10W = 20W total)
 - Prevents relay chattering during oscillation around target
 - Works together with 10W safe-switch (switches only at ~0.04A)
+- Available as runtime override: `control.operatingDeadbandW`
 
 ### 🎚️ Control Parameters
 
@@ -360,16 +364,46 @@ newBatteryPower = lastBatteryPower + (currentGridPower - targetGridPower)
 
 ## 📜 Changelog
 
-### v0.7.0 (2026-04-15) - Controller Refactoring
-- 🏗️ **Major Architecture Improvement** – Controllers extracted from main.js
-- ✨ **SingleDeviceController** – Complete single-device cycle in dedicated module
-- ✨ **MultiDeviceController** – Complete multi-device cycle in dedicated module
-- 📉 **47% Code Reduction in main.js** – from 1052 to 554 lines
-- 📚 **Business Logic Extraction** – All automation logic moved to testable controllers
-- 🧪 **Improved Testability** – Controllers are independent and easily unit-testable
-- 🎯 **Clear Separation** – main.js only adapter lifecycle, controllers handle automation
+### v0.7.6 (2026-08-01) - Multi-Device Deadband Scaling
+- 🐛 **Multi-Device Fix**: Operating deadband now automatically scales with device count
+- ⚙️ Example: 2 devices × 10W = 20W total → Equal split: 10W per device ✓
+- ✨ Runtime override: `control.operatingDeadbandW` for dynamic adjustments
+- 📝 UI hint for multi-device mode only, README updated
+- 🔧 Fixes issue #9 (deadband problem in multi-device mode)
 
-### v0.6.1 (2026-04-03)
+### v0.7.5
+- 🐛 **Bugfix**: Set devices to 0W when manually disabling maxCharge/maxDischarge (before limits reached)
+
+### v0.7.4
+- 🛡️ **Max Discharge Safety**: Respects configured discharge protection mode (SOC/Voltage/Both)
+- 🚫 Blocks maxDischarge during emergency/voltage recovery
+- ♻️ Auto-reset when limits reached – Simple and safe
+
+### v0.7.3
+- 🎛️ **Manual Override Controls**: control.maxCharge and control.maxDischarge switches
+- ⚡ Manual full-power charge/discharge with auto-reset at SOC limits
+- ✅ Works in both single-device and multi-device modes
+
+### v0.7.2
+- 🛡️ **Zendure minSoc Protection**: Prevents hardware block at ~5% SOC
+- 📊 Reads device minSoc dynamically, stops at minSoc+margin (default: +1%)
+- 🔄 Recovery hysteresis (+2%) prevents flipping
+- 📈 New state: `status.effectiveMinSoc` shows effective stop limit
+
+### v0.7.1
+- 🐛 **Critical Fix**: Enhanced operating deadband prevents relay switching at high power loads
+- ✅ Catches ALL transitions to 0W and direction changes
+- ⚡ Holds at minimum 10W before allowing relay state changes
+- 🔧 Eliminates rapid relay cycling during fluctuating conditions
+
+### v0.7.0 - Controller Refactoring
+- 🏗️ **Major Architecture Improvement** – Controllers extracted from main.js
+- ✨ **SingleDeviceController** & **MultiDeviceController** – Dedicated modules
+- 📉 **47% Code Reduction in main.js** – from 1052 to 554 lines
+- 🧪 **Improved Testability** – Controllers are independent and unit-testable
+- 🎯 **Clear Separation** – main.js only adapter lifecycle, controllers = automation
+
+### v0.6.1
 - ✨ **Operating Deadband Protection** – prevents relay chattering during oscillation
 - Holds at ±5W for 1 tick before zero crossing
 - Reduces switching operations without slowing control

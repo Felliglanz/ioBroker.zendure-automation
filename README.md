@@ -135,10 +135,12 @@ Konfiguriere die Werte so, als hättest du **ein einzelnes Gerät**:
 | **maxChargePowerW** | 1200 | Leistung **pro Gerät** |
 | **minBatterySoc** | 10% | Gilt für **alle Geräte** |
 | **maxBatterySoc** | 95% | Gilt für **alle Geräte** |
+| **operatingDeadbandW** | 10 | **Pro Gerät** (auto-skaliert) |
 
 Das System multipliziert automatisch:
 - 2 Devices × 2400W = **4800W Gesamt-Entladung**
 - 2 Devices × 1200W = **2400W Gesamt-Ladung**
+- 2 Devices × 10W = **20W Gesamt-Deadband** (für Equal Split)
 
 > **⚠️ Zusammenspiel mit Zendure-App SOC-Grenzen**  
 > Der Adapter regelt via ZenSDK (Power-Setpoints in Watt).  
@@ -274,12 +276,14 @@ Schützt Hardware vor übermäßigem Schalten, speziell bei wechselhaftem Wetter
 | **Feed-in Delay** | 5 Ticks | 25s nachhaltige Einspeisung |
 | **Discharge Threshold** | 200W | Netzbezug nötig für Discharge-Start |
 | **Discharge Delay** | 3 Ticks | 15s nachhaltiger Bezug |
-| **Operating Deadband** | 5W | Minimum-Power vor Nulldurchgang |
+| **Operating Deadband** | 10W | Minimum-Power pro Gerät vor Nulldurchgang |
 
-**Operating Deadband (v0.6.1 neu):**
-- Hält bei ±5W für 1 Tick bevor 0W oder Vorzeichenwechsel erlaubt
+**Operating Deadband (aktualisiert v0.7.6):**
+- Konfigurierbar pro Gerät (Standard: 10W)
+- Automatisch skaliert im Multi-Device-Modus (z.B. 2 Geräte × 10W = 20W gesamt)
 - Verhindert Relais-Flattern bei Oszillation um Zielwert
 - Arbeitet mit 10W Safe-Switch zusammen (Schaltet nur bei ~0.04A)
+- Verfügbar als Runtime-Override: `control.operatingDeadbandW`
 
 ### 🎚️ Regelparameter
 
@@ -360,16 +364,46 @@ neueBatterieLeistung = letzteBatterieLeistung + (aktuelleNetzleistung - ZielNetz
 
 ## 📜 Changelog
 
-### v0.7.0 (2026-04-15) - Controller Refactoring
-- 🏗️ **Große Architektur-Verbesserung** – Controller aus main.js extrahiert
-- ✨ **SingleDeviceController** – Kompletter Single-Device Zyklus in dediziertem Modul
-- ✨ **MultiDeviceController** – Kompletter Multi-Device Zyklus in dediziertem Modul
-- 📉 **47% Code-Reduktion in main.js** – von 1052 auf 554 Zeilen
-- 📚 **Business-Logic Extraktion** – Alle Automatisierungs-Logik in testbare Controller verschoben
-- 🧪 **Verbesserte Testbarkeit** – Controller sind unabhängig und einfach unit-testbar
-- 🎯 **Klare Trennung** – main.js nur noch Adapter-Lifecycle, Controller übernehmen Automation
+### v0.7.6 (2026-08-01) - Multi-Device Deadband Scaling
+- 🐛 **Multi-Device Fix**: Operating Deadband skaliert nun automatisch mit Geräteanzahl
+- ⚙️ Beispiel: 2 Geräte × 10W = 20W total → Equal Split: 10W pro Gerät ✓
+- ✨ Runtime-Override: `control.operatingDeadbandW` für dynamische Anpassungen
+- 📝 UI-Hinweis nur für Multi-Device-Modus, README aktualisiert
+- 🔧 Behebt Issue #9 (Deadband-Problem bei Multi-Device)
 
-### v0.6.1 (2026-04-03)
+### v0.7.5
+- 🐛 **Bugfix**: Geräte auf 0W setzen beim manuellen Deaktivieren von maxCharge/maxDischarge (vor Limit-Erreichen)
+
+### v0.7.4
+- 🛡️ **Max Discharge Safety**: Respektiert konfigurierten Entladeschutz-Modus (SOC/Voltage/Beide)
+- 🚫 Blockiert maxDischarge während Emergency/Voltage Recovery
+- ♻️ Auto-Reset bei Limits – Einfach und sicher
+
+### v0.7.3
+- 🎛️ **Manual Override Controls**: control.maxCharge und control.maxDischarge Schalter
+- ⚡ Manuelles Volllast-Laden/-Entladen mit Auto-Reset bei SOC-Grenzen
+- ✅ Funktioniert in Single- und Multi-Device Modus
+
+### v0.7.2
+- 🛡️ **Zendure minSoc Protection**: Verhindert Hardware-Block bei ~5% SOC
+- 📊 Liest Geräte-minSoc dynamisch, stoppt bei minSoc+Margin (Standard: +1%)
+- 🔄 Recovery-Hysterese (+2%) verhindert Flipping
+- 📈 Neuer State: `status.effectiveMinSoc` zeigt effektive Stopp-Grenze
+
+### v0.7.1
+- 🐛 **Critical Fix**: Verbessertes Operating Deadband verhindert Relaisschalten bei hoher Last
+- ✅ Erkennt ALLE Übergänge zu 0W und Richtungswechsel
+- ⚡ Hält bei minimum 10W vor Relais-Zustandswechsel
+- 🔧 Eliminiert schnelles Relais-Takten bei schwankenden Bedingungen
+
+### v0.7.0 - Controller Refactoring
+- 🏗️ **Große Architektur-Verbesserung** – Controller aus main.js extrahiert
+- ✨ **SingleDeviceController** & **MultiDeviceController** – Dedizierte Module
+- 📉 **47% Code-Reduktion in main.js** – von 1052 auf 554 Zeilen
+- 🧪 **Verbesserte Testbarkeit** – Controller sind unabhängig unit-testbar
+- 🎯 **Klare Trennung** – main.js nur Adapter-Lifecycle, Controller = Automation
+
+### v0.6.1
 - ✨ **Operating Deadband Protection** – verhindert Relais-Flattern bei Oszillation
 - Hält bei ±5W für 1 Tick vor Nulldurchgang
 - Reduziert Schaltvorgänge ohne Regelung zu verlangsamen
