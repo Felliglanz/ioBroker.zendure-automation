@@ -221,6 +221,21 @@ async function testModules() {
         assertEqual(batterySoc, null, 'NaN SOC returns null');
     });
 
+    await runTest('[1.5] MultiDeviceController rejects invalid grid power values', async () => {
+        initializeMockStates();
+        const MultiDeviceController = require('./lib/MultiDeviceController');
+        const controller = new MultiDeviceController(mockAdapter, {});
+
+        setMockState('test.0.gridPower', NaN);
+        assertEqual(await controller.getGridPower('test.0.gridPower'), null, 'NaN grid power returns null');
+
+        setMockState('test.0.gridPower', Infinity);
+        assertEqual(await controller.getGridPower('test.0.gridPower'), null, 'Infinity grid power returns null');
+
+        setMockState('test.0.gridPower', '125');
+        assertEqual(await controller.getGridPower('test.0.gridPower'), 125, 'Numeric string is normalized');
+    });
+
     console.log('\n' + '─'.repeat(70));
     console.log('SECTION 2: CRITICAL BUG FIXES VERIFICATION');
     console.log('─'.repeat(70));
