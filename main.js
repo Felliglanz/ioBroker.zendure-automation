@@ -400,10 +400,10 @@ class ZendureAutomation extends utils.Adapter {
             // Set all devices to 0W
             if (this._isMultiDevice) {
                 for (const device of this.multiDeviceMgr.devices) {
-                    await this.validationService.writePowerSetpoint(device.basePath, 0);
+                    await this.validationService.writePowerSetpoint(device.id, device.basePath, 0);
                 }
             } else {
-                await this.validationService.writePowerSetpoint(this._deviceBasePath, 0);
+                await this.validationService.writePowerSetpoint(this._deviceBasePath, this._deviceBasePath, 0);
             }
             return;
         }
@@ -415,11 +415,11 @@ class ZendureAutomation extends utils.Adapter {
             this.log.debug(`Max Charge: ${maxChargePowerW}W total (${powerPerDevice}W per device)`);
             
             for (const device of this.multiDeviceMgr.devices) {
-                await this.validationService.writePowerSetpoint(device.basePath, powerPerDevice);
+                await this.validationService.writePowerSetpoint(device.id, device.basePath, powerPerDevice);
             }
         } else {
             this.log.debug(`Max Charge: ${maxChargePowerW}W`);
-            await this.validationService.writePowerSetpoint(this._deviceBasePath, maxChargePowerW);
+            await this.validationService.writePowerSetpoint(this._deviceBasePath, this._deviceBasePath, maxChargePowerW);
         }
     }
 
@@ -524,10 +524,10 @@ class ZendureAutomation extends utils.Adapter {
                 // Set all devices to 0W and let normal cycle trigger voltage recovery
                 if (this._isMultiDevice) {
                     for (const device of this.multiDeviceMgr.devices) {
-                        await this.validationService.writePowerSetpoint(device.basePath, 0);
+                        await this.validationService.writePowerSetpoint(device.id, device.basePath, 0);
                     }
                 } else {
-                    await this.validationService.writePowerSetpoint(this._deviceBasePath, 0);
+                    await this.validationService.writePowerSetpoint(this._deviceBasePath, this._deviceBasePath, 0);
                 }
                 return;
             }
@@ -539,11 +539,11 @@ class ZendureAutomation extends utils.Adapter {
             this.log.debug(`Max Discharge: ${maxDischargePowerW}W total (${powerPerDevice}W per device)`);
             
             for (const device of this.multiDeviceMgr.devices) {
-                await this.validationService.writePowerSetpoint(device.basePath, powerPerDevice);
+                await this.validationService.writePowerSetpoint(device.id, device.basePath, powerPerDevice);
             }
         } else {
             this.log.debug(`Max Discharge: ${maxDischargePowerW}W`);
-            await this.validationService.writePowerSetpoint(this._deviceBasePath, maxDischargePowerW);
+            await this.validationService.writePowerSetpoint(this._deviceBasePath, this._deviceBasePath, maxDischargePowerW);
         }
     }
 
@@ -737,10 +737,10 @@ class ZendureAutomation extends utils.Adapter {
                 if (this._isMultiDevice) {
                     // Stop all devices
                     for (const device of this.multiDeviceMgr.devices) {
-                        await this.validationService.writePowerSetpoint(device.basePath, 0);
+                        await this.validationService.writePowerSetpoint(device.id, device.basePath, 0);
                     }
                 } else {
-                    await this.validationService.writePowerSetpoint(this._deviceBasePath, 0);
+                    await this.validationService.writePowerSetpoint(this._deviceBasePath, this._deviceBasePath, 0);
                 }
                 await this.setStateAsync('status.mode', 'idle', true);
             }
@@ -760,10 +760,10 @@ class ZendureAutomation extends utils.Adapter {
                 // Set all devices to 0W
                 if (this._isMultiDevice) {
                     for (const device of this.multiDeviceMgr.devices) {
-                        await this.validationService.writePowerSetpoint(device.basePath, 0);
+                        await this.validationService.writePowerSetpoint(device.id, device.basePath, 0);
                     }
                 } else {
-                    await this.validationService.writePowerSetpoint(this._deviceBasePath, 0);
+                    await this.validationService.writePowerSetpoint(this._deviceBasePath, this._deviceBasePath, 0);
                 }
                 await this.setStateAsync('status.mode', 'idle', true);
             }
@@ -783,10 +783,10 @@ class ZendureAutomation extends utils.Adapter {
                 // Set all devices to 0W
                 if (this._isMultiDevice) {
                     for (const device of this.multiDeviceMgr.devices) {
-                        await this.validationService.writePowerSetpoint(device.basePath, 0);
+                        await this.validationService.writePowerSetpoint(device.id, device.basePath, 0);
                     }
                 } else {
-                    await this.validationService.writePowerSetpoint(this._deviceBasePath, 0);
+                    await this.validationService.writePowerSetpoint(this._deviceBasePath, this._deviceBasePath, 0);
                 }
                 await this.setStateAsync('status.mode', 'idle', true);
             }
@@ -876,10 +876,10 @@ class ZendureAutomation extends utils.Adapter {
             if (this._isMultiDevice) {
                 // Stop all devices
                 for (const device of this.multiDeviceMgr.devices) {
-                    await this.validationService.writePowerSetpoint(device.basePath, 0);
+                    await this.validationService.writePowerSetpoint(device.id, device.basePath, 0);
                 }
             } else {
-                await this.validationService.writePowerSetpoint(this._deviceBasePath, 0);
+                await this.validationService.writePowerSetpoint(this._deviceBasePath, this._deviceBasePath, 0);
             }
             
             await this.setStateAsync('status.mode', 'idle', true);

@@ -146,9 +146,9 @@ async function testModules() {
 
         // Test 8: ValidationService
         console.log('\n[TEST 8] Testing ValidationService...');
-        await validationService.writePowerSetpoint(deviceBasePath, -800);
-        console.log(`  LastWrittenLimit: ${validationService.lastWrittenLimit}W`);
-        await validationService.validateSetpoint(mockConfig, -750);
+        await validationService.writePowerSetpoint('test-device', deviceBasePath, -800);
+        console.log(`  LastWrittenLimit: ${validationService.getDeviceState('test-device').lastWrittenLimit}W`);
+        await validationService.validateSetpoint('test-device', mockConfig, -750);
         console.log('✓ ValidationService works');
 
         // Test 9: Integration test - full cycle
