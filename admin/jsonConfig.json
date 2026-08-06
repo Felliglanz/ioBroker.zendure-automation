@@ -245,6 +245,7 @@
               "style": {
                 "fontSize": "0.9em",
                 "backgroundColor": "#fff3e0",
+                "color": "#333",
                 "padding": "10px",
                 "borderRadius": "4px",
                 "borderLeft": "4px solid #ff9800",
