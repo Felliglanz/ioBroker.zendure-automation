@@ -48,6 +48,7 @@ class ZendureAutomation extends utils.Adapter {
 
         // Runtime state
         this._updateTimer = null;
+        this._cycleRunning = false;
         this._isRunning = false;
         this._deviceBasePath = null;
         this._isMultiDevice = false;
@@ -333,6 +334,13 @@ class ZendureAutomation extends utils.Adapter {
      * Main automation cycle - runs periodically
      */
     async runAutomationCycle() {
+        // Prevent overlapping cycles
+        if (this._cycleRunning) {
+            this.log.debug('Automation cycle already running, skipping this trigger');
+            return;
+        }
+        
+        this._cycleRunning = true;
         try {
             // Check if automation is enabled
             const enabledState = await this.getStateAsync('control.enabled');
@@ -368,6 +376,8 @@ class ZendureAutomation extends utils.Adapter {
         } catch (err) {
             this.log.error(`Automation cycle error: ${err.message}`);
             await this.setStateAsync('status.mode', 'error', true);
+        } finally {
+            this._cycleRunning = false;
         }
     }
 
@@ -459,10 +469,10 @@ class ZendureAutomation extends utils.Adapter {
             // Set all devices to 0W and let normal cycle handle recovery
             if (this._isMultiDevice) {
                 for (const device of this.multiDeviceMgr.devices) {
-                    await this.validationService.writePowerSetpoint(device.basePath, 0);
+                    await this.validationService.writePowerSetpoint(device.id, device.basePath, 0);
                 }
             } else {
-                await this.validationService.writePowerSetpoint(this._deviceBasePath, 0);
+                await this.validationService.writePowerSetpoint(this._deviceBasePath, this._deviceBasePath, 0);
             }
             return;
         }
@@ -504,10 +514,10 @@ class ZendureAutomation extends utils.Adapter {
                 // Set all devices to 0W
                 if (this._isMultiDevice) {
                     for (const device of this.multiDeviceMgr.devices) {
-                        await this.validationService.writePowerSetpoint(device.basePath, 0);
+                        await this.validationService.writePowerSetpoint(device.id, device.basePath, 0);
                     }
                 } else {
-                    await this.validationService.writePowerSetpoint(this._deviceBasePath, 0);
+                    await this.validationService.writePowerSetpoint(this._deviceBasePath, this._deviceBasePath, 0);
                 }
                 return;
             }
