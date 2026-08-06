@@ -309,6 +309,36 @@ Glättet das Grid Power Signal um auf schnelle Lastspitzen (TV, Mikrowelle) nich
 
 **Formel:** `filtered = alpha × new + (1 - alpha) × old`
 
+### 🔍 Validation Source (Für Geräte mit PV-Modulen)
+
+**Problem:** Bei Geräten mit direkt angeschlossenen PV-Modulen (z.B. Solarflow Pro) ist die `packPower` nicht gleich dem API-Setpoint:
+```
+packPower = API-Setpoint + PV-Einspeisung + AC-Ladung
+```
+
+**Beispiel:**
+- Adapter setzt: -1020W (Ladung)
+- PV-Module liefern: ~720W
+- `packPower` zeigt: -1740W
+- **Validation schlägt fehl!** (Erwartet: -1020W, Ist: -1740W)
+
+**Lösung: Wählbare Validation Source**
+
+| Source | Beschreibung | Wann nutzen? |
+|--------|-------------|--------------|
+| **packPower** | Gesamt-Batterieleistung (API + PV) | Standard für Geräte **ohne** PV-Module |
+| **gridInputPower** | Nur AC-Ladeleistung (API-Setpoint) | Für Geräte **mit** PV-Modulen (Pro, AC+) |
+| **none** | Validation deaktiviert | Als letzten Ausweg bei Problemen |
+
+**Konfiguration:**
+- **Single-Device Mode:** Dropdown "Validation Source" unter Device-Einstellungen
+- **Multi-Device Mode:** Pro Device in der Devices-Table
+
+**Empfehlung:**
+- **2400 Pro / 2000 Pro** mit PV → `gridInputPower` wählen
+- **AC+ / Hyper** ohne PV → `packPower` (Standard)
+- Bei Unsicherheit → `packPower` testen, bei Validation-Fehlern → `gridInputPower`
+
 **Wann anpassen?**
 - **Zu träge?** → Alpha erhöhen (z.B. 0.5 → 0.7)
 - **Zu zappelig?** → Alpha verringern (z.B. 0.5 → 0.3)

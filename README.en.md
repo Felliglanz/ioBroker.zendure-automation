@@ -314,7 +314,37 @@ Smooths the grid power signal to avoid reacting to fast load spikes (TV, microwa
 - **Too jittery?** → Decrease alpha (e.g., 0.5 → 0.3)
 - **No filter?** → Alpha = 1.0 (legacy behavior)
 
-### 🚨 Emergency & Recovery
+### � Validation Source (For Devices with PV Modules)
+
+**Problem:** For devices with directly connected PV modules (e.g., Solarflow Pro), `packPower` is not equal to the API setpoint:
+```
+packPower = API setpoint + PV input + AC charging
+```
+
+**Example:**
+- Adapter sets: -1020W (charging)
+- PV modules deliver: ~720W
+- `packPower` shows: -1740W
+- **Validation fails!** (Expected: -1020W, Actual: -1740W)
+
+**Solution: Selectable Validation Source**
+
+| Source | Description | When to use? |
+|--------|-------------|--------------|
+| **packPower** | Total battery power (API + PV) | Default for devices **without** PV modules |
+| **gridInputPower** | AC charging power only (API setpoint) | For devices **with** PV modules (Pro, AC+) |
+| **none** | Validation disabled | As last resort if issues occur |
+
+**Configuration:**
+- **Single-Device Mode:** "Validation Source" dropdown under device settings
+- **Multi-Device Mode:** Per device in the devices table
+
+**Recommendation:**
+- **2400 Pro / 2000 Pro** with PV → select `gridInputPower`
+- **AC+ / Hyper** without PV → `packPower` (default)
+- If unsure → test `packPower`, if validation errors occur → switch to `gridInputPower`
+
+### �🚨 Emergency & Recovery
 
 **Emergency Charging** (highest priority):
 - Activated at: `lowVoltageBlock` flag OR voltage < 3.0V
