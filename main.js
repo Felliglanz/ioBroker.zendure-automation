@@ -420,9 +420,9 @@ class ZendureAutomation extends utils.Adapter {
 
         // Apply max charge power
         if (this._isMultiDevice) {
-            // Distribute equally across all devices
-            const powerPerDevice = Math.round(maxChargePowerW / this.multiDeviceMgr.devices.length);
-            this.log.debug(`Max Charge: ${maxChargePowerW}W total (${powerPerDevice}W per device)`);
+            // The configured value is a per-device limit in multi-device mode.
+            const powerPerDevice = maxChargePowerW;
+            this.log.debug(`Max Charge: ${powerPerDevice}W per device`);
             
             for (const device of this.multiDeviceMgr.devices) {
                 await this.validationService.writePowerSetpoint(device.id, device.basePath, powerPerDevice);
@@ -545,8 +545,9 @@ class ZendureAutomation extends utils.Adapter {
 
         // ========== APPLY MAX DISCHARGE POWER ==========
         if (this._isMultiDevice) {
-            const powerPerDevice = Math.round(maxDischargePowerW / this.multiDeviceMgr.devices.length);
-            this.log.debug(`Max Discharge: ${maxDischargePowerW}W total (${powerPerDevice}W per device)`);
+            // The configured value is a per-device limit in multi-device mode.
+            const powerPerDevice = maxDischargePowerW;
+            this.log.debug(`Max Discharge: ${powerPerDevice}W per device`);
             
             for (const device of this.multiDeviceMgr.devices) {
                 await this.validationService.writePowerSetpoint(device.id, device.basePath, powerPerDevice);

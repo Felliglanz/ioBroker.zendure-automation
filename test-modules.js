@@ -546,7 +546,96 @@ async function testModules() {
         assert(activeDevices.length > 0, 'At least one device active');
     });
 
-    await runTest('[4.3] ValidationService validates written setpoints', async () => {
+    await runTest('[4.3] Multi-device distribution respects per-device charge limit', async () => {
+        initializeMockStates();
+
+        const devices = [
+            { productKey: 'device1', deviceKey: 'pk1', name: 'Device 1', enabled: true },
+            { productKey: 'device2', deviceKey: 'pk2', name: 'Device 2', enabled: true }
+        ];
+        const multiDeviceMgr = new MultiDeviceManager(mockAdapter, 'test.0', devices);
+        const emergencyManagers = new Map();
+        const safetyLimiters = new Map();
+        multiDeviceMgr.devices.forEach(dev => {
+            emergencyManagers.set(dev.id, new EmergencyManager(mockAdapter, dev.basePath));
+            safetyLimiters.set(dev.id, new SafetyLimiter(mockAdapter, dev.basePath));
+        });
+
+        const distribution = await multiDeviceMgr.distributePower(
+            -3200,
+            await multiDeviceMgr.aggregateDeviceStates(),
+            mockConfig,
+            emergencyManagers,
+            safetyLimiters
+        );
+
+        const activeDevices = distribution.filter(d => !d.excluded);
+        assertEqual(activeDevices.length, 2, 'Both devices participate in charging');
+        assertEqual(activeDevices[0].powerW, -1600, 'Device 1 is limited to configured charge power');
+        assertEqual(activeDevices[1].powerW, -1600, 'Device 2 is limited to configured charge power');
+    });
+
+    await runTest('[4.4] Excluded device does not transfer its charge capacity', async () => {
+        initializeMockStates();
+        setMockState('test.0.device1.pk1.electricLevel', 100);
+
+        const devices = [
+            { productKey: 'device1', deviceKey: 'pk1', name: 'Device 1', enabled: true },
+            { productKey: 'device2', deviceKey: 'pk2', name: 'Device 2', enabled: true }
+        ];
+        const multiDeviceMgr = new MultiDeviceManager(mockAdapter, 'test.0', devices);
+        const emergencyManagers = new Map();
+        const safetyLimiters = new Map();
+        multiDeviceMgr.devices.forEach(dev => {
+            emergencyManagers.set(dev.id, new EmergencyManager(mockAdapter, dev.basePath));
+            safetyLimiters.set(dev.id, new SafetyLimiter(mockAdapter, dev.basePath));
+        });
+
+        const distribution = await multiDeviceMgr.distributePower(
+            -3200,
+            await multiDeviceMgr.aggregateDeviceStates(),
+            mockConfig,
+            emergencyManagers,
+            safetyLimiters
+        );
+
+        const activeDevice = distribution.find(d => !d.excluded);
+        const excludedDevice = distribution.find(d => d.excluded);
+        assert(activeDevice, 'One device remains active');
+        assertEqual(activeDevice.powerW, -1600, 'Remaining device keeps its own charge limit');
+        assertEqual(excludedDevice.powerW, 0, 'Max-SOC device receives no power');
+    });
+
+    await runTest('[4.5] Multi-device distribution respects per-device discharge limit', async () => {
+        initializeMockStates();
+
+        const devices = [
+            { productKey: 'device1', deviceKey: 'pk1', name: 'Device 1', enabled: true },
+            { productKey: 'device2', deviceKey: 'pk2', name: 'Device 2', enabled: true }
+        ];
+        const multiDeviceMgr = new MultiDeviceManager(mockAdapter, 'test.0', devices);
+        const emergencyManagers = new Map();
+        const safetyLimiters = new Map();
+        multiDeviceMgr.devices.forEach(dev => {
+            emergencyManagers.set(dev.id, new EmergencyManager(mockAdapter, dev.basePath));
+            safetyLimiters.set(dev.id, new SafetyLimiter(mockAdapter, dev.basePath));
+        });
+
+        const distribution = await multiDeviceMgr.distributePower(
+            4000,
+            await multiDeviceMgr.aggregateDeviceStates(),
+            mockConfig,
+            emergencyManagers,
+            safetyLimiters
+        );
+
+        const activeDevices = distribution.filter(d => !d.excluded);
+        assertEqual(activeDevices.length, 2, 'Both devices participate in discharging');
+        assertEqual(activeDevices[0].powerW, 1600, 'Device 1 is limited to configured discharge power');
+        assertEqual(activeDevices[1].powerW, 1600, 'Device 2 is limited to configured discharge power');
+    });
+
+    await runTest('[4.6] ValidationService validates written setpoints', async () => {
         initializeMockStates();
         const validationService = new ValidationService(mockAdapter);
         
