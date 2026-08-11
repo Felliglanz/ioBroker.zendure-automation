@@ -2,8 +2,12 @@
   "common": {
     "name": "zendure-automation",
     "title": "Zendure Automation",
-    "version": "0.7.6",
+    "version": "1.0.0",
     "news": {
+      "1.0.0": {
+        "en": "Major release: Improved multi-device power distribution and safety after device exclusion. Added NaN/Infinity protection for grid power, improved value validation, and expanded automated test coverage.",
+        "de": "Major Release: Verbesserte Multi-Device-Leistungsverteilung und Sicherheit nach Geräte-Ausschluss. NaN-/Infinity-Schutz für Netzleistung, verbesserte Wertevalidierung und erweiterte automatisierte Tests hinzugefügt."
+      },
       "0.7.6": {
         "en": "Multi-Device Fix: Operating deadband now automatically scales with device count (e.g., 2 devices × 10W = 20W total) to ensure proper power distribution after equal split. Added control.operatingDeadbandW runtime override. Fixes #9",
         "de": "Multi-Device Fix: Operating Deadband skaliert nun automatisch mit Geräteanzahl (z.B. 2 Geräte × 10W = 20W gesamt) für korrekte Leistungsverteilung nach Equal Split. control.operatingDeadbandW Runtime-Override hinzugefügt. Behebt #9"
