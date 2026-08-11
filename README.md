@@ -135,10 +135,12 @@ Konfiguriere die Werte so, als hättest du **ein einzelnes Gerät**:
 | **maxChargePowerW** | 1200 | Leistung **pro Gerät** |
 | **minBatterySoc** | 10% | Gilt für **alle Geräte** |
 | **maxBatterySoc** | 95% | Gilt für **alle Geräte** |
+| **operatingDeadbandW** | 10 | **Pro Gerät** (auto-skaliert) |
 
 Das System multipliziert automatisch:
 - 2 Devices × 2400W = **4800W Gesamt-Entladung**
 - 2 Devices × 1200W = **2400W Gesamt-Ladung**
+- 2 Devices × 10W = **20W Gesamt-Deadband** (für Equal Split)
 
 > **⚠️ Zusammenspiel mit Zendure-App SOC-Grenzen**  
 > Der Adapter regelt via ZenSDK (Power-Setpoints in Watt).  
@@ -274,12 +276,14 @@ Schützt Hardware vor übermäßigem Schalten, speziell bei wechselhaftem Wetter
 | **Feed-in Delay** | 5 Ticks | 25s nachhaltige Einspeisung |
 | **Discharge Threshold** | 200W | Netzbezug nötig für Discharge-Start |
 | **Discharge Delay** | 3 Ticks | 15s nachhaltiger Bezug |
-| **Operating Deadband** | 5W | Minimum-Power vor Nulldurchgang |
+| **Operating Deadband** | 10W | Minimum-Power pro Gerät vor Nulldurchgang |
 
-**Operating Deadband (v0.6.1 neu):**
-- Hält bei ±5W für 1 Tick bevor 0W oder Vorzeichenwechsel erlaubt
+**Operating Deadband (aktualisiert v0.7.6):**
+- Konfigurierbar pro Gerät (Standard: 10W)
+- Automatisch skaliert im Multi-Device-Modus (z.B. 2 Geräte × 10W = 20W gesamt)
 - Verhindert Relais-Flattern bei Oszillation um Zielwert
 - Arbeitet mit 10W Safe-Switch zusammen (Schaltet nur bei ~0.04A)
+- Verfügbar als Runtime-Override: `control.operatingDeadbandW`
 
 ### 🎚️ Regelparameter
 
@@ -304,6 +308,36 @@ Glättet das Grid Power Signal um auf schnelle Lastspitzen (TV, Mikrowelle) nich
 | **1.0** | Keine Filterung | Purer I-Regler wie v0.6.0 |
 
 **Formel:** `filtered = alpha × new + (1 - alpha) × old`
+
+### 🔍 Validation Source (Für Geräte mit PV-Modulen)
+
+**Problem:** Bei Geräten mit direkt angeschlossenen PV-Modulen (z.B. Solarflow Pro) ist die `packPower` nicht gleich dem API-Setpoint:
+```
+packPower = API-Setpoint + PV-Einspeisung + AC-Ladung
+```
+
+**Beispiel:**
+- Adapter setzt: -1020W (Ladung)
+- PV-Module liefern: ~720W
+- `packPower` zeigt: -1740W
+- **Validation schlägt fehl!** (Erwartet: -1020W, Ist: -1740W)
+
+**Lösung: Wählbare Validation Source**
+
+| Source | Beschreibung | Wann nutzen? |
+|--------|-------------|--------------|
+| **packPower** | Gesamt-Batterieleistung (API + PV) | Standard für Geräte **ohne** PV-Module |
+| **gridInputPower** | Nur AC-Ladeleistung (API-Setpoint) | Für Geräte **mit** PV-Modulen (Pro, AC+) |
+| **none** | Validation deaktiviert | Als letzten Ausweg bei Problemen |
+
+**Konfiguration:**
+- **Single-Device Mode:** Dropdown "Validation Source" unter Device-Einstellungen
+- **Multi-Device Mode:** Pro Device in der Devices-Table
+
+**Empfehlung:**
+- **2400 Pro / 2000 Pro** mit PV → `gridInputPower` wählen
+- **AC+ / Hyper** ohne PV → `packPower` (Standard)
+- Bei Unsicherheit → `packPower` testen, bei Validation-Fehlern → `gridInputPower`
 
 **Wann anpassen?**
 - **Zu träge?** → Alpha erhöhen (z.B. 0.5 → 0.7)
@@ -360,43 +394,7 @@ neueBatterieLeistung = letzteBatterieLeistung + (aktuelleNetzleistung - ZielNetz
 
 ## 📜 Changelog
 
-### v0.7.0 (2026-04-15) - Controller Refactoring
-- 🏗️ **Große Architektur-Verbesserung** – Controller aus main.js extrahiert
-- ✨ **SingleDeviceController** – Kompletter Single-Device Zyklus in dediziertem Modul
-- ✨ **MultiDeviceController** – Kompletter Multi-Device Zyklus in dediziertem Modul
-- 📉 **47% Code-Reduktion in main.js** – von 1052 auf 554 Zeilen
-- 📚 **Business-Logic Extraktion** – Alle Automatisierungs-Logik in testbare Controller verschoben
-- 🧪 **Verbesserte Testbarkeit** – Controller sind unabhängig und einfach unit-testbar
-- 🎯 **Klare Trennung** – main.js nur noch Adapter-Lifecycle, Controller übernehmen Automation
-
-### v0.6.1 (2026-04-03)
-- ✨ **Operating Deadband Protection** – verhindert Relais-Flattern bei Oszillation
-- Hält bei ±5W für 1 Tick vor Nulldurchgang
-- Reduziert Schaltvorgänge ohne Regelung zu verlangsamen
-
-### v0.6.0 (2026-03-28)
-- 🏗️ **Major Refactoring** – Modulare Architektur mit 6 spezialisierten Modulen
-- 59% Code-Reduktion (948→388 Zeilen in main.js)
-- Verbesserte Wartbarkeit, Testbarkeit und Dokumentation
-
-### v0.5.8 (2026-03-27)
-- 🐛 Power Validation akzeptiert Geräte-Ramping während Charge
-
-### v0.5.7 (2026-03-26)
-- ✨ Non-blocking Power Setpoint Validation mit Auto-Retry
-
-### v0.5.5 (2026-03-25)
-- 🐛 **Critical Fix**: Persistenter Emergency Recovery über Adapter-Neustarts
-
-### v0.5.0 (2026-03-25)
-- ✨ Voltage Recovery Hysterese
-- ✨ Bidirektionaler Mode-Switching Schutz
-- ✨ Asymmetrische Ramp Limits
-
-### v0.4.0 (2026-03-24)
-- 🎉 Initial Release
-
-[Vollständiger Changelog](https://github.com/Felliglanz/iobroker.zendure-automation/releases)
+Die vollständige Versionshistorie steht in der [CHANGELOG.md](CHANGELOG.md).
 
 ---
 

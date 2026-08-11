@@ -90,6 +90,43 @@
                 "de": "Der DeviceKey deines Zendure Geräts"
               }
             },
+            "validationSource": {
+              "type": "select",
+              "label": {
+                "en": "Validation Source",
+                "de": "Validierungsquelle"
+              },
+              "sm": 12,
+              "hidden": "data.multiDeviceEnabled",
+              "options": [
+                {
+                  "label": {
+                    "en": "packPower (Total battery power - default)",
+                    "de": "packPower (Gesamt-Batterieleistung - Standard)"
+                  },
+                  "value": "packPower"
+                },
+                {
+                  "label": {
+                    "en": "gridInputPower (AC charging only - use if PV modules attached)",
+                    "de": "gridInputPower (Nur AC-Ladung - nutzen wenn PV-Module verbaut)"
+                  },
+                  "value": "gridInputPower"
+                },
+                {
+                  "label": {
+                    "en": "none (Disable validation)",
+                    "de": "none (Validierung deaktivieren)"
+                  },
+                  "value": "none"
+                }
+              ],
+              "default": "packPower",
+              "help": {
+                "en": "Choose validation source: packPower includes total power (API + PV), gridInputPower shows only AC charging (API setpoint). Use gridInputPower if device has PV modules attached to avoid false validation failures.",
+                "de": "Wähle Validierungsquelle: packPower beinhaltet Gesamtleistung (API + PV), gridInputPower zeigt nur AC-Ladung (API-Setpoint). Nutze gridInputPower wenn PV-Module am Gerät verbaut sind, um falsche Validierungsfehler zu vermeiden."
+              }
+            },
             "_deviceHint": {
               "type": "staticText",
               "text": {
@@ -121,7 +158,7 @@
                     "en": "ProductKey",
                     "de": "ProductKey"
                   },
-                  "width": "35%"
+                  "width": "25%"
                 },
                 {
                   "type": "text",
@@ -130,7 +167,7 @@
                     "en": "DeviceKey",
                     "de": "DeviceKey"
                   },
-                  "width": "35%"
+                  "width": "25%"
                 },
                 {
                   "type": "text",
@@ -139,7 +176,35 @@
                     "en": "Name (optional)",
                     "de": "Name (optional)"
                   },
-                  "width": "20%"
+                  "width": "15%"
+                },
+                {
+                  "type": "select",
+                  "attr": "validationSource",
+                  "title": {
+                    "en": "Validation",
+                    "de": "Validierung"
+                  },
+                  "width": "25%",
+                  "default": "packPower",
+                  "options": [
+                    {
+                      "label": "packPower",
+                      "value": "packPower"
+                    },
+                    {
+                      "label": "gridInputPower",
+                      "value": "gridInputPower"
+                    },
+                    {
+                      "label": "none",
+                      "value": "none"
+                    }
+                  ],
+                  "tooltip": {
+                    "en": "packPower=total (API+PV), gridInputPower=AC only (use if PV attached), none=disabled",
+                    "de": "packPower=gesamt (API+PV), gridInputPower=nur AC (nutzen wenn PV verbaut), none=deaktiviert"
+                  }
                 },
                 {
                   "type": "checkbox",
@@ -166,6 +231,24 @@
                 "fontStyle": "italic",
                 "color": "#666",
                 "marginTop": "5px",
+                "marginBottom": "10px"
+              }
+            },
+            "_validationSourceHint": {
+              "type": "staticText",
+              "text": {
+                "en": "🔍 <b>Validation Source:</b> Choose per device how charge setpoints are validated:<br/>• <b>packPower</b>: Total battery power (default) - use for devices without PV modules<br/>• <b>gridInputPower</b>: AC charging power only - use for devices WITH PV modules to avoid validation errors<br/>• <b>none</b>: Disable validation - use as last resort if validation causes issues",
+                "de": "🔍 <b>Validierungsquelle:</b> Wähle pro Gerät wie Lade-Setpoints validiert werden:<br/>• <b>packPower</b>: Gesamt-Batterieleistung (Standard) - nutzen für Geräte ohne PV-Module<br/>• <b>gridInputPower</b>: Nur AC-Ladeleistung - nutzen für Geräte MIT PV-Modulen um Validierungsfehler zu vermeiden<br/>• <b>none</b>: Validierung deaktivieren - als letzten Ausweg wenn Validierung Probleme macht"
+              },
+              "sm": 12,
+              "hidden": "!data.multiDeviceEnabled",
+              "style": {
+                "fontSize": "0.9em",
+                "backgroundColor": "#fff3e0",
+                "color": "#333",
+                "padding": "10px",
+                "borderRadius": "4px",
+                "borderLeft": "4px solid #ff9800",
                 "marginBottom": "10px"
               }
             },
@@ -278,11 +361,11 @@
               },
               "sm": 6,
               "min": 1,
-              "max": 10,
-              "default": 5,
+              "max": 20,
+              "default": 12,
               "help": {
-                "en": "How many times to retry if device doesn't accept power setpoint. Silent retries, only final error logged. Accounts for mode-switching (~25s with 5 retries at 5s interval).",
-                "de": "Wie oft wiederholen, wenn Gerät Leistungsvorgabe nicht annimmt. Stille Wiederholungen, nur finaler Fehler geloggt. Berücksichtigt Mode-Switching (~25s bei 5 Versuchen mit 5s Intervall)."
+                "en": "How many times to retry if device doesn't accept power setpoint. Includes ramping detection (device moving towards target). Default 12 retries = 60s timeout at 5s interval.",
+                "de": "Wie oft wiederholen, wenn Gerät Leistungsvorgabe nicht annimmt. Inkl. Ramping Detection (Gerät nähert sich Ziel). Standard 12 Versuche = 60s Timeout bei 5s Intervall."
               }
             },
             "setPowerValidationToleranceW": {
@@ -293,11 +376,11 @@
               },
               "sm": 6,
               "min": 0,
-              "max": 200,
-              "default": 50,
+              "max": 300,
+              "default": 100,
               "help": {
-                "en": "Acceptable deviation between setpoint and actual power",
-                "de": "Akzeptable Abweichung zwischen Vorgabe und Ist-Leistung"
+                "en": "Acceptable deviation between setpoint and actual power. 100W is recommended for kW-scale charging.",
+                "de": "Akzeptable Abweichung zwischen Vorgabe und Ist-Leistung. 100W empfohlen für kW-Bereich Laden."
               }
             },
             "_validationHint": {
@@ -603,16 +686,16 @@
             "operatingDeadbandW": {
               "type": "number",
               "label": {
-                "en": "Operating deadband (W)",
-                "de": "Betriebs-Deadband (W)"
+                "en": "Operating deadband (W) per device",
+                "de": "Betriebs-Deadband (W) pro Gerät"
               },
               "sm": 6,
               "min": 10,
               "max": 50,
               "default": 10,
               "help": {
-                "en": "Minimum power to maintain in current mode before allowing 0W or sign change. Prevents relay switching through 0W during regulation. IMPORTANT: Must be ≥10W to survive 10W power rounding! Recommended: 10-20W for stable relay protection.",
-                "de": "Mindestleistung im aktuellen Modus vor Erlaubnis von 0W oder Vorzeichenwechsel. Verhindert Relais-Schalten durch 0W während Regelung. WICHTIG: Muss ≥10W sein, um 10W-Rundung zu überstehen! Empfohlen: 10-20W für stabilen Relais-Schutz."
+                "en": "Minimum power per device before allowing 0W or sign change. In multi-device mode: automatically scaled by device count (e.g., 2 devices × 10W = 20W total). Prevents relay switching during regulation. Recommended: 10W per device.",
+                "de": "Mindestleistung pro Gerät vor Erlaubnis von 0W oder Vorzeichenwechsel. Im Multi-Device-Modus: automatisch mit Geräteanzahl skaliert (z.B. 2 Geräte × 10W = 20W gesamt). Verhindert Relais-Schalten während Regelung. Empfohlen: 10W pro Gerät."
               }
             },
             "deadbandHoldTicks": {
@@ -645,6 +728,24 @@
                 "backgroundColor": "#e3f2fd",
                 "borderRadius": "4px",
                 "borderLeft": "3px solid #1976d2"
+              }
+            },
+            "_deadbandMultiDeviceHint": {
+              "type": "staticText",
+              "text": {
+                "en": "⚙️ Multi-Device: The deadband is automatically scaled by the number of configured devices. With 2 devices and 10W setting, the total system uses 20W deadband, ensuring each device gets 10W minimum (equal split distribution).",
+                "de": "⚙️ Multi-Device: Das Deadband wird automatisch mit der Anzahl konfigurierter Geräte skaliert. Bei 2 Geräten und 10W Einstellung nutzt das Gesamtsystem 20W Deadband, sodass jedes Gerät mindestens 10W erhält (Equal-Split-Verteilung)."
+              },
+              "sm": 12,
+              "hidden": "data.multiDeviceMode !== true",
+              "style": {
+                "fontSize": "0.85em",
+                "color": "#f57c00",
+                "marginTop": "8px",
+                "padding": "8px",
+                "backgroundColor": "#fff3e0",
+                "borderRadius": "4px",
+                "borderLeft": "3px solid #ff9800"
               }
             }
           }

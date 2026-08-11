@@ -1,6 +1,6 @@
 {
   "name": "iobroker.zendure-automation",
-  "version": "0.7.5",
+  "version": "1.0.0",
   "description": "Automatic Zendure Solarflow control with zero grid feed/draw target",
   "main": "main.js",
   "keywords": [
@@ -17,6 +17,9 @@
   "license": "MIT",
   "engines": {
     "node": ">=18"
+  },
+  "scripts": {
+    "test": "node test-modules.js"
   },
   "dependencies": {
     "@iobroker/adapter-core": "^3.1.0"

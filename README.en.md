@@ -36,75 +36,6 @@ Automatically controls your Zendure Solarflow battery for **zero feed-in** and *
 - **Relay Protection** – minimizes switching operations, extends hardware lifespan
 - **Power Validation** – checks if device accepts setpoints (with auto-retry)
 
-### ⚙️ Mode-Switching Protection
-- **Bidirectional Protection** – delays both directions (Charge↔Discharge)
-- **Feed-in Delay** – 5 ticks (25s) sustained feed-in before Charge
-- **Discharge Delay** – 3 ticks (15s) sustained consumption before Discharge
-- **10W Safe-Switch** – relay switches only at minimal current (~0.04A)
-- **Operating Deadband (new)** – holds at ±5W for 1 tick before zero crossing
-
-### 🏗️ Modern Architecture
-- **Modular Structure** – 9 specialized modules (v0.7.0 Controller Extraction)
-- **47% Code Reduction** – from 1052 to 554 lines in main.js
-- **Controller-based** – SingleDeviceController & MultiDeviceController
-- **Testable & Maintainable** – clear separation of responsibilities
-- **Fully Documented** – JSDoc, inline comments, German/English
-
----
-
-## 📋 Prerequisites
-
-- ioBroker installation
-- [nograx's zendure-solarflow adapter](https://github.com/nograx/ioBroker.zendure-solarflow) (installed & configured)
-- Zendure device with ZenSDK: Solarflow 1600AC+, 2400AC+ or compatible
-- Grid power meter (e.g., Shelly 3EM, Tasmota, etc.)
-
----
-
-## 🚀 Quick Start
-
-### Installation
-
-In ioBroker Admin → Adapters → Install from custom URL:
-```
-https://github.com/Felliglanz/iobroker.zendure-automation
-```
-
-### Basic Configuration
-
-1. **⚙️ Basic Settings**
-   - Zendure Instance: `zendure-solarflow.0`
-   - ProductKey & DeviceKey: Copy from zendure-solarflow object tree
-   - Power Meter Datapoint: Your grid power sensor (Positive=consumption, Negative=feed-in)
-
-2. **🎯 Zero Grid Control**
-   - Target Grid Power: `0` W (for perfect zero feed-in)
-   - Update Interval: `5` seconds (recommended)
-   - Max Charge/Discharge Power: According to device specifications
-
-3. **🔋 Battery Protection**
-   - Choose protection mode: **SOC** (simple) or **Voltage** (precise)
-   - **SOC Mode**: Min SOC 10%, Max SOC 100%
-   - **Voltage Mode**: Min Voltage 3.18V (LFP), Hysteresis 0.1V
-
-**That's it!** Default values for Relay Protection, Regulation, and Emergency are already optimally configured.
-
----
-
-## 🔄 Multi-Device Support
-
-**Control multiple Zendure devices as one unified system** – perfect for 2x Solarflow 2400 or larger installations.
-
-### Activation
-
-**⚙️ Basic Settings**
-1. Enable checkbox **"Enable Multi-Device Support"**
-2. Add devices in the device table:
-   - ProductKey (from zendure-solarflow object tree)
-   - DeviceKey (from zendure-solarflow object tree)
-   - Name (optional, e.g., "Garage", "Basement")
-   - Enabled (check box)
-
 ### How it Works
 
 **Power Distribution:**
@@ -135,10 +66,12 @@ Configure values as if you had **a single device**:
 | **maxChargePowerW** | 1200 | Power **per device** |
 | **minBatterySoc** | 10% | Applies to **all devices** |
 | **maxBatterySoc** | 95% | Applies to **all devices** |
+| **operatingDeadbandW** | 10 | **Per device** (auto-scaled) |
 
 The system automatically multiplies:
 - 2 Devices × 2400W = **4800W Total Discharge**
 - 2 Devices × 1200W = **2400W Total Charge**
+- 2 Devices × 10W = **20W Total Deadband** (for equal split)
 
 > **⚠️ Interaction with Zendure App SOC Limits**  
 > The adapter controls via ZenSDK (power setpoints in watts).  
@@ -274,12 +207,14 @@ Protects hardware from excessive switching, especially in variable weather:
 | **Feed-in Delay** | 5 Ticks | 25s sustained feed-in |
 | **Discharge Threshold** | 200W | Grid consumption needed for discharge start |
 | **Discharge Delay** | 3 Ticks | 15s sustained consumption |
-| **Operating Deadband** | 5W | Minimum power before zero crossing |
+| **Operating Deadband** | 10W | Minimum power per device before zero crossing |
 
-**Operating Deadband (v0.6.1 new):**
-- Holds at ±5W for 1 tick before allowing 0W or sign change
+**Operating Deadband (updated v0.7.6):**
+- Configurable per device (default: 10W)
+- Automatically scaled in multi-device mode (e.g., 2 devices × 10W = 20W total)
 - Prevents relay chattering during oscillation around target
 - Works together with 10W safe-switch (switches only at ~0.04A)
+- Available as runtime override: `control.operatingDeadbandW`
 
 ### 🎚️ Control Parameters
 
@@ -310,7 +245,37 @@ Smooths the grid power signal to avoid reacting to fast load spikes (TV, microwa
 - **Too jittery?** → Decrease alpha (e.g., 0.5 → 0.3)
 - **No filter?** → Alpha = 1.0 (legacy behavior)
 
-### 🚨 Emergency & Recovery
+### � Validation Source (For Devices with PV Modules)
+
+**Problem:** For devices with directly connected PV modules (e.g., Solarflow Pro), `packPower` is not equal to the API setpoint:
+```
+packPower = API setpoint + PV input + AC charging
+```
+
+**Example:**
+- Adapter sets: -1020W (charging)
+- PV modules deliver: ~720W
+- `packPower` shows: -1740W
+- **Validation fails!** (Expected: -1020W, Actual: -1740W)
+
+**Solution: Selectable Validation Source**
+
+| Source | Description | When to use? |
+|--------|-------------|--------------|
+| **packPower** | Total battery power (API + PV) | Default for devices **without** PV modules |
+| **gridInputPower** | AC charging power only (API setpoint) | For devices **with** PV modules (Pro, AC+) |
+| **none** | Validation disabled | As last resort if issues occur |
+
+**Configuration:**
+- **Single-Device Mode:** "Validation Source" dropdown under device settings
+- **Multi-Device Mode:** Per device in the devices table
+
+**Recommendation:**
+- **2400 Pro / 2000 Pro** with PV → select `gridInputPower`
+- **AC+ / Hyper** without PV → `packPower` (default)
+- If unsure → test `packPower`, if validation errors occur → switch to `gridInputPower`
+
+### �🚨 Emergency & Recovery
 
 **Emergency Charging** (highest priority):
 - Activated at: `lowVoltageBlock` flag OR voltage < 3.0V
@@ -360,43 +325,7 @@ newBatteryPower = lastBatteryPower + (currentGridPower - targetGridPower)
 
 ## 📜 Changelog
 
-### v0.7.0 (2026-04-15) - Controller Refactoring
-- 🏗️ **Major Architecture Improvement** – Controllers extracted from main.js
-- ✨ **SingleDeviceController** – Complete single-device cycle in dedicated module
-- ✨ **MultiDeviceController** – Complete multi-device cycle in dedicated module
-- 📉 **47% Code Reduction in main.js** – from 1052 to 554 lines
-- 📚 **Business Logic Extraction** – All automation logic moved to testable controllers
-- 🧪 **Improved Testability** – Controllers are independent and easily unit-testable
-- 🎯 **Clear Separation** – main.js only adapter lifecycle, controllers handle automation
-
-### v0.6.1 (2026-04-03)
-- ✨ **Operating Deadband Protection** – prevents relay chattering during oscillation
-- Holds at ±5W for 1 tick before zero crossing
-- Reduces switching operations without slowing control
-
-### v0.6.0 (2026-03-28)
-- 🏗️ **Major Refactoring** – Modular architecture with 6 specialized modules
-- 59% code reduction (948→388 lines in main.js)
-- Improved maintainability, testability, and documentation
-
-### v0.5.8 (2026-03-27)
-- 🐛 Power validation accepts device ramping during charge
-
-### v0.5.7 (2026-03-26)
-- ✨ Non-blocking power setpoint validation with auto-retry
-
-### v0.5.5 (2026-03-25)
-- 🐛 **Critical Fix**: Persistent emergency recovery across adapter restarts
-
-### v0.5.0 (2026-03-25)
-- ✨ Voltage recovery hysteresis
-- ✨ Bidirectional mode-switching protection
-- ✨ Asymmetric ramp limits
-
-### v0.4.0 (2026-03-24)
-- 🎉 Initial Release
-
-[Full Changelog](https://github.com/Felliglanz/iobroker.zendure-automation/releases)
+See the complete version history in [CHANGELOG.md](CHANGELOG.md).
 
 ---
 

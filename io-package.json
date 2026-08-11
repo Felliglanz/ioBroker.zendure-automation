@@ -2,8 +2,16 @@
   "common": {
     "name": "zendure-automation",
     "title": "Zendure Automation",
-    "version": "0.7.5",
+    "version": "1.0.0",
     "news": {
+      "1.0.0": {
+        "en": "Major release: Improved multi-device power distribution and safety after device exclusion. Added NaN/Infinity protection for grid power, improved value validation, and expanded automated test coverage.",
+        "de": "Major Release: Verbesserte Multi-Device-Leistungsverteilung und Sicherheit nach Geräte-Ausschluss. NaN-/Infinity-Schutz für Netzleistung, verbesserte Wertevalidierung und erweiterte automatisierte Tests hinzugefügt."
+      },
+      "0.7.6": {
+        "en": "Multi-Device Fix: Operating deadband now automatically scales with device count (e.g., 2 devices × 10W = 20W total) to ensure proper power distribution after equal split. Added control.operatingDeadbandW runtime override. Fixes #9",
+        "de": "Multi-Device Fix: Operating Deadband skaliert nun automatisch mit Geräteanzahl (z.B. 2 Geräte × 10W = 20W gesamt) für korrekte Leistungsverteilung nach Equal Split. control.operatingDeadbandW Runtime-Override hinzugefügt. Behebt #9"
+      },
       "0.7.5": {
         "en": "Bugfix: Set devices to 0W when manually disabling maxCharge/maxDischarge overrides (before limits reached).",
         "de": "Bugfix: Geräte auf 0W setzen beim manuellen Deaktivieren von maxCharge/maxDischarge (vor Limit-Erreichen)."
@@ -249,6 +257,109 @@
         "read": true,
         "write": true,
         "def": false
+      },
+      "native": {}
+    },
+    {
+      "_id": "control.maxBatterySoc",
+      "type": "state",
+      "common": {
+        "name": "Max battery SOC (%) - runtime override",
+        "type": "number",
+        "role": "value",
+        "read": true,
+        "write": true,
+        "def": 100,
+        "min": 0,
+        "max": 100,
+        "unit": "%"
+      },
+      "native": {}
+    },
+    {
+      "_id": "control.minBatterySoc",
+      "type": "state",
+      "common": {
+        "name": "Min battery SOC (%) - runtime override",
+        "type": "number",
+        "role": "value",
+        "read": true,
+        "write": true,
+        "def": 10,
+        "min": 0,
+        "max": 100,
+        "unit": "%"
+      },
+      "native": {}
+    },
+    {
+      "_id": "control.enableCharge",
+      "type": "state",
+      "common": {
+        "name": "Enable charging - runtime override",
+        "type": "boolean",
+        "role": "switch.enable",
+        "read": true,
+        "write": true,
+        "def": true
+      },
+      "native": {}
+    },
+    {
+      "_id": "control.enableDischarge",
+      "type": "state",
+      "common": {
+        "name": "Enable discharging - runtime override",
+        "type": "boolean",
+        "role": "switch.enable",
+        "read": true,
+        "write": true,
+        "def": true
+      },
+      "native": {}
+    },
+    {
+      "_id": "control.maxChargePowerW",
+      "type": "state",
+      "common": {
+        "name": "Max charge power (W) - runtime override",
+        "type": "number",
+        "role": "value.power",
+        "read": true,
+        "write": true,
+        "def": 1600,
+        "min": 0,
+        "unit": "W"
+      },
+      "native": {}
+    },
+    {
+      "_id": "control.maxDischargePowerW",
+      "type": "state",
+      "common": {
+        "name": "Max discharge power (W) - runtime override",
+        "type": "number",
+        "role": "value.power",
+        "read": true,
+        "write": true,
+        "def": 1600,
+        "min": 0,
+        "unit": "W"
+      },
+      "native": {}
+    },
+    {
+      "_id": "control.operatingDeadbandW",
+      "type": "state",
+      "common": {
+        "name": "Operating deadband (W) per device - runtime override",
+        "type": "number",
+        "role": "value.power",
+        "read": true,
+        "write": true,
+        "def": 10,
+        "min": 10,
+        "unit": "W"
       },
       "native": {}
     },
