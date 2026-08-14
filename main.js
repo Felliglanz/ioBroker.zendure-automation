@@ -267,6 +267,36 @@ class ZendureAutomation extends utils.Adapter {
                 return false;
             }
 
+            const distributionStrategy = this.config.multiDeviceDistributionStrategy || 'equalSplit';
+            if (!['equalSplit', 'waterfill'].includes(distributionStrategy)) {
+                this.log.error(`Unknown multi-device distribution strategy: ${distributionStrategy}`);
+                return false;
+            }
+
+            if (distributionStrategy === 'waterfill') {
+                for (const device of enabledDevices) {
+                    const numericValues = [
+                        ['minSoc', device.minSoc],
+                        ['maxSoc', device.maxSoc],
+                        ['maxChargePowerW', device.maxChargePowerW],
+                        ['maxDischargePowerW', device.maxDischargePowerW]
+                    ];
+                    const hasInvalidValue = numericValues.some(([, value]) =>
+                        value === null || value === undefined || !Number.isFinite(Number(value))
+                    );
+
+                    if (hasInvalidValue || Number(device.minSoc) < 0 || Number(device.maxSoc) > 100 ||
+                        Number(device.minSoc) >= Number(device.maxSoc) ||
+                        Number(device.maxChargePowerW) <= 0 || Number(device.maxDischargePowerW) <= 0) {
+                        this.log.error(
+                            `Waterfill requires valid limits for device ${device.name || device.deviceKey}: ` +
+                            'minSoc < maxSoc, positive charge/discharge limits'
+                        );
+                        return false;
+                    }
+                }
+            }
+
             this.log.info(`Multi-Device: ${enabledDevices.length} device(s) configured`);
         } else {
             // Single-device validation

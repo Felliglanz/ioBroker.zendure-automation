@@ -179,13 +179,77 @@
                   "width": "15%"
                 },
                 {
+                  "type": "number",
+                  "attr": "minSoc",
+                  "title": {
+                    "en": "Min SOC %",
+                    "de": "Min. SOC %"
+                  },
+                  "width": "8%",
+                  "min": 0,
+                  "max": 100
+                },
+                {
+                  "type": "number",
+                  "attr": "maxSoc",
+                  "title": {
+                    "en": "Max SOC %",
+                    "de": "Max. SOC %"
+                  },
+                  "width": "8%",
+                  "min": 0,
+                  "max": 100
+                },
+                {
+                  "type": "number",
+                  "attr": "maxChargePowerW",
+                  "title": {
+                    "en": "Charge W",
+                    "de": "Laden W"
+                  },
+                  "width": "9%",
+                  "min": 1,
+                  "max": 3000
+                },
+                {
+                  "type": "number",
+                  "attr": "maxDischargePowerW",
+                  "title": {
+                    "en": "Discharge W",
+                    "de": "Entladen W"
+                  },
+                  "width": "9%",
+                  "min": 1,
+                  "max": 3000
+                },
+                {
+                  "type": "checkbox",
+                  "attr": "chargeAllowed",
+                  "title": {
+                    "en": "Charge",
+                    "de": "Laden"
+                  },
+                  "width": "6%",
+                  "default": true
+                },
+                {
+                  "type": "checkbox",
+                  "attr": "dischargeAllowed",
+                  "title": {
+                    "en": "Discharge",
+                    "de": "Entladen"
+                  },
+                  "width": "6%",
+                  "default": true
+                },
+                {
                   "type": "select",
                   "attr": "validationSource",
                   "title": {
                     "en": "Validation",
                     "de": "Validierung"
                   },
-                  "width": "25%",
+                  "width": "15%",
                   "default": "packPower",
                   "options": [
                     {
@@ -214,9 +278,117 @@
                     "de": "Aktiv"
                   },
                   "default": true,
-                  "width": "10%"
+                  "width": "5%"
                 }
               ]
+            },
+            "multiDeviceDistributionStrategy": {
+              "type": "select",
+              "label": {
+                "en": "Multi-Device distribution strategy",
+                "de": "Multi-Device-Verteilstrategie"
+              },
+              "hidden": "!data.multiDeviceEnabled",
+              "sm": 12,
+              "options": [
+                {
+                  "label": {
+                    "en": "Legacy Equal Split",
+                    "de": "Legacy Equal Split"
+                  },
+                  "value": "equalSplit"
+                },
+                {
+                  "label": {
+                    "en": "Waterfill + Sticky Device",
+                    "de": "Waterfill + Sticky Device"
+                  },
+                  "value": "waterfill"
+                }
+              ],
+              "default": "equalSplit",
+              "help": {
+                "en": "Waterfill requires valid per-device SOC and power limits in the table below.",
+                "de": "Waterfill benötigt gültige SOC- und Leistungsgrenzen für jedes Gerät in der Tabelle."
+              }
+            },
+            "_waterfillSettings": {
+              "type": "panel",
+              "label": {
+                "en": "Waterfill settings",
+                "de": "Waterfill-Einstellungen"
+              },
+              "hidden": "!data.multiDeviceEnabled || data.multiDeviceDistributionStrategy !== 'waterfill'",
+              "items": {
+                "waterfillDischargeConcentrateBelowW": {
+                  "type": "number",
+                  "label": {
+                    "en": "Discharge concentrate below (W)",
+                    "de": "Entladen konzentrieren unter (W)"
+                  },
+                  "sm": 6,
+                  "min": 0,
+                  "max": 3000,
+                  "default": 600
+                },
+                "waterfillDischargeSpreadAboveW": {
+                  "type": "number",
+                  "label": {
+                    "en": "Discharge spread above (W)",
+                    "de": "Entladen verteilen ab (W)"
+                  },
+                  "sm": 6,
+                  "min": 1,
+                  "max": 6000,
+                  "default": 1200
+                },
+                "waterfillChargeConcentrateBelowW": {
+                  "type": "number",
+                  "label": {
+                    "en": "Charge concentrate below (W)",
+                    "de": "Laden konzentrieren unter (W)"
+                  },
+                  "sm": 6,
+                  "min": 0,
+                  "max": 3000,
+                  "default": 600
+                },
+                "waterfillChargeSpreadAboveW": {
+                  "type": "number",
+                  "label": {
+                    "en": "Charge spread above (W)",
+                    "de": "Laden verteilen ab (W)"
+                  },
+                  "sm": 6,
+                  "min": 1,
+                  "max": 6000,
+                  "default": 1200
+                },
+                "waterfillConcentrateHoldMinutes": {
+                  "type": "number",
+                  "label": {
+                    "en": "Concentrate hold time (minutes)",
+                    "de": "Haltezeit Einzelgerät (Minuten)"
+                  },
+                  "sm": 6,
+                  "min": 0,
+                  "max": 60,
+                  "step": 1,
+                  "default": 3
+                },
+                "waterfillSocMargin": {
+                  "type": "number",
+                  "label": {
+                    "en": "Sticky-device SOC margin (%)",
+                    "de": "SOC-Vorsprung für Gerätewechsel (%)"
+                  },
+                  "sm": 6,
+                  "min": 0,
+                  "max": 50,
+                  "step": 1,
+                  "default": 10
+                }
+              }
             },
             "_multiDeviceHint": {
               "type": "staticText",
@@ -768,6 +940,7 @@
           "items": {
             "maxChargePowerW": {
               "type": "number",
+              "disabled": "data.multiDeviceEnabled && data.multiDeviceDistributionStrategy === 'waterfill'",
               "label": {
                 "en": "Max. charge power (W)",
                 "de": "Max. Ladeleistung (W)"
@@ -783,6 +956,7 @@
             },
             "maxDischargePowerW": {
               "type": "number",
+              "disabled": "data.multiDeviceEnabled && data.multiDeviceDistributionStrategy === 'waterfill'",
               "label": {
                 "en": "Max. discharge power (W)",
                 "de": "Max. Entladeleistung (W)"
@@ -845,6 +1019,7 @@
           "items": {
             "minBatterySoc": {
               "type": "number",
+              "disabled": "data.multiDeviceEnabled && data.multiDeviceDistributionStrategy === 'waterfill'",
               "label": {
                 "en": "Minimum SOC (%)",
                 "de": "Minimaler SOC (%)"
@@ -860,6 +1035,7 @@
             },
             "maxBatterySoc": {
               "type": "number",
+              "disabled": "data.multiDeviceEnabled && data.multiDeviceDistributionStrategy === 'waterfill'",
               "label": {
                 "en": "Maximum SOC (%)",
                 "de": "Maximaler SOC (%)"

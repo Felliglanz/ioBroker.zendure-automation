@@ -170,7 +170,7 @@ async function testModules() {
     console.log('─'.repeat(70));
 
     let DataReader, EmergencyManager, RelayProtection, SafetyLimiter;
-    let PowerRegulator, ValidationService, MultiDeviceManager;
+    let PowerRegulator, ValidationService, MultiDeviceManager, WaterfillDistributor;
 
     await runTest('[1.1] Load all library modules', async () => {
         DataReader = require('./lib/DataReader');
@@ -180,7 +180,8 @@ async function testModules() {
         PowerRegulator = require('./lib/PowerRegulator');
         ValidationService = require('./lib/ValidationService');
         MultiDeviceManager = require('./lib/MultiDeviceManager');
-        assert(DataReader && EmergencyManager && ValidationService, 'Modules loaded');
+        WaterfillDistributor = require('./lib/WaterfillDistributor');
+        assert(DataReader && EmergencyManager && ValidationService && WaterfillDistributor, 'Modules loaded');
     });
 
     await runTest('[1.2] Instantiate all modules', async () => {
@@ -649,6 +650,81 @@ async function testModules() {
         const needsResend = await validationService.validateSetpoint('dev1', mockConfig, -800);
         
         assertEqual(needsResend, false, 'Validation succeeded (no resend needed)');
+    });
+
+    await runTest('[4.7] Waterfill uses sticky device and redistributes capped power', async () => {
+        const distributor = new WaterfillDistributor();
+        const devices = [
+            {
+                id: 'device1', name: 'Device 1', soc: 80, minSoc: 10, maxSoc: 100,
+                maxChargePowerW: 1600, maxDischargePowerW: 500,
+                chargeAllowed: true, dischargeAllowed: true
+            },
+            {
+                id: 'device2', name: 'Device 2', soc: 40, minSoc: 10, maxSoc: 100,
+                maxChargePowerW: 1600, maxDischargePowerW: 2000,
+                chargeAllowed: true, dischargeAllowed: true
+            }
+        ];
+        const waterfillConfig = {
+            updateIntervalSec: 5,
+            waterfillConcentrateHoldMinutes: 0,
+            waterfillDischargeConcentrateBelowW: 600,
+            waterfillDischargeSpreadAboveW: 1200,
+            waterfillSocMargin: 10
+        };
+
+        const single = distributor.distribute(400, devices, waterfillConfig);
+        assertEqual(single.filter(d => d.powerW > 0).length, 1, 'Low demand uses one device');
+        assertEqual(single.find(d => d.powerW > 0).deviceId, 'device1', 'Highest SOC device is sticky');
+
+        const spread = distributor.distribute(2500, devices, waterfillConfig);
+        assertEqual(spread.reduce((sum, d) => sum + d.powerW, 0), 2500, 'Waterfill uses full target');
+        assertEqual(spread.find(d => d.deviceId === 'device1').powerW, 500, 'First device is capped');
+        assertEqual(spread.find(d => d.deviceId === 'device2').powerW, 2000, 'Remainder reaches second device');
+    });
+
+    await runTest('[4.8] Multi-device manager selects Waterfill strategy', async () => {
+        initializeMockStates();
+        const devices = [
+            {
+                productKey: 'device1', deviceKey: 'pk1', name: 'Device 1', enabled: true,
+                minSoc: 10, maxSoc: 100, maxChargePowerW: 1600, maxDischargePowerW: 500,
+                chargeAllowed: true, dischargeAllowed: true
+            },
+            {
+                productKey: 'device2', deviceKey: 'pk2', name: 'Device 2', enabled: true,
+                minSoc: 10, maxSoc: 100, maxChargePowerW: 1600, maxDischargePowerW: 2000,
+                chargeAllowed: true, dischargeAllowed: true
+            }
+        ];
+        const multiDeviceMgr = new MultiDeviceManager(mockAdapter, 'test.0', devices);
+        const emergencyManagers = new Map();
+        const safetyLimiters = new Map();
+        multiDeviceMgr.devices.forEach(dev => {
+            emergencyManagers.set(dev.id, new EmergencyManager(mockAdapter, dev.basePath));
+            safetyLimiters.set(dev.id, new SafetyLimiter(mockAdapter, dev.basePath));
+        });
+
+        const distribution = await multiDeviceMgr.distributePower(
+            2500,
+            await multiDeviceMgr.aggregateDeviceStates(),
+            {
+                ...mockConfig,
+                multiDeviceDistributionStrategy: 'waterfill',
+                waterfillConcentrateHoldMinutes: 0,
+                waterfillDischargeConcentrateBelowW: 600,
+                waterfillDischargeSpreadAboveW: 1200,
+                waterfillSocMargin: 10
+            },
+            emergencyManagers,
+            safetyLimiters
+        );
+
+        const activeDistribution = distribution.filter(d => !d.excluded);
+        assertEqual(activeDistribution.reduce((sum, d) => sum + d.powerW, 0), 2500, 'Waterfill target reaches manager output');
+        assertEqual(activeDistribution.find(d => d.deviceId === 'device1').powerW, 500, 'Manager applies device one limit');
+        assertEqual(activeDistribution.find(d => d.deviceId === 'device2').powerW, 2000, 'Manager applies device two limit');
     });
 
     // Summary
