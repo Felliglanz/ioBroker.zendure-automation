@@ -40,8 +40,19 @@ Automatically controls your Zendure Solarflow battery for **zero feed-in** and *
 
 **Power Distribution:**
 - **Equal Split** – power is distributed evenly across all active devices
+- **Waterfill + Sticky Device (optional)** – distributes power using individual device limits and SOC weighting; low demand can be concentrated on one suitable device
 - **Dynamic Exclusion** – devices at limits are automatically excluded
 - **Per-Device Tracking** – each device has its own states in the object tree
+
+### Waterfill + Sticky Device
+
+Select the optional distribution strategy in the Multi-Device settings. Each enabled device can have its own minimum and maximum SOC limits, charge and discharge power limits, and charge/discharge permissions.
+
+Waterfill first distributes the requested power according to each device's available SOC range. When a device reaches its configured power or SOC limit, the remaining power is redistributed to other eligible devices. At low power demand, the strategy can concentrate power on one device after a configurable hold time. The preferred device is changed only when another device has a sufficient SOC advantage.
+
+Equal Split remains the default strategy. In Waterfill mode, the global SOC and power limits are replaced by the values in the device table; voltage, emergency, and recovery protection remain active.
+
+> **⚠️ Note:** Waterfill is an additional Multi-Device strategy and should initially be checked with the configured device limits and a small test setup. PV headroom and automatic bypass control are not part of this version yet.
 
 **Example with 2x Solarflow 2400:**
 ```
@@ -56,7 +67,9 @@ Device 2 reaches max SOC (95%):
 
 ### Configuration
 
-**Important:** All settings apply **globally to ALL devices**!
+**Equal Split:** Power and SOC settings apply globally to all devices.
+
+**Waterfill:** The per-device values from the device table apply. Global SOC and power fields are disabled in this mode.
 
 Configure values as if you had **a single device**:
 
@@ -67,6 +80,8 @@ Configure values as if you had **a single device**:
 | **minBatterySoc** | 10% | Applies to **all devices** |
 | **maxBatterySoc** | 95% | Applies to **all devices** |
 | **operatingDeadbandW** | 10 | **Per device** (auto-scaled) |
+
+In Waterfill mode, the following additional per-device values are used: `minSoc`, `maxSoc`, `maxChargePowerW`, `maxDischargePowerW`, `chargeAllowed`, and `dischargeAllowed`.
 
 The system automatically multiplies:
 - 2 Devices × 2400W = **4800W Total Discharge**
