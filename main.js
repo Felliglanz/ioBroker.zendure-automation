@@ -432,7 +432,8 @@ class ZendureAutomation extends utils.Adapter {
 
         // Auto-reset when max SOC reached
         const maxBatterySoc = config.maxBatterySoc || 100;
-        if (batterySoc !== null && batterySoc >= maxBatterySoc) {
+        const waterfillActive = this._isMultiDevice && config.multiDeviceDistributionStrategy === 'waterfill';
+        if (!waterfillActive && batterySoc !== null && batterySoc >= maxBatterySoc) {
             this.log.info(`Max SOC ${maxBatterySoc}% reached, disabling Max Charge mode`);
             await this.setStateAsync('control.maxCharge', false, true);
             await this.setStateAsync('status.mode', 'idle', true);
@@ -450,6 +451,21 @@ class ZendureAutomation extends utils.Adapter {
 
         // Apply max charge power
         if (this._isMultiDevice) {
+            if (config.multiDeviceDistributionStrategy === 'waterfill') {
+                const aggregated = await this.multiDeviceMgr.aggregateDeviceStates();
+                for (const device of this.multiDeviceMgr.devices) {
+                    const state = aggregated.devices.find(item => item.id === device.id);
+                    const limitW = Number(device.maxChargePowerW);
+                    const allowed = device.chargeAllowed !== false && state?.available &&
+                        Number.isFinite(limitW) && limitW > 0 &&
+                        Number(state.soc) < Number(device.maxSoc);
+                    const powerW = allowed ? -limitW : 0;
+                    this.log.debug(`Max Charge: ${device.name} ${powerW}W (Waterfill device limit)`);
+                    await this.validationService.writePowerSetpoint(device.id, device.basePath, powerW);
+                }
+                return;
+            }
+
             // The configured value is a per-device limit in multi-device mode.
             const powerPerDevice = maxChargePowerW;
             this.log.debug(`Max Charge: ${powerPerDevice}W per device`);
@@ -535,7 +551,8 @@ class ZendureAutomation extends utils.Adapter {
         }
 
         // ========== CHECK SOC LIMIT (soc, both) ==========
-        if (dischargeProtectionMode === 'soc' || dischargeProtectionMode === 'both') {
+        const waterfillActive = this._isMultiDevice && config.multiDeviceDistributionStrategy === 'waterfill';
+        if (!waterfillActive && (dischargeProtectionMode === 'soc' || dischargeProtectionMode === 'both')) {
             if (batterySoc !== null && batterySoc <= effectiveMinSoc) {
                 this.log.info(`Min SOC ${effectiveMinSoc}% reached, disabling Max Discharge mode`);
                 await this.setStateAsync('control.maxDischarge', false, true);
@@ -575,6 +592,23 @@ class ZendureAutomation extends utils.Adapter {
 
         // ========== APPLY MAX DISCHARGE POWER ==========
         if (this._isMultiDevice) {
+            if (config.multiDeviceDistributionStrategy === 'waterfill') {
+                const aggregated = await this.multiDeviceMgr.aggregateDeviceStates();
+                for (const device of this.multiDeviceMgr.devices) {
+                    const state = aggregated.devices.find(item => item.id === device.id);
+                    const emergencyManager = this.emergencyManagers.get(device.id);
+                    const limitW = Number(device.maxDischargePowerW);
+                    const allowed = device.dischargeAllowed !== false && state?.available &&
+                        !emergencyManager?.inMinSocRecovery &&
+                        Number.isFinite(limitW) && limitW > 0 &&
+                        Number(state.soc) > Number(device.minSoc);
+                    const powerW = allowed ? limitW : 0;
+                    this.log.debug(`Max Discharge: ${device.name} ${powerW}W (Waterfill device limit)`);
+                    await this.validationService.writePowerSetpoint(device.id, device.basePath, powerW);
+                }
+                return;
+            }
+
             // The configured value is a per-device limit in multi-device mode.
             const powerPerDevice = maxDischargePowerW;
             this.log.debug(`Max Discharge: ${powerPerDevice}W per device`);

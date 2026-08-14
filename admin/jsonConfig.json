@@ -158,7 +158,7 @@
                     "en": "ProductKey",
                     "de": "ProductKey"
                   },
-                  "width": "25%"
+                  "width": "18%"
                 },
                 {
                   "type": "text",
@@ -167,7 +167,7 @@
                     "en": "DeviceKey",
                     "de": "DeviceKey"
                   },
-                  "width": "25%"
+                  "width": "18%"
                 },
                 {
                   "type": "text",
@@ -176,7 +176,7 @@
                     "en": "Name (optional)",
                     "de": "Name (optional)"
                   },
-                  "width": "15%"
+                  "width": "10%"
                 },
                 {
                   "type": "number",
@@ -185,7 +185,7 @@
                     "en": "Min SOC %",
                     "de": "Min. SOC %"
                   },
-                  "width": "8%",
+                  "width": "7%",
                   "min": 0,
                   "max": 100
                 },
@@ -196,7 +196,7 @@
                     "en": "Max SOC %",
                     "de": "Max. SOC %"
                   },
-                  "width": "8%",
+                  "width": "7%",
                   "min": 0,
                   "max": 100
                 },
@@ -207,7 +207,7 @@
                     "en": "Charge W",
                     "de": "Laden W"
                   },
-                  "width": "9%",
+                  "width": "8%",
                   "min": 1,
                   "max": 3000
                 },
@@ -218,7 +218,7 @@
                     "en": "Discharge W",
                     "de": "Entladen W"
                   },
-                  "width": "9%",
+                  "width": "8%",
                   "min": 1,
                   "max": 3000
                 },
@@ -229,7 +229,7 @@
                     "en": "Charge",
                     "de": "Laden"
                   },
-                  "width": "6%",
+                  "width": "5%",
                   "default": true
                 },
                 {
@@ -239,7 +239,7 @@
                     "en": "Discharge",
                     "de": "Entladen"
                   },
-                  "width": "6%",
+                  "width": "5%",
                   "default": true
                 },
                 {
@@ -249,7 +249,7 @@
                     "en": "Validation",
                     "de": "Validierung"
                   },
-                  "width": "15%",
+                  "width": "10%",
                   "default": "packPower",
                   "options": [
                     {
@@ -278,7 +278,7 @@
                     "de": "Aktiv"
                   },
                   "default": true,
-                  "width": "5%"
+                  "width": "4%"
                 }
               ]
             },

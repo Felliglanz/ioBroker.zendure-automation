@@ -727,6 +727,144 @@ async function testModules() {
         assertEqual(activeDistribution.find(d => d.deviceId === 'device2').powerW, 2000, 'Manager applies device two limit');
     });
 
+    await runTest('[4.9] Waterfill handles changing loads and direction changes', async () => {
+        const distributor = new WaterfillDistributor();
+        const devices = [
+            {
+                id: 'device1', name: 'PV Hub', soc: 75, minSoc: 15, maxSoc: 95,
+                maxChargePowerW: 1200, maxDischargePowerW: 800,
+                chargeAllowed: true, dischargeAllowed: true
+            },
+            {
+                id: 'device2', name: 'AC Hub', soc: 45, minSoc: 10, maxSoc: 100,
+                maxChargePowerW: 2400, maxDischargePowerW: 1600,
+                chargeAllowed: true, dischargeAllowed: true
+            }
+        ];
+        const config = {
+            updateIntervalSec: 5,
+            waterfillConcentrateHoldMinutes: 0,
+            waterfillDischargeConcentrateBelowW: 600,
+            waterfillDischargeSpreadAboveW: 1200,
+            waterfillChargeConcentrateBelowW: 600,
+            waterfillChargeSpreadAboveW: 1200,
+            waterfillSocMargin: 10
+        };
+        const changingLoads = [250, 1100, 1800, 300, 1500, 0, -250, -1400, -3200, 0];
+        const results = changingLoads.map(load => distributor.distribute(load, devices, config));
+
+        results.forEach((distribution, index) => {
+            const requested = changingLoads[index];
+            const total = distribution.reduce((sum, item) => sum + item.powerW, 0);
+            const capacity = requested < 0 ? 3600 : 2400;
+            assert(Math.abs(total) <= Math.abs(requested), `Cycle ${index} does not over-allocate`);
+            assert(Math.abs(total) <= capacity, `Cycle ${index} respects aggregate capacity`);
+            assert(distribution[0].powerW <= 800 && distribution[1].powerW <= 1600, `Cycle ${index} respects discharge limits`);
+            assert(distribution[0].powerW >= -1200 && distribution[1].powerW >= -2400, `Cycle ${index} respects charge limits`);
+        });
+
+        assertEqual(results[0].filter(item => item.powerW !== 0).length, 1, 'Low discharge load is concentrated');
+        assertEqual(results[2].filter(item => item.powerW > 0).length, 2, 'High discharge load is spread');
+        assertEqual(results[6].filter(item => item.powerW < 0).length, 1, 'Low charge load is concentrated');
+        assertEqual(results[8].filter(item => item.powerW < 0).length, 2, 'High charge load is spread');
+        assertEqual(results[5].every(item => item.powerW === 0), true, 'Standby clears both directions');
+    });
+
+    await runTest('[4.10] Waterfill excludes devices at SOC limits or disabled directions', async () => {
+        const distributor = new WaterfillDistributor();
+        const devices = [
+            {
+                id: 'full', name: 'Full', soc: 100, minSoc: 10, maxSoc: 100,
+                maxChargePowerW: 1000, maxDischargePowerW: 1000,
+                chargeAllowed: true, dischargeAllowed: false
+            },
+            {
+                id: 'disabled', name: 'Disabled', soc: 60, minSoc: 10, maxSoc: 100,
+                maxChargePowerW: 1000, maxDischargePowerW: 1000,
+                chargeAllowed: false, dischargeAllowed: false
+            },
+            {
+                id: 'usable', name: 'Usable', soc: 60, minSoc: 10, maxSoc: 100,
+                maxChargePowerW: 1000, maxDischargePowerW: 1000,
+                chargeAllowed: true, dischargeAllowed: true
+            }
+        ];
+        const config = { waterfillConcentrateHoldMinutes: 0 };
+
+        const charge = distributor.distribute(-800, devices, config);
+        assertEqual(charge.find(item => item.deviceId === 'full').powerW, 0, 'Full device is excluded from charge');
+        assertEqual(charge.find(item => item.deviceId === 'disabled').powerW, 0, 'Charge-disabled device is excluded');
+        assertEqual(charge.find(item => item.deviceId === 'usable').powerW, -800, 'Usable device receives charge');
+
+        const discharge = distributor.distribute(800, devices, config);
+        assertEqual(discharge.find(item => item.deviceId === 'disabled').powerW, 0, 'Discharge-disabled device is excluded');
+        assertEqual(discharge.find(item => item.deviceId === 'usable').powerW, 800, 'Usable device receives discharge');
+    });
+
+    await runTest('[4.11] Waterfill aggregate limits reach regulator and manager', async () => {
+        const MultiDeviceController = require('./lib/MultiDeviceController');
+        const PowerRegulator = require('./lib/PowerRegulator');
+        const controller = new MultiDeviceController(mockAdapter, {
+            multiDeviceMgr: {
+                devices: [
+                    { id: 'device1', maxChargePowerW: 900, maxDischargePowerW: 700 },
+                    { id: 'device2', maxChargePowerW: 2100, maxDischargePowerW: 1500 }
+                ]
+            }
+        });
+        const limits = controller.getWaterfillSystemLimits([
+            { id: 'device1' },
+            { id: 'device2' }
+        ], {});
+        assertEqual(limits.maxChargePowerW, 3000, 'Controller sums per-device charge limits');
+        assertEqual(limits.maxDischargePowerW, 2200, 'Controller sums per-device discharge limits');
+
+        const manager = new MultiDeviceManager(mockAdapter, 'test.0', [
+            { productKey: 'device1', deviceKey: 'pk1', enabled: true, maxChargePowerW: 900, maxDischargePowerW: 700 },
+            { productKey: 'device2', deviceKey: 'pk2', enabled: true, maxChargePowerW: 2100, maxDischargePowerW: 1500 }
+        ]);
+        const eligibleDevices = manager.devices.map(device => ({ ...device, available: true }));
+        assertEqual(
+            manager.limitPowerToEligibleDevices(-4000, eligibleDevices, { multiDeviceDistributionStrategy: 'waterfill' }),
+            -3000,
+            'Manager clamps charge to summed device limits'
+        );
+        assertEqual(
+            manager.limitPowerToEligibleDevices(4000, eligibleDevices, { multiDeviceDistributionStrategy: 'waterfill' }),
+            2200,
+            'Manager clamps discharge to summed device limits'
+        );
+
+        const regulatorController = new MultiDeviceController(mockAdapter, {
+            multiDeviceMgr: controller.multiDeviceMgr,
+            relayProtection: {
+                applyProtection: params => ({
+                    powerW: params.newBatteryPowerW,
+                    feedInCounter: 0,
+                    dischargeCounter: 0,
+                    deadbandCounter: 0
+                })
+            },
+            powerRegulator: new PowerRegulator(mockAdapter)
+        });
+        const regulatedPower = await regulatorController.calculateTargetPower(
+            {
+                multiDeviceDistributionStrategy: 'waterfill',
+                maxChargePowerW: 1600,
+                maxDischargePowerW: 1600,
+                operatingDeadbandW: 10,
+                hysteresisW: 1,
+                rampChargeWPerCycle: 0,
+                rampDischargeWPerCycle: 0
+            },
+            4000,
+            0,
+            [{ id: 'device1', powerW: 0 }, { id: 'device2', powerW: 0 }],
+            { totalPowerW: 0, avgSoc: 50, availableDevicesCount: 2 }
+        );
+        assertEqual(regulatedPower, 2200, 'PowerRegulator receives summed Waterfill discharge limit');
+    });
+
     // Summary
     console.log('\n' + '='.repeat(70));
     if (testsFailed === 0) {
