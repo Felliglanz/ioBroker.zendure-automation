@@ -865,6 +865,46 @@ async function testModules() {
         assertEqual(regulatedPower, 2200, 'PowerRegulator receives summed Waterfill discharge limit');
     });
 
+    await runTest('[4.12] Waterfill holds single-device mode during handover', async () => {
+        const distributor = new WaterfillDistributor();
+        const devices = [
+            {
+                id: 'device1', name: 'Device 1', soc: 80, minSoc: 10, maxSoc: 100,
+                maxChargePowerW: 1600, maxDischargePowerW: 800,
+                chargeAllowed: true, dischargeAllowed: true
+            },
+            {
+                id: 'device2', name: 'Device 2', soc: 40, minSoc: 10, maxSoc: 100,
+                maxChargePowerW: 1600, maxDischargePowerW: 800,
+                chargeAllowed: true, dischargeAllowed: true
+            }
+        ];
+        const config = {
+            updateIntervalSec: 5,
+            waterfillConcentrateHoldMinutes: 0,
+            waterfillDischargeConcentrateBelowW: 600,
+            waterfillDischargeSpreadAboveW: 1200,
+            waterfillSocMargin: 10
+        };
+
+        distributor.distribute(400, devices, config);
+        devices[0].soc = 40;
+        devices[1].soc = 80;
+
+        const handover = distributor.distribute(400, devices, config);
+        assertEqual(handover.filter(item => item.powerW > 0).length, 1, 'Handover remains single-device');
+        assertEqual(handover.find(item => item.powerW > 0).deviceId, 'device2', 'Handover selects new sticky device');
+
+        for (let cycle = 0; cycle < 4; cycle++) {
+            const held = distributor.distribute(1000, devices, config);
+            assertEqual(held.filter(item => item.powerW > 0).length, 1, `Handover cycle ${cycle + 1} stays single-device`);
+            assertEqual(held.find(item => item.deviceId === 'device2').powerW, 800, `Handover cycle ${cycle + 1} caps new device`);
+        }
+
+        const afterHold = distributor.distribute(1000, devices, config);
+        assertEqual(afterHold.filter(item => item.powerW > 0).length, 2, 'Spread is allowed after handover hold');
+    });
+
     // Summary
     console.log('\n' + '='.repeat(70));
     if (testsFailed === 0) {
