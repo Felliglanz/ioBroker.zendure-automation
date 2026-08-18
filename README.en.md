@@ -50,7 +50,7 @@ Select the optional distribution strategy in the Multi-Device settings. Each ena
 
 Waterfill first distributes the requested power according to each device's available SOC range. When a device reaches its configured power or SOC limit, the remaining power is redistributed to other eligible devices. At low power demand, the strategy can concentrate power on one device after a configurable hold time. The preferred device is changed only when another device has a sufficient SOC advantage.
 
-Equal Split remains the default strategy. In Waterfill mode, the global SOC and power limits are replaced by the values in the device table; voltage, emergency, and recovery protection remain active.
+Equal Split remains the default strategy. In Waterfill mode, the global SOC protection limits remain active. Power limits and charge/discharge permissions are configured per device in the table; voltage, emergency, and recovery protection remain active.
 
 > **⚠️ Note:** Waterfill is an additional Multi-Device strategy and should initially be checked with the configured device limits and a small test setup. PV headroom and automatic bypass control are not part of this version yet.
 
@@ -69,7 +69,7 @@ Device 2 reaches max SOC (95%):
 
 **Equal Split:** Power and SOC settings apply globally to all devices.
 
-**Waterfill:** The per-device values from the device table apply. Global SOC and power fields are disabled in this mode.
+**Waterfill:** Global SOC limits still apply to all devices. Power limits and charge/discharge permissions are configured per device in the table.
 
 Configure values as if you had **a single device**:
 
@@ -81,7 +81,7 @@ Configure values as if you had **a single device**:
 | **maxBatterySoc** | 95% | Applies to **all devices** |
 | **operatingDeadbandW** | 10 | **Per device** (auto-scaled) |
 
-In Waterfill mode, the following additional per-device values are used: `minSoc`, `maxSoc`, `maxChargePowerW`, `maxDischargePowerW`, `chargeAllowed`, and `dischargeAllowed`.
+In Waterfill mode, the following additional per-device values are used: `maxChargePowerW`, `maxDischargePowerW`, `chargeAllowed`, and `dischargeAllowed`. `waterfillSocMargin` still controls the SOC advantage required for a sticky-device switch.
 
 The system automatically multiplies:
 - 2 Devices × 2400W = **4800W Total Discharge**

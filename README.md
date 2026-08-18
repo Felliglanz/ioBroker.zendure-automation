@@ -119,7 +119,7 @@ Die optionale Verteilstrategie wird in den Multi-Device-Einstellungen ausgewähl
 
 Waterfill verteilt die angeforderte Leistung zunächst anhand der verfügbaren SOC-Spanne. Erreicht ein Gerät sein konfiguriertes Leistungs- oder SOC-Limit, wird die verbleibende Leistung auf die anderen geeigneten Geräte verteilt. Bei kleinen Leistungsanforderungen kann die Regelung die Leistung nach einer konfigurierbaren Haltezeit auf ein einzelnes Gerät konzentrieren. Ein Wechsel des bevorzugten Geräts erfolgt erst bei einem ausreichenden SOC-Vorsprung.
 
-Equal Split bleibt die Standardstrategie. Im Waterfill-Modus werden die globalen SOC- und Leistungsgrenzen durch die Werte in der Gerätetabelle ersetzt; Spannungs-, Emergency- und Recovery-Schutz bleiben aktiv.
+Equal Split bleibt die Standardstrategie. Im Waterfill-Modus bleiben die globalen SOC-Schutzgrenzen aktiv. Die Leistungsgrenzen und Lade-/Entladefreigaben kommen zusätzlich pro Gerät aus der Tabelle; Spannungs-, Emergency- und Recovery-Schutz bleiben aktiv.
 
 > **⚠️ Hinweis:** Waterfill ist eine zusätzliche Multi-Device-Strategie und sollte zunächst mit den eigenen Gerätegrenzen und einem kleinen Testaufbau geprüft werden. PV-Headroom und eine automatische Bypass-Steuerung sind in dieser Version noch nicht Bestandteil der Strategie.
 
@@ -138,7 +138,7 @@ Device 2 erreicht max SOC (95%):
 
 **Equal Split:** Die Leistungs- und SOC-Einstellungen gelten global für alle Geräte.
 
-**Waterfill:** Die gerätespezifischen Werte aus der Device-Tabelle gelten. Die globalen SOC- und Leistungsfelder werden in diesem Modus deaktiviert.
+**Waterfill:** Die globalen SOC-Grenzen gelten weiterhin für alle Geräte. Die Leistungsgrenzen und Lade-/Entladefreigaben werden pro Gerät in der Device-Tabelle festgelegt.
 
 Konfiguriere die Werte so, als hättest du **ein einzelnes Gerät**:
 
@@ -150,7 +150,7 @@ Konfiguriere die Werte so, als hättest du **ein einzelnes Gerät**:
 | **maxBatterySoc** | 95% | Gilt für **alle Geräte** |
 | **operatingDeadbandW** | 10 | **Pro Gerät** (auto-skaliert) |
 
-Im Waterfill-Modus werden zusätzlich pro Gerät `minSoc`, `maxSoc`, `maxChargePowerW`, `maxDischargePowerW`, `chargeAllowed` und `dischargeAllowed` verwendet.
+Im Waterfill-Modus werden zusätzlich pro Gerät `maxChargePowerW`, `maxDischargePowerW`, `chargeAllowed` und `dischargeAllowed` verwendet. `waterfillSocMargin` steuert weiterhin den erforderlichen SOC-Vorsprung für einen Sticky-Device-Wechsel.
 
 Das System multipliziert automatisch:
 - 2 Devices × 2400W = **4800W Gesamt-Entladung**

@@ -699,6 +699,8 @@ async function testModules() {
             }
         ];
         const waterfillConfig = {
+            minBatterySoc: 10,
+            maxBatterySoc: 100,
             updateIntervalSec: 5,
             waterfillConcentrateHoldMinutes: 0,
             waterfillDischargeConcentrateBelowW: 600,
@@ -774,6 +776,8 @@ async function testModules() {
             }
         ];
         const config = {
+            minBatterySoc: 10,
+            maxBatterySoc: 100,
             updateIntervalSec: 5,
             waterfillConcentrateHoldMinutes: 0,
             waterfillDischargeConcentrateBelowW: 600,
@@ -821,7 +825,11 @@ async function testModules() {
                 chargeAllowed: true, dischargeAllowed: true
             }
         ];
-        const config = { waterfillConcentrateHoldMinutes: 0 };
+        const config = {
+            minBatterySoc: 10,
+            maxBatterySoc: 100,
+            waterfillConcentrateHoldMinutes: 0
+        };
 
         const charge = distributor.distribute(-800, devices, config);
         assertEqual(charge.find(item => item.deviceId === 'full').powerW, 0, 'Full device is excluded from charge');
@@ -912,6 +920,8 @@ async function testModules() {
             }
         ];
         const config = {
+            minBatterySoc: 10,
+            maxBatterySoc: 100,
             updateIntervalSec: 5,
             waterfillConcentrateHoldMinutes: 0,
             waterfillDischargeConcentrateBelowW: 600,

@@ -275,8 +275,6 @@ class ZendureAutomation extends utils.Adapter {
             if (distributionStrategy === 'waterfill') {
                 for (const device of enabledDevices) {
                     const numericValues = [
-                        ['minSoc', device.minSoc],
-                        ['maxSoc', device.maxSoc],
                         ['maxChargePowerW', device.maxChargePowerW],
                         ['maxDischargePowerW', device.maxDischargePowerW]
                     ];
@@ -284,12 +282,10 @@ class ZendureAutomation extends utils.Adapter {
                         value === null || value === undefined || !Number.isFinite(Number(value))
                     );
 
-                    if (hasInvalidValue || Number(device.minSoc) < 0 || Number(device.maxSoc) > 100 ||
-                        Number(device.minSoc) >= Number(device.maxSoc) ||
-                        Number(device.maxChargePowerW) <= 0 || Number(device.maxDischargePowerW) <= 0) {
+                    if (hasInvalidValue || Number(device.maxChargePowerW) <= 0 || Number(device.maxDischargePowerW) <= 0) {
                         this.log.error(
                             `Waterfill requires valid limits for device ${device.name || device.deviceKey}: ` +
-                            'minSoc < maxSoc, positive charge/discharge limits'
+                            'positive charge/discharge limits'
                         );
                         return false;
                     }
@@ -457,7 +453,7 @@ class ZendureAutomation extends utils.Adapter {
                     const limitW = Number(device.maxChargePowerW);
                     const allowed = device.chargeAllowed !== false && state?.available &&
                         Number.isFinite(limitW) && limitW > 0 &&
-                        Number(state.soc) < Number(device.maxSoc);
+                        Number(state.soc) < Number(config.maxBatterySoc ?? 100);
                     const powerW = allowed ? -limitW : 0;
                     this.log.debug(`Max Charge: ${device.name} ${powerW}W (Waterfill device limit)`);
                     await this.validationService.writePowerSetpoint(device.id, device.basePath, powerW);
@@ -600,7 +596,7 @@ class ZendureAutomation extends utils.Adapter {
                     const allowed = device.dischargeAllowed !== false && state?.available &&
                         !emergencyManager?.inMinSocRecovery &&
                         Number.isFinite(limitW) && limitW > 0 &&
-                        Number(state.soc) > Number(device.minSoc);
+                        Number(state.soc) > Number(config.minBatterySoc ?? 10);
                     const powerW = allowed ? limitW : 0;
                     this.log.debug(`Max Discharge: ${device.name} ${powerW}W (Waterfill device limit)`);
                     await this.validationService.writePowerSetpoint(device.id, device.basePath, powerW);
