@@ -379,15 +379,46 @@ async function testModules() {
         assertEqual(result.powerW, 0, 'Discharge blocked at min voltage');
     });
 
-    await runTest('[3.3] EmergencyManager detects low voltage emergency', async () => {
+    await runTest('[3.3] EmergencyManager detects only critical pack voltage', async () => {
         initializeMockStates();
         setMockState('test.0.device1.control.lowVoltageBlock', true);
         
         const emergencyMgr = new EmergencyManager(mockAdapter, deviceBasePath);
+        const flagsOnly = await emergencyMgr.checkEmergencyConditions(mockConfig, 15, 3.2);
+        assertEqual(flagsOnly.isEmergency, false, 'Device flags do not trigger emergency charging');
+
         const emergency = await emergencyMgr.checkEmergencyConditions(mockConfig, 15, 2.8);
         
         assertEqual(emergency.isEmergency, true, 'Emergency detected');
         assert(emergency.reason && emergency.reason.toLowerCase().includes('voltage'), 'Reason contains voltage');
+    });
+
+    await runTest('[3.7] Zendure minSoc recovery blocks discharge without emergency charge', async () => {
+        initializeMockStates();
+        setMockState('test.0.device1.minSoc', 10);
+
+        const safetyLimiter = new SafetyLimiter(mockAdapter, deviceBasePath);
+        const emergencyMgr = new EmergencyManager(mockAdapter, deviceBasePath);
+        const voltageConfig = {
+            ...mockConfig,
+            dischargeProtectionMode: 'voltage',
+            useZendureMinSoc: true,
+            zendureMinSocMargin: 1,
+            emergencyChargeVoltageV: 2.8
+        };
+
+        const result = await safetyLimiter.applySafetyLimits({
+            config: voltageConfig,
+            emergencyManager: emergencyMgr,
+            batterySoc: 11,
+            minPackVoltageV: 3.2,
+            powerW: 500
+        });
+
+        assertEqual(result.powerW, 0, 'minSoc recovery blocks discharge');
+        assertEqual(emergencyMgr.inMinSocRecovery, true, 'minSoc recovery is active');
+        const emergency = await emergencyMgr.checkEmergencyConditions(voltageConfig, 11, 3.2);
+        assertEqual(emergency.isEmergency, false, 'minSoc recovery does not trigger emergency charging');
     });
 
     await runTest('[3.4] Multi-Device handles all devices excluded', async () => {
