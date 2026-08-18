@@ -293,9 +293,11 @@ packPower = API setpoint + PV input + AC charging
 ### �🚨 Emergency & Recovery
 
 **Emergency Charging** (highest priority):
-- Activated at: `lowVoltageBlock` flag OR voltage < 3.0V
+- Activated only at critical pack voltage according to `emergencyChargeVoltageV`
 - Charges with 800W until exit SOC (20%)
 - Overrides all other automations
+
+`lowVoltageBlock` only stops discharging as additional device protection and does not trigger emergency charging.
 
 **Recovery Mode**:
 - Active from 20% to 30% SOC (configurable)

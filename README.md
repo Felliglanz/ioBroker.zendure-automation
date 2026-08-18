@@ -362,9 +362,11 @@ packPower = API-Setpoint + PV-Einspeisung + AC-Ladung
 ### 🚨 Emergency & Recovery
 
 **Emergency Charging** (höchste Priorität):
-- Aktiviert bei: `lowVoltageBlock` Flag ODER Spannung < 3.0V
+- Aktiviert ausschließlich bei kritischer Pack-Spannung gemäß `emergencyChargeVoltageV`
 - Lädt mit 800W bis Exit-SOC (20%)
 - Übersteuert alle anderen Automatisierungen
+
+`lowVoltageBlock` blockiert ausschließlich die Entladung als zusätzlicher Geräteschutz und löst kein Notladen aus.
 
 **Recovery Mode**:
 - Aktiv von 20% bis 30% SOC (konfigurierbar)

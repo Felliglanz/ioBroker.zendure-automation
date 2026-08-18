@@ -1186,8 +1186,8 @@
         "_emergencyInfo": {
           "type": "staticText",
           "text": {
-            "en": "🚨 Emergency charging is triggered by: critical pack voltage, device flags (lowVoltageBlock/fullChargeNeeded). Ignores grid target and charges with full power until recovery SOC is reached.",
-            "de": "🚨 Notladen wird aktiviert bei: kritischer Pack-Spannung, Geräte-Flags (lowVoltageBlock/fullChargeNeeded). Ignoriert Grid-Target und lädt mit voller Kraft bis Recovery-SOC erreicht ist."
+            "en": "🚨 Emergency charging is triggered only when a pack reaches the configured critical voltage. It ignores the grid target and charges with the configured emergency power until the exit SOC is reached.",
+            "de": "🚨 Notladen wird ausschließlich ausgelöst, wenn ein Pack die konfigurierte kritische Spannung erreicht. Das Grid-Target wird ignoriert und bis zum Notlade-Ende-SOC mit der konfigurierten Leistung geladen."
           },
           "sm": 12,
           "style": {
@@ -1201,34 +1201,21 @@
         "_panelEmergencyTrigger": {
           "type": "panel",
           "label": {
-            "en": "Emergency Triggers",
-            "de": "Notlade-Auslöser"
+            "en": "Additional discharge protection",
+            "de": "Zusätzlicher Entladeschutz"
           },
           "items": {
             "useLowVoltageBlock": {
               "type": "checkbox",
               "label": {
-                "en": "Respect device low voltage flag",
-                "de": "Geräte-Unterspannungs-Flag beachten"
+                "en": "Honor device low voltage flag",
+                "de": "Geräte-Unterspannungs-Flag als Entladeschutz beachten"
               },
               "sm": 6,
               "default": true,
               "help": {
-                "en": "When device reports 'lowVoltageBlock=true', stop discharge immediately",
-                "de": "Wenn Gerät 'lowVoltageBlock=true' meldet, Entladung sofort stoppen"
-              }
-            },
-            "useFullChargeNeeded": {
-              "type": "checkbox",
-              "label": {
-                "en": "Respect device full charge request",
-                "de": "Geräte-Vollladungs-Anfrage beachten"
-              },
-              "sm": 6,
-              "default": true,
-              "help": {
-                "en": "When device reports 'fullChargeNeeded=true', force full charge (calibration)",
-                "de": "Wenn Gerät 'fullChargeNeeded=true' meldet, Vollladung erzwingen (Kalibrierung)"
+                "en": "When the device reports 'lowVoltageBlock=true', stop discharging immediately. This does not trigger emergency charging.",
+                "de": "Wenn das Gerät 'lowVoltageBlock=true' meldet, Entladung sofort stoppen. Dies löst kein Notladen aus."
               }
             },
             "emergencyChargeVoltageV": {

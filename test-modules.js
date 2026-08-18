@@ -382,6 +382,7 @@ async function testModules() {
     await runTest('[3.3] EmergencyManager detects only critical pack voltage', async () => {
         initializeMockStates();
         setMockState('test.0.device1.control.lowVoltageBlock', true);
+        setMockState('test.0.device1.control.fullChargeNeeded', true);
         
         const emergencyMgr = new EmergencyManager(mockAdapter, deviceBasePath);
         const flagsOnly = await emergencyMgr.checkEmergencyConditions(mockConfig, 15, 3.2);

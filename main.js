@@ -238,7 +238,6 @@ class ZendureAutomation extends utils.Adapter {
 
             // Subscribe to device protection flags
             await this.subscribeForeignStatesAsync(`${this._deviceBasePath}.control.lowVoltageBlock`);
-            await this.subscribeForeignStatesAsync(`${this._deviceBasePath}.control.fullChargeNeeded`);
         }
 
         // Start automation loop
