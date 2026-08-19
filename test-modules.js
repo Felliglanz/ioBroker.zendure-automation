@@ -947,6 +947,46 @@ async function testModules() {
         assertEqual(afterHold.filter(item => item.powerW > 0).length, 2, 'Spread is allowed after handover hold');
     });
 
+    await runTest('[4.13] Waterfill voltage mode does not filter at global SOC floor', async () => {
+        const distributor = new WaterfillDistributor();
+        const devices = [
+            {
+                id: 'device1', name: 'Device 1', soc: 10, maxChargePowerW: 1600,
+                maxDischargePowerW: 800, chargeAllowed: true, dischargeAllowed: true
+            },
+            {
+                id: 'device2', name: 'Device 2', soc: 10, maxChargePowerW: 1600,
+                maxDischargePowerW: 800, chargeAllowed: true, dischargeAllowed: true
+            }
+        ];
+        const config = {
+            minBatterySoc: 10,
+            maxBatterySoc: 100,
+            dischargeProtectionMode: 'voltage',
+            waterfillDischargeConcentrateBelowW: 600,
+            waterfillDischargeSpreadAboveW: 1200,
+            waterfillConcentrateHoldMinutes: 0,
+            waterfillSocMargin: 10
+        };
+
+        const voltageDistribution = distributor.distribute(400, devices, config);
+        assertEqual(
+            voltageDistribution.reduce((sum, item) => sum + item.powerW, 0),
+            400,
+            'Voltage mode can distribute while SOC is at global floor'
+        );
+
+        const socDistribution = distributor.distribute(400, devices, {
+            ...config,
+            dischargeProtectionMode: 'soc'
+        });
+        assertEqual(
+            socDistribution.every(item => item.powerW === 0),
+            true,
+            'SOC mode still blocks at global SOC floor'
+        );
+    });
+
     // Summary
     console.log('\n' + '='.repeat(70));
     if (testsFailed === 0) {
