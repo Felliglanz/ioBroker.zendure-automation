@@ -105,21 +105,24 @@ Multi-Device creates additional states:
 **Per Device (device1, device2, ...):**
 - `status.devices.device1.soc` – Device SOC
 - `status.devices.device1.powerW` – Current power
-- `status.devices.device1.emergency` – Emergency status
+- `status.devices.device1.emergencyRecoveryActive` – Emergency charging due to critical voltage active
+- `status.devices.device1.voltageRecoveryActive` – Voltage recovery active (discharge blocked)
+- `status.devices.device1.socRecoveryActive` – SOC recovery active (discharge blocked)
+- `status.devices.device1.minSocRecoveryActive` – Zendure hardware minSoc recovery active
 - `status.devices.device1.excluded` – Excluded from distribution?
 
 ### Emergency Handling
 
 **Per-Device Emergency:**
-- Each device is monitored individually (SOC, voltage, flags)
-- **If ONE device has emergency** → ALL eligible devices charge
-- Emergency charge power is distributed across active devices
+- Each device is monitored individually (SOC, voltage, flags) and decided independently
+- Only the device(s) that actually meet the emergency criteria are charged with `emergencyChargePowerW` (capped to that device's own `maxChargePowerW`)
+- Other devices are unaffected and keep running under normal I-regulator control
 
 **Example:**
 ```
 Device 1: Pack voltage 2.95V → EMERGENCY!
-System: Charges both devices with 800W each (if active)
-Device 2 reaches max SOC → Excluded, Device 1 continues charging alone
+System: Charges only Device 1 (up to 800W, capped to its maxChargePowerW)
+Device 2 stays in normal operation, still following the grid target
 ```
 
 ### Limits & Exclusion
@@ -127,6 +130,8 @@ Device 2 reaches max SOC → Excluded, Device 1 continues charging alone
 A device is automatically excluded from distribution when:
 - ✅ **Emergency Recovery active** (may only charge)
 - ✅ **Voltage Recovery active** (may only charge)
+- ✅ **SOC Recovery active** (may only charge)
+- ✅ **MinSoc Recovery active** (Zendure hardware protection, may only charge)
 - ✅ **Max SOC reached** (no more charging)
 - ✅ **Min SOC reached** (no more discharging)
 

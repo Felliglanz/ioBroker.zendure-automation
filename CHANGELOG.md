@@ -2,6 +2,28 @@
 
 All notable changes to this project are documented in this file.
 
+## v1.0.1 (2026-08-19)
+
+### English
+- Multi-device recovery states (emergency/voltage/SOC/minSoc) are now tracked per device under `status.devices.<id>.*RecoveryActive` instead of sharing one global state, fixing corruption and incorrect restoration on adapter restart with multiple devices.
+- SOC recovery is now evaluated every multi-device cycle (previously only emergency and voltage recovery were checked, so a device could get stuck excluded from discharge indefinitely in the default SOC protection mode).
+- Max Charge/Discharge override modes now check each device individually; one device being ineligible (limits, recovery, disabled) no longer blocks the override for the others.
+- `chargeAllowed`/`dischargeAllowed` per-device flags are now respected in equal-split mode too, not just Waterfill.
+- Emergency charge power is now capped to each device's own configured `maxChargePowerW`, so a large global `emergencyChargePowerW` can no longer exceed a smaller device's limit.
+- Waterfill's sticky single-device handover now blends power gradually between the outgoing and incoming device over the handover-hold window instead of jumping instantly between 0W and full power.
+- Waterfill's `excluded` status flag now correctly reflects devices that are not eligible for distribution (previously always `false`).
+- Corrected documentation: multi-device state names and the description of per-device emergency handling.
+
+### Deutsch
+- Multi-Device-Recovery-States (Emergency/Voltage/SOC/MinSoc) werden jetzt pro Gerät unter `status.devices.<id>.*RecoveryActive` geführt statt sich einen globalen State zu teilen – behebt Datenmüll und fehlerhafte Wiederherstellung nach Adapter-Neustart bei mehreren Geräten.
+- SOC-Recovery wird jetzt in jedem Multi-Device-Zyklus geprüft (zuvor wurden nur Emergency- und Voltage-Recovery geprüft, wodurch ein Gerät im Standard-SOC-Schutzmodus dauerhaft von der Entladung ausgeschlossen bleiben konnte).
+- Max Charge/Discharge-Override prüft jetzt jedes Gerät einzeln; ein einzelnes nicht-eligible Gerät (Limits, Recovery, deaktiviert) blockiert den Override nicht mehr für alle anderen.
+- Die Pro-Gerät-Flags `chargeAllowed`/`dischargeAllowed` werden jetzt auch im Equal-Split-Modus beachtet, nicht mehr nur bei Waterfill.
+- Die Notladeleistung wird jetzt auf das jeweils konfigurierte `maxChargePowerW` des Geräts gedeckelt, sodass ein großer globaler `emergencyChargePowerW`-Wert das Limit eines kleineren Geräts nicht mehr überschreiten kann.
+- Der Waterfill-Gerätewechsel im Sticky-Single-Device-Modus blendet die Leistung jetzt über das Handover-Hold-Fenster graduell zwischen altem und neuem Gerät über, statt hart zwischen 0W und voller Leistung zu springen.
+- Das `excluded`-Status-Flag bei Waterfill zeigt jetzt korrekt an, wenn ein Gerät nicht an der Verteilung teilnehmen kann (zuvor immer `false`).
+- Dokumentation korrigiert: Multi-Device-State-Namen und Beschreibung des Pro-Gerät-Emergency-Verhaltens.
+
 ## v1.0.0 (2026-08-11)
 
 ### English

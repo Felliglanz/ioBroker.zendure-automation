@@ -2,8 +2,12 @@
   "common": {
     "name": "zendure-automation",
     "title": "Zendure Automation",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "news": {
+      "1.0.1": {
+        "en": "Multi-Device fixes: recovery states (emergency/voltage/SOC/minSoc) are now tracked per device instead of sharing one global state; SOC recovery is now evaluated in the multi-device cycle; Max Charge/Discharge overrides now check each device individually instead of blocking all on one; chargeAllowed/dischargeAllowed are now respected in equal-split mode too; emergency charge power is capped to each device's own limit; Waterfill sticky-device handover now blends power gradually instead of jumping instantly; Waterfill's excluded flag now reflects ineligible devices correctly. Documentation corrected accordingly.",
+        "de": "Multi-Device-Fixes: Recovery-States (Emergency/Voltage/SOC/MinSoc) werden jetzt pro Gerät statt in einem gemeinsamen globalen State geführt; SOC-Recovery wird im Multi-Device-Zyklus jetzt berücksichtigt; Max Charge/Discharge-Override prüft jetzt jedes Gerät einzeln statt alle wegen eines einzelnen Geräts zu blockieren; chargeAllowed/dischargeAllowed werden jetzt auch im Equal-Split-Modus beachtet; Notladeleistung wird auf das jeweilige Gerätelimit gedeckelt; Waterfill-Gerätewechsel (Sticky-Modus) blendet die Leistung jetzt graduell über statt hart zu springen; das excluded-Flag bei Waterfill zeigt nicht-eligible Geräte jetzt korrekt an. Dokumentation entsprechend korrigiert."
+      },
       "1.0.0": {
         "en": "Major release: Improved multi-device power distribution and safety after device exclusion. Added NaN/Infinity protection for grid power, improved value validation, and expanded automated test coverage.",
         "de": "Major Release: Verbesserte Multi-Device-Leistungsverteilung und Sicherheit nach Geräte-Ausschluss. NaN-/Infinity-Schutz für Netzleistung, verbesserte Wertevalidierung und erweiterte automatisierte Tests hinzugefügt."

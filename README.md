@@ -174,21 +174,24 @@ Multi-Device erstellt zusätzliche States:
 **Pro Gerät (device1, device2, ...):**
 - `status.devices.device1.soc` – SOC des Geräts
 - `status.devices.device1.powerW` – Aktuelle Leistung
-- `status.devices.device1.emergency` – Emergency-Status
+- `status.devices.device1.emergencyRecoveryActive` – Notladung wegen kritischer Spannung aktiv
+- `status.devices.device1.voltageRecoveryActive` – Spannungs-Recovery aktiv (Entladung blockiert)
+- `status.devices.device1.socRecoveryActive` – SOC-Recovery aktiv (Entladung blockiert)
+- `status.devices.device1.minSocRecoveryActive` – Zendure Hardware-MinSoc-Recovery aktiv
 - `status.devices.device1.excluded` – Aus Distribution ausgeschlossen?
 
 ### Emergency Handling
 
 **Pro-Device Emergency:**
-- Jedes Gerät wird individuell überwacht (SOC, Voltage, Flags)
-- **Wenn EIN Gerät Emergency hat** → ALLE eligible Geräte laden
-- Emergency-Ladeleistung wird auf aktive Geräte verteilt
+- Jedes Gerät wird individuell überwacht (SOC, Voltage, Flags) und unabhängig entschieden
+- Nur das/die Gerät(e), die selbst die Notlade-Kriterien erreichen, werden mit `emergencyChargePowerW` (gedeckelt auf das jeweilige `maxChargePowerW`) geladen
+- Andere Geräte laufen unbeeinflusst im normalen I-Regler-Betrieb weiter
 
 **Beispiel:**
 ```
 Device 1: Pack-Spannung 2.95V → EMERGENCY!
-System: Lädt beide Geräte mit je 800W (wenn aktiv)
-Device 2 erreicht max SOC → Wird excluded, Device 1 lädt allein weiter
+System: Lädt nur Device 1 (bis zu 800W, gedeckelt auf dessen maxChargePowerW)
+Device 2 bleibt im Normalbetrieb und folgt weiter dem Netz-Zielwert
 ```
 
 ### Limits & Exclusion
@@ -196,6 +199,8 @@ Device 2 erreicht max SOC → Wird excluded, Device 1 lädt allein weiter
 Ein Gerät wird automatisch aus der Distribution ausgeschlossen wenn:
 - ✅ **Emergency Recovery aktiv** (darf nur laden)
 - ✅ **Voltage Recovery aktiv** (darf nur laden)
+- ✅ **SOC Recovery aktiv** (darf nur laden)
+- ✅ **MinSoc Recovery aktiv** (Zendure Hardware-Schutz, darf nur laden)
 - ✅ **Max SOC erreicht** (kein Laden mehr)
 - ✅ **Min SOC erreicht** (kein Entladen mehr)
 
