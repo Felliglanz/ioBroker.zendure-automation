@@ -422,6 +422,41 @@ async function testModules() {
         assertEqual(emergency.isEmergency, false, 'minSoc recovery does not trigger emergency charging');
     });
 
+    await runTest('[3.8] Voltage recovery does not trigger emergency charging', async () => {
+        initializeMockStates();
+        const MultiDeviceController = require('./lib/MultiDeviceController');
+
+        const controller = new MultiDeviceController(mockAdapter, {
+            multiDeviceMgr: {
+                devices: [{ id: 'device1', basePath: deviceBasePath }]
+            },
+            emergencyManagers: new Map(),
+            safetyLimiters: new Map(),
+            relayProtection: new RelayProtection(mockAdapter),
+            powerRegulator: new PowerRegulator(mockAdapter),
+            validationService: new ValidationService(mockAdapter)
+        });
+        const emergencyManager = new EmergencyManager(mockAdapter, deviceBasePath);
+        emergencyManager.inVoltageRecovery = true;
+        controller.emergencyManagers.set('device1', emergencyManager);
+
+        const device = {
+            id: 'device1', name: 'Device 1', basePath: deviceBasePath,
+            available: true, soc: 9, minPackVoltageV: 3.15
+        };
+        const result = await controller.checkEmergencies({
+            dischargeProtectionMode: 'voltage',
+            minBatteryVoltageV: 3.15,
+            useZendureMinSoc: false,
+            emergencyChargePowerW: 300,
+            emergencyChargeVoltageV: 2.8
+        }, [device]);
+
+        assertEqual(result.emergencyDevices.length, 0, 'Voltage recovery is not an emergency device');
+        assertEqual(result.normalDevices.length, 1, 'Voltage recovery remains in normal device flow');
+        assertEqual(emergencyManager.inVoltageRecovery, true, 'Voltage recovery remains active');
+    });
+
     await runTest('[3.4] Multi-Device handles all devices excluded', async () => {
         initializeMockStates();
         
