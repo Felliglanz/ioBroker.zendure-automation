@@ -13,6 +13,11 @@ All notable changes to this project are documented in this file.
 - Waterfill's sticky single-device handover now blends power gradually between the outgoing and incoming device over the handover-hold window instead of jumping instantly between 0W and full power.
 - Waterfill's `excluded` status flag now correctly reflects devices that are not eligible for distribution (previously always `false`).
 - Corrected documentation: multi-device state names and the description of per-device emergency handling.
+- Fixed a regression risk in the new handover blend: a third device becoming momentarily "best" during an in-progress blend could hijack it and drop the original outgoing device straight to 0W. The (outgoing, incoming) pair is now frozen for the full handover-hold window.
+- A power request above the configured spread threshold now always spreads across every eligible device immediately, even mid-handover, instead of staying capped to just the two blending devices.
+- Waterfill's aggregate charge/discharge system limits (used for anti-windup and the power regulator) now correctly exclude devices with `chargeAllowed`/`dischargeAllowed` set to false, matching the actual per-device distribution limits.
+- Removed an orphaned `useFullChargeNeeded` config default that no longer had any corresponding UI option or code path.
+- Old per-device state objects (`status.devices.<id>.emergency`/`.voltageRecovery`) are now cleaned up on upgrade instead of being left behind, frozen, in the object tree.
 
 ### Deutsch
 - Multi-Device-Recovery-States (Emergency/Voltage/SOC/MinSoc) werden jetzt pro Gerät unter `status.devices.<id>.*RecoveryActive` geführt statt sich einen globalen State zu teilen – behebt Datenmüll und fehlerhafte Wiederherstellung nach Adapter-Neustart bei mehreren Geräten.
@@ -23,6 +28,11 @@ All notable changes to this project are documented in this file.
 - Der Waterfill-Gerätewechsel im Sticky-Single-Device-Modus blendet die Leistung jetzt über das Handover-Hold-Fenster graduell zwischen altem und neuem Gerät über, statt hart zwischen 0W und voller Leistung zu springen.
 - Das `excluded`-Status-Flag bei Waterfill zeigt jetzt korrekt an, wenn ein Gerät nicht an der Verteilung teilnehmen kann (zuvor immer `false`).
 - Dokumentation korrigiert: Multi-Device-State-Namen und Beschreibung des Pro-Gerät-Emergency-Verhaltens.
+- Ein Regressions-Risiko im neuen Handover-Blend behoben: Ein drittes Gerät, das kurzzeitig zum "besten" Kandidaten wird, konnte einen laufenden Blend kapern und das ursprüngliche Gerät hart auf 0W fallen lassen. Das (abgebende, übernehmende) Gerätepaar bleibt jetzt für das gesamte Handover-Hold-Fenster fixiert.
+- Eine Leistungsanforderung oberhalb der konfigurierten Spread-Schwelle verteilt sich jetzt sofort auf alle eligible Geräte, auch mitten in einem Handover, statt auf die beiden blendenden Geräte begrenzt zu bleiben.
+- Die aggregierten Waterfill-Systemlimits (für Anti-Windup und den Leistungsregler) schließen jetzt korrekt Geräte mit chargeAllowed/dischargeAllowed=false aus, passend zu den tatsächlichen Pro-Gerät-Verteilungslimits.
+- Einen verwaisten `useFullChargeNeeded`-Konfigurationswert entfernt, der keine zugehörige UI-Option oder Code-Nutzung mehr hatte.
+- Alte Pro-Gerät-State-Objekte (`status.devices.<id>.emergency`/`.voltageRecovery`) werden beim Upgrade jetzt aufgeräumt statt eingefroren im Objektbaum liegen zu bleiben.
 
 ## v1.0.0 (2026-08-11)
 

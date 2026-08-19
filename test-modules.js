@@ -94,7 +94,6 @@ const mockConfig = {
     dischargeThresholdW: 200,
     dischargeDelayTicks: 3,
     useLowVoltageBlock: true,
-    useFullChargeNeeded: true,
     dischargeProtectionMode: 'soc',
     emergencyChargePowerW: 800,
     emergencyExitSoc: 20,
@@ -378,6 +377,51 @@ async function testModules() {
 
         await controller.updateModeStatus([], 0);
         assertEqual(getMockState('status.mode').val, 'recovery', 'SOC recovery alone is reflected as recovery mode');
+    });
+
+    await runTest('[2.6] createFullDistribution reports the actual capped emergency power, not the raw global value', async () => {
+        initializeMockStates();
+        const MultiDeviceController = require('./lib/MultiDeviceController');
+
+        const controller = new MultiDeviceController(mockAdapter, {
+            multiDeviceMgr: {
+                devices: [
+                    { id: 'device1', basePath: 'test.0.device1.pk1', maxChargePowerW: 500 },
+                    { id: 'device2', basePath: 'test.0.device2.pk2', maxChargePowerW: 1600 }
+                ]
+            }
+        });
+
+        const fullDistribution = controller.createFullDistribution(
+            { emergencyChargePowerW: 800 },
+            [{ id: 'device1', name: 'Device 1' }, { id: 'device2', name: 'Device 2' }],
+            []
+        );
+
+        assertEqual(fullDistribution.find(d => d.deviceId === 'device1').powerW, -500, 'Reported power matches the capped value actually written for the smaller device');
+        assertEqual(fullDistribution.find(d => d.deviceId === 'device2').powerW, -800, 'Larger device reports the full global emergency power');
+    });
+
+    await runTest('[2.7] Waterfill system limits exclude devices with chargeAllowed/dischargeAllowed disabled', async () => {
+        initializeMockStates();
+        const MultiDeviceController = require('./lib/MultiDeviceController');
+
+        const controller = new MultiDeviceController(mockAdapter, {
+            multiDeviceMgr: {
+                devices: [
+                    { id: 'device1', maxChargePowerW: 900, maxDischargePowerW: 700, chargeAllowed: false },
+                    { id: 'device2', maxChargePowerW: 2100, maxDischargePowerW: 1500, dischargeAllowed: false }
+                ]
+            }
+        });
+
+        const limits = controller.getWaterfillSystemLimits([
+            { id: 'device1' },
+            { id: 'device2' }
+        ]);
+
+        assertEqual(limits.maxChargePowerW, 2100, 'Charge-disabled device1 is excluded from the charge ceiling');
+        assertEqual(limits.maxDischargePowerW, 700, 'Discharge-disabled device2 is excluded from the discharge ceiling');
     });
 
     console.log('\n' + '─'.repeat(70));
@@ -934,7 +978,7 @@ async function testModules() {
         const limits = controller.getWaterfillSystemLimits([
             { id: 'device1' },
             { id: 'device2' }
-        ], {});
+        ]);
         assertEqual(limits.maxChargePowerW, 3000, 'Controller sums per-device charge limits');
         assertEqual(limits.maxDischargePowerW, 2200, 'Controller sums per-device discharge limits');
 
@@ -1129,6 +1173,68 @@ async function testModules() {
         const charge = distributor.distribute(-500, devices, config);
         assertEqual(charge.find(item => item.deviceId === 'atMaxSoc').excluded, true, 'Device at max SOC is marked excluded, not just 0W');
         assertEqual(charge.find(item => item.deviceId === 'usable').excluded, false, 'Participating device is not marked excluded');
+    });
+
+    await runTest('[4.16] A third device cannot hijack an in-progress handover blend', async () => {
+        const distributor = new WaterfillDistributor();
+        const devices = [
+            { id: 'A', name: 'A', soc: 80, minSoc: 10, maxSoc: 100, maxChargePowerW: 1600, maxDischargePowerW: 800, chargeAllowed: true, dischargeAllowed: true },
+            { id: 'B', name: 'B', soc: 40, minSoc: 10, maxSoc: 100, maxChargePowerW: 1600, maxDischargePowerW: 800, chargeAllowed: true, dischargeAllowed: true },
+            { id: 'C', name: 'C', soc: 40, minSoc: 10, maxSoc: 100, maxChargePowerW: 1600, maxDischargePowerW: 800, chargeAllowed: true, dischargeAllowed: true }
+        ];
+        const config = {
+            minBatterySoc: 10, maxBatterySoc: 100, updateIntervalSec: 5,
+            waterfillConcentrateHoldMinutes: 0,
+            waterfillDischargeConcentrateBelowW: 600,
+            waterfillDischargeSpreadAboveW: 1200,
+            waterfillSocMargin: 10
+        };
+
+        distributor.distribute(400, devices, config); // A becomes sticky active
+        devices[0].soc = 40;
+        devices[1].soc = 80;
+        distributor.distribute(400, devices, config); // handover A -> B triggers, blend starts
+
+        // Mid-blend, device C suddenly becomes the strongest candidate by far.
+        // The old (buggy) behavior re-evaluated the sticky device every cycle,
+        // so this would hijack the handover to C and drop A from its partial
+        // allocation straight to 0W instead of continuing the A->B ramp-down.
+        devices[2].soc = 95;
+        const midBlend = distributor.distribute(1000, devices, config);
+        assertEqual(midBlend.find(item => item.deviceId === 'A').powerW, 750, 'Outgoing device A continues its scheduled ramp-down, unaffected by C');
+        assertEqual(midBlend.find(item => item.deviceId === 'B').powerW, 250, 'Incoming device B continues its scheduled ramp-in, unaffected by C');
+        assertEqual(midBlend.find(item => item.deviceId === 'C').powerW, 0, 'C is ignored until the in-progress A->B handover hold completes');
+    });
+
+    await runTest('[4.17] A load spike above the spread threshold breaks out of an active handover hold', async () => {
+        const distributor = new WaterfillDistributor();
+        const devices = [
+            { id: 'A', name: 'A', soc: 80, minSoc: 10, maxSoc: 100, maxChargePowerW: 1600, maxDischargePowerW: 800, chargeAllowed: true, dischargeAllowed: true },
+            { id: 'B', name: 'B', soc: 40, minSoc: 10, maxSoc: 100, maxChargePowerW: 1600, maxDischargePowerW: 800, chargeAllowed: true, dischargeAllowed: true },
+            { id: 'C', name: 'C', soc: 40, minSoc: 10, maxSoc: 100, maxChargePowerW: 1600, maxDischargePowerW: 800, chargeAllowed: true, dischargeAllowed: true }
+        ];
+        const config = {
+            minBatterySoc: 10, maxBatterySoc: 100, updateIntervalSec: 5,
+            waterfillConcentrateHoldMinutes: 0,
+            waterfillDischargeConcentrateBelowW: 600,
+            waterfillDischargeSpreadAboveW: 1200,
+            waterfillSocMargin: 10
+        };
+
+        distributor.distribute(400, devices, config); // A becomes sticky active
+        devices[0].soc = 40;
+        devices[1].soc = 80;
+        distributor.distribute(400, devices, config); // handover A -> B triggers, blend starts
+
+        // A sudden load spike above the spread threshold arrives mid-hold. The
+        // old (buggy) behavior stayed forced into single/blend mode for the
+        // rest of the hold window, capping total power to just A+B's limits
+        // (1600W) and leaving the idle, eligible device C untouched even
+        // though the requested 1500W needs it.
+        const spike = distributor.distribute(1500, devices, config);
+        const total = spike.reduce((sum, item) => sum + item.powerW, 0);
+        assertEqual(total, 1500, 'Full requested power is met by spreading across all eligible devices');
+        assert(spike.find(item => item.deviceId === 'C').powerW > 0, 'Idle device C is pulled in during the spike instead of being ignored for the rest of the hold');
     });
 
     // Summary

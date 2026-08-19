@@ -424,22 +424,22 @@ class ZendureAutomation extends utils.Adapter {
         if (this._isMultiDevice) {
             const waterfillActive = config.multiDeviceDistributionStrategy === 'waterfill';
             const aggregated = await this.multiDeviceMgr.aggregateDeviceStates();
-            let anyCharging = false;
 
-            for (const device of this.multiDeviceMgr.devices) {
+            const setpoints = this.multiDeviceMgr.devices.map(device => {
                 const state = aggregated.devices.find(item => item.id === device.id);
                 const limitW = waterfillActive ? Number(device.maxChargePowerW) : globalChargePowerW;
                 const allowed = device.chargeAllowed !== false && state?.available &&
                     Number.isFinite(limitW) && limitW > 0 &&
                     Number(state?.soc) < maxBatterySoc;
-                const powerW = allowed ? -limitW : 0;
-                if (allowed) {
-                    anyCharging = true;
-                }
-                this.log.debug(`Max Charge: ${device.name} ${powerW}W`);
-                await this.validationService.writePowerSetpoint(device.id, device.basePath, powerW);
-            }
+                return { device, powerW: allowed ? -limitW : 0, allowed };
+            });
 
+            await Promise.all(setpoints.map(({ device, powerW }) => {
+                this.log.debug(`Max Charge: ${device.name} ${powerW}W`);
+                return this.validationService.writePowerSetpoint(device.id, device.basePath, powerW);
+            }));
+
+            const anyCharging = setpoints.some(({ allowed }) => allowed);
             if (!anyCharging) {
                 this.log.info(`Max SOC ${maxBatterySoc}% reached on all devices, disabling Max Charge mode`);
                 await this.setStateAsync('control.maxCharge', false, true);
@@ -482,9 +482,8 @@ class ZendureAutomation extends utils.Adapter {
         if (this._isMultiDevice) {
             const waterfillActive = config.multiDeviceDistributionStrategy === 'waterfill';
             const aggregated = await this.multiDeviceMgr.aggregateDeviceStates();
-            let anyDischarging = false;
 
-            for (const device of this.multiDeviceMgr.devices) {
+            const setpoints = this.multiDeviceMgr.devices.map(device => {
                 const state = aggregated.devices.find(item => item.id === device.id);
                 const emergencyManager = this.emergencyManagers.get(device.id);
                 const inRecovery = Boolean(emergencyManager) && (
@@ -499,14 +498,15 @@ class ZendureAutomation extends utils.Adapter {
                 const limitW = waterfillActive ? Number(device.maxDischargePowerW) : globalDischargePowerW;
                 const allowed = device.dischargeAllowed !== false && state?.available && !inRecovery &&
                     Number.isFinite(limitW) && limitW > 0 && socOk && voltageOk;
-                const powerW = allowed ? limitW : 0;
-                if (allowed) {
-                    anyDischarging = true;
-                }
-                this.log.debug(`Max Discharge: ${device.name} ${powerW}W`);
-                await this.validationService.writePowerSetpoint(device.id, device.basePath, powerW);
-            }
+                return { device, powerW: allowed ? limitW : 0, allowed };
+            });
 
+            await Promise.all(setpoints.map(({ device, powerW }) => {
+                this.log.debug(`Max Discharge: ${device.name} ${powerW}W`);
+                return this.validationService.writePowerSetpoint(device.id, device.basePath, powerW);
+            }));
+
+            const anyDischarging = setpoints.some(({ allowed }) => allowed);
             if (!anyDischarging) {
                 this.log.info('No device eligible for Max Discharge (limits/recovery), disabling Max Discharge mode');
                 await this.setStateAsync('control.maxDischarge', false, true);
@@ -701,6 +701,17 @@ class ZendureAutomation extends utils.Adapter {
                 },
                 native: {}
             });
+
+            // Clean up the old, pre-1.0.1 state names these replace (renamed to
+            // emergencyRecoveryActive/voltageRecoveryActive above) so upgraded
+            // installs don't keep dead, frozen-value objects around forever.
+            for (const staleId of ['emergency', 'voltageRecovery']) {
+                try {
+                    await this.delObjectAsync(`status.devices.${device.id}.${staleId}`);
+                } catch (err) {
+                    // Already gone (fresh install) - nothing to clean up.
+                }
+            }
 
             await this.setObjectNotExistsAsync(`status.devices.${device.id}.excluded`, {
                 type: 'state',
