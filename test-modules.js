@@ -1265,10 +1265,106 @@ async function testModules() {
                 `Cycle ${cycle + 1}/${holdCycles - 1}: still spreading while the hold window accumulates`);
         }
 
+        // Hold window complete: this cycle starts the (separate, shorter)
+        // mode-transition blend rather than jumping straight to single - see
+        // [4.19] for that transition in detail. It settles into pure single
+        // MODE_TRANSITION_HOLD_CYCLES (2) cycles later.
+        distributor.distribute(400, devices, config);
+        distributor.distribute(400, devices, config);
         const settled = distributor.distribute(400, devices, config);
         assertEqual(settled.filter(item => item.powerW > 0).length, 1,
-            `Hold window complete: switches to single-device mode on cycle ${holdCycles}`);
+            `Hold window and mode-transition blend complete: pure single-device mode by cycle ${holdCycles + 2}`);
         assertEqual(settled.find(item => item.powerW > 0).deviceId, 'device1', 'Highest SOC device becomes sticky');
+    });
+
+    await runTest('[4.19] Waterfill blends power gradually when concentrating out of spread mode', async () => {
+        const distributor = new WaterfillDistributor();
+        const devices = [
+            { id: 'device1', name: 'Device 1', soc: 80, minSoc: 10, maxSoc: 100, maxChargePowerW: 1600, maxDischargePowerW: 800, chargeAllowed: true, dischargeAllowed: true },
+            { id: 'device2', name: 'Device 2', soc: 40, minSoc: 10, maxSoc: 100, maxChargePowerW: 1600, maxDischargePowerW: 1600, chargeAllowed: true, dischargeAllowed: true }
+        ];
+        const config = {
+            minBatterySoc: 10, maxBatterySoc: 100, updateIntervalSec: 5,
+            // 10s / 5s-interval = exactly 2 hold cycles: the first call stays in
+            // spread (a genuine prior cycle to blend away from), the second
+            // crosses the threshold and starts concentrating - unlike [4.18]'s
+            // 0-minute config, which would flip to single on the very first call
+            // and never produce a real spread cycle beforehand.
+            waterfillConcentrateHoldMinutes: 10 / 60,
+            waterfillDischargeConcentrateBelowW: 600,
+            waterfillDischargeSpreadAboveW: 1200,
+            waterfillSocMargin: 10
+        };
+
+        // First call ever: nothing real has been written yet, so there is nothing
+        // to blend away from, but the hold counter has not reached its threshold
+        // (2 cycles) yet either - goes straight to spread.
+        const spreadStep = distributor.distribute(400, devices, config);
+        assertEqual(spreadStep.find(item => item.deviceId === 'device1').powerW, 280, 'Spread step: device1 gets its SOC-weighted share');
+        assertEqual(spreadStep.find(item => item.deviceId === 'device2').powerW, 120, 'Spread step: device2 gets its SOC-weighted share');
+
+        // Second cycle at the same load crosses the hold threshold and starts
+        // concentrating. Unlike the trigger cycle of a plain sticky-device swap
+        // (which keeps the full outgoing power on one device for one cycle - see
+        // [4.12]), here the outgoing portion is redistributed across whatever was
+        // actually running in spread mode, so it lands back on device2 alone (it
+        // was spread mode's only other participant).
+        const transitionStart = distributor.distribute(400, devices, config);
+        assertEqual(transitionStart.find(item => item.deviceId === 'device1').powerW, 0, 'Mode-transition step 1: incoming device has not ramped in yet');
+        assertEqual(transitionStart.find(item => item.deviceId === 'device2').powerW, 400, 'Mode-transition step 1: full power still comes from the outgoing spread device');
+
+        const transitionMid = distributor.distribute(400, devices, config);
+        assertEqual(transitionMid.find(item => item.deviceId === 'device1').powerW, 200, 'Mode-transition step 2: power is half-way blended to the incoming device');
+        assertEqual(transitionMid.find(item => item.deviceId === 'device2').powerW, 200, 'Mode-transition step 2: power is half-way blended away from the outgoing device');
+
+        const transitionDone = distributor.distribute(400, devices, config);
+        assertEqual(transitionDone.find(item => item.deviceId === 'device1').powerW, 400, 'Mode-transition step 3: incoming device now carries the full load');
+        assertEqual(transitionDone.find(item => item.deviceId === 'device2').powerW, 0, 'Mode-transition step 3: outgoing device has fully ramped down');
+
+        const total = [transitionStart, transitionMid, transitionDone].map(
+            result => result.reduce((sum, item) => sum + item.powerW, 0)
+        );
+        assert(total.every(sum => sum === 400), 'Total power stays at the requested target throughout the blend - only its split moves');
+    });
+
+    await runTest('[4.20] Waterfill never blends a plain power-level change on an already-settled device set', async () => {
+        const distributor = new WaterfillDistributor();
+        const devices = [
+            { id: 'device1', name: 'Device 1', soc: 80, minSoc: 10, maxSoc: 100, maxChargePowerW: 1600, maxDischargePowerW: 800, chargeAllowed: true, dischargeAllowed: true },
+            { id: 'device2', name: 'Device 2', soc: 40, minSoc: 10, maxSoc: 100, maxChargePowerW: 1600, maxDischargePowerW: 1600, chargeAllowed: true, dischargeAllowed: true }
+        ];
+        const config = {
+            minBatterySoc: 10, maxBatterySoc: 100, updateIntervalSec: 5,
+            waterfillConcentrateHoldMinutes: 0,
+            waterfillDischargeConcentrateBelowW: 600,
+            waterfillDischargeSpreadAboveW: 1200,
+            waterfillSocMargin: 10
+        };
+
+        // Settle into single-device mode on device1 (cold start, no prior
+        // allocation to blend away from - immediate, per [4.7]/[4.12]).
+        distributor.distribute(400, devices, config);
+
+        // Same active device, three different power levels in a row: every one
+        // of these must be answered immediately at the new target. A blend must
+        // never be triggered just because the requested magnitude changed while
+        // the device set stayed the same.
+        for (const targetW of [300, 550, 100]) {
+            const result = distributor.distribute(targetW, devices, config);
+            assertEqual(result.find(item => item.deviceId === 'device1').powerW, targetW, `Instant response to ${targetW}W on the unchanged active device`);
+            assertEqual(result.find(item => item.deviceId === 'device2').powerW, 0, `Idle device stays untouched at ${targetW}W`);
+        }
+
+        // Force a large spike into spread mode, then vary the magnitude within
+        // spread while the same two devices stay eligible - again, no blend
+        // should ever engage, only waterfill()'s direct SOC-weighted split.
+        distributor.distribute(1500, devices, config);
+        for (const targetW of [1300, 1250, 1400]) {
+            const result = distributor.distribute(targetW, devices, config);
+            const total = result.reduce((sum, item) => sum + item.powerW, 0);
+            assertEqual(total, targetW, `Spread mode answers ${targetW}W immediately with the full target`);
+            assert(result.every(item => item.reason === 'Waterfill spread'), `No blend reason appears while spread stays spread at ${targetW}W`);
+        }
     });
 
     // Summary
