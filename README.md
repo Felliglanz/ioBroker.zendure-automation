@@ -109,8 +109,19 @@ https://github.com/Felliglanz/iobroker.zendure-automation
 
 **Power Distribution:**
 - **Equal Split** – Leistung wird gleichmäßig auf alle aktiven Geräte verteilt
+- **Waterfill + Sticky Device (optional)** – verteilt die Leistung anhand individueller Geräte-Limits und SoC-Gewichtung; bei kleiner Leistung kann ein geeignetes Gerät bevorzugt werden
 - **Dynamische Exclusion** – Geräte an Limits werden automatisch ausgeschlossen
 - **Pro-Device Tracking** – Jedes Gerät hat eigene States im Object-Tree
+
+### Waterfill + Sticky Device
+
+Die optionale Verteilstrategie wird in den Multi-Device-Einstellungen ausgewählt. Für jedes aktivierte Gerät können eigene minimale und maximale SOC-Grenzen, Lade- und Entladeleistungen sowie Lade-/Entladefreigaben festgelegt werden.
+
+Waterfill verteilt die angeforderte Leistung zunächst anhand der verfügbaren SOC-Spanne. Erreicht ein Gerät sein konfiguriertes Leistungs- oder SOC-Limit, wird die verbleibende Leistung auf die anderen geeigneten Geräte verteilt. Bei kleinen Leistungsanforderungen kann die Regelung die Leistung nach einer konfigurierbaren Haltezeit auf ein einzelnes Gerät konzentrieren. Ein Wechsel des bevorzugten Geräts erfolgt erst bei einem ausreichenden SOC-Vorsprung.
+
+Equal Split bleibt die Standardstrategie. Im Waterfill-Modus bleiben die globalen SOC-Schutzgrenzen aktiv. Die Leistungsgrenzen und Lade-/Entladefreigaben kommen zusätzlich pro Gerät aus der Tabelle; Spannungs-, Emergency- und Recovery-Schutz bleiben aktiv.
+
+> **⚠️ Hinweis:** Waterfill ist eine zusätzliche Multi-Device-Strategie und sollte zunächst mit den eigenen Gerätegrenzen und einem kleinen Testaufbau geprüft werden. PV-Headroom und eine automatische Bypass-Steuerung sind in dieser Version noch nicht Bestandteil der Strategie.
 
 **Beispiel mit 2x Solarflow 2400:**
 ```
@@ -125,7 +136,9 @@ Device 2 erreicht max SOC (95%):
 
 ### Konfiguration
 
-**Wichtig:** Alle Einstellungen gelten **global für ALLE Geräte**!
+**Equal Split:** Die Leistungs- und SOC-Einstellungen gelten global für alle Geräte.
+
+**Waterfill:** Die globalen SOC-Grenzen gelten weiterhin für alle Geräte. Die Leistungsgrenzen und Lade-/Entladefreigaben werden pro Gerät in der Device-Tabelle festgelegt.
 
 Konfiguriere die Werte so, als hättest du **ein einzelnes Gerät**:
 
@@ -136,6 +149,8 @@ Konfiguriere die Werte so, als hättest du **ein einzelnes Gerät**:
 | **minBatterySoc** | 10% | Gilt für **alle Geräte** |
 | **maxBatterySoc** | 95% | Gilt für **alle Geräte** |
 | **operatingDeadbandW** | 10 | **Pro Gerät** (auto-skaliert) |
+
+Im Waterfill-Modus werden zusätzlich pro Gerät `maxChargePowerW`, `maxDischargePowerW`, `chargeAllowed` und `dischargeAllowed` verwendet. `waterfillSocMargin` steuert weiterhin den erforderlichen SOC-Vorsprung für einen Sticky-Device-Wechsel.
 
 Das System multipliziert automatisch:
 - 2 Devices × 2400W = **4800W Gesamt-Entladung**
@@ -159,21 +174,24 @@ Multi-Device erstellt zusätzliche States:
 **Pro Gerät (device1, device2, ...):**
 - `status.devices.device1.soc` – SOC des Geräts
 - `status.devices.device1.powerW` – Aktuelle Leistung
-- `status.devices.device1.emergency` – Emergency-Status
+- `status.devices.device1.emergencyRecoveryActive` – Notladung wegen kritischer Spannung aktiv
+- `status.devices.device1.voltageRecoveryActive` – Spannungs-Recovery aktiv (Entladung blockiert)
+- `status.devices.device1.socRecoveryActive` – SOC-Recovery aktiv (Entladung blockiert)
+- `status.devices.device1.minSocRecoveryActive` – Zendure Hardware-MinSoc-Recovery aktiv
 - `status.devices.device1.excluded` – Aus Distribution ausgeschlossen?
 
 ### Emergency Handling
 
 **Pro-Device Emergency:**
-- Jedes Gerät wird individuell überwacht (SOC, Voltage, Flags)
-- **Wenn EIN Gerät Emergency hat** → ALLE eligible Geräte laden
-- Emergency-Ladeleistung wird auf aktive Geräte verteilt
+- Jedes Gerät wird individuell überwacht (SOC, Voltage, Flags) und unabhängig entschieden
+- Nur das/die Gerät(e), die selbst die Notlade-Kriterien erreichen, werden mit `emergencyChargePowerW` (gedeckelt auf das jeweilige `maxChargePowerW`) geladen
+- Andere Geräte laufen unbeeinflusst im normalen I-Regler-Betrieb weiter
 
 **Beispiel:**
 ```
 Device 1: Pack-Spannung 2.95V → EMERGENCY!
-System: Lädt beide Geräte mit je 800W (wenn aktiv)
-Device 2 erreicht max SOC → Wird excluded, Device 1 lädt allein weiter
+System: Lädt nur Device 1 (bis zu 800W, gedeckelt auf dessen maxChargePowerW)
+Device 2 bleibt im Normalbetrieb und folgt weiter dem Netz-Zielwert
 ```
 
 ### Limits & Exclusion
@@ -181,6 +199,8 @@ Device 2 erreicht max SOC → Wird excluded, Device 1 lädt allein weiter
 Ein Gerät wird automatisch aus der Distribution ausgeschlossen wenn:
 - ✅ **Emergency Recovery aktiv** (darf nur laden)
 - ✅ **Voltage Recovery aktiv** (darf nur laden)
+- ✅ **SOC Recovery aktiv** (darf nur laden)
+- ✅ **MinSoc Recovery aktiv** (Zendure Hardware-Schutz, darf nur laden)
 - ✅ **Max SOC erreicht** (kein Laden mehr)
 - ✅ **Min SOC erreicht** (kein Entladen mehr)
 
@@ -347,9 +367,11 @@ packPower = API-Setpoint + PV-Einspeisung + AC-Ladung
 ### 🚨 Emergency & Recovery
 
 **Emergency Charging** (höchste Priorität):
-- Aktiviert bei: `lowVoltageBlock` Flag ODER Spannung < 3.0V
+- Aktiviert ausschließlich bei kritischer Pack-Spannung gemäß `emergencyChargeVoltageV`
 - Lädt mit 800W bis Exit-SOC (20%)
 - Übersteuert alle anderen Automatisierungen
+
+`lowVoltageBlock` blockiert ausschließlich die Entladung als zusätzlicher Geräteschutz und löst kein Notladen aus.
 
 **Recovery Mode**:
 - Aktiv von 20% bis 30% SOC (konfigurierbar)

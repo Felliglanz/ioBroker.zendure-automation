@@ -2,6 +2,44 @@
 
 All notable changes to this project are documented in this file.
 
+## v1.0.1 (2026-08-19)
+
+### English
+- Multi-device recovery states (emergency/voltage/SOC/minSoc) are now tracked per device under `status.devices.<id>.*RecoveryActive` instead of sharing one global state, fixing corruption and incorrect restoration on adapter restart with multiple devices.
+- SOC recovery is now evaluated every multi-device cycle (previously only emergency and voltage recovery were checked, so a device could get stuck excluded from discharge indefinitely in the default SOC protection mode).
+- Max Charge/Discharge override modes now check each device individually; one device being ineligible (limits, recovery, disabled) no longer blocks the override for the others.
+- `chargeAllowed`/`dischargeAllowed` per-device flags are now respected in equal-split mode too, not just Waterfill.
+- Emergency charge power is now capped to each device's own configured `maxChargePowerW`, so a large global `emergencyChargePowerW` can no longer exceed a smaller device's limit.
+- Waterfill's sticky single-device handover now blends power gradually between the outgoing and incoming device over the handover-hold window instead of jumping instantly between 0W and full power.
+- Waterfill's `excluded` status flag now correctly reflects devices that are not eligible for distribution (previously always `false`).
+- Corrected documentation: multi-device state names and the description of per-device emergency handling.
+- Fixed a regression risk in the new handover blend: a third device becoming momentarily "best" during an in-progress blend could hijack it and drop the original outgoing device straight to 0W. The (outgoing, incoming) pair is now frozen for the full handover-hold window.
+- A power request above the configured spread threshold now always spreads across every eligible device immediately, even mid-handover, instead of staying capped to just the two blending devices.
+- Waterfill's aggregate charge/discharge system limits (used for anti-windup and the power regulator) now correctly exclude devices with `chargeAllowed`/`dischargeAllowed` set to false, matching the actual per-device distribution limits.
+- Removed an orphaned `useFullChargeNeeded` config default that no longer had any corresponding UI option or code path.
+- Old per-device state objects (`status.devices.<id>.emergency`/`.voltageRecovery`) are now cleaned up on upgrade instead of being left behind, frozen, in the object tree.
+- Fixed a regression that prevented Waterfill from ever reaching single-device (sticky) mode when the concentrate-hold window was more than one cycle (i.e. `waterfillConcentrateHoldMinutes` above the value that makes the hold last exactly one update interval, which includes the default of 3 minutes): the hold-cycle counter was reset on every interim cycle before it could reach its threshold, so the system stayed in spread mode with all devices active indefinitely instead of concentrating low loads onto one device (reported in #14).
+- Waterfill now also blends power gradually when concentrating out of spread mode into single-device mode (previously only a device-to-device sticky swap was blended; collapsing from several active devices onto one still jumped instantly). Uses a shorter, dedicated hold window than the device-to-device swap, since the total requested power isn't changing here, only its split across devices. The blend only ever engages on an actual device-set change; a plain power-level change on an unchanged single device or an unchanged spread set is still answered immediately, with no blend (reported in #14).
+- Fixed the spread-to-single blend itself starting from a discontinuous jump: the device becoming sticky was always assumed to start the blend at 0W, even when it already carried a real share of the load in spread mode a moment earlier, causing an unnecessary drop-and-recover step right before the gradual ramp began. The blend now starts from each device's actual previous output and interpolates from there, so the first blend cycle matches what was already being delivered instead of jumping away from it first (reported in #14).
+
+### Deutsch
+- Multi-Device-Recovery-States (Emergency/Voltage/SOC/MinSoc) werden jetzt pro Gerät unter `status.devices.<id>.*RecoveryActive` geführt statt sich einen globalen State zu teilen – behebt Datenmüll und fehlerhafte Wiederherstellung nach Adapter-Neustart bei mehreren Geräten.
+- SOC-Recovery wird jetzt in jedem Multi-Device-Zyklus geprüft (zuvor wurden nur Emergency- und Voltage-Recovery geprüft, wodurch ein Gerät im Standard-SOC-Schutzmodus dauerhaft von der Entladung ausgeschlossen bleiben konnte).
+- Max Charge/Discharge-Override prüft jetzt jedes Gerät einzeln; ein einzelnes nicht-eligible Gerät (Limits, Recovery, deaktiviert) blockiert den Override nicht mehr für alle anderen.
+- Die Pro-Gerät-Flags `chargeAllowed`/`dischargeAllowed` werden jetzt auch im Equal-Split-Modus beachtet, nicht mehr nur bei Waterfill.
+- Die Notladeleistung wird jetzt auf das jeweils konfigurierte `maxChargePowerW` des Geräts gedeckelt, sodass ein großer globaler `emergencyChargePowerW`-Wert das Limit eines kleineren Geräts nicht mehr überschreiten kann.
+- Der Waterfill-Gerätewechsel im Sticky-Single-Device-Modus blendet die Leistung jetzt über das Handover-Hold-Fenster graduell zwischen altem und neuem Gerät über, statt hart zwischen 0W und voller Leistung zu springen.
+- Das `excluded`-Status-Flag bei Waterfill zeigt jetzt korrekt an, wenn ein Gerät nicht an der Verteilung teilnehmen kann (zuvor immer `false`).
+- Dokumentation korrigiert: Multi-Device-State-Namen und Beschreibung des Pro-Gerät-Emergency-Verhaltens.
+- Ein Regressions-Risiko im neuen Handover-Blend behoben: Ein drittes Gerät, das kurzzeitig zum "besten" Kandidaten wird, konnte einen laufenden Blend kapern und das ursprüngliche Gerät hart auf 0W fallen lassen. Das (abgebende, übernehmende) Gerätepaar bleibt jetzt für das gesamte Handover-Hold-Fenster fixiert.
+- Eine Leistungsanforderung oberhalb der konfigurierten Spread-Schwelle verteilt sich jetzt sofort auf alle eligible Geräte, auch mitten in einem Handover, statt auf die beiden blendenden Geräte begrenzt zu bleiben.
+- Die aggregierten Waterfill-Systemlimits (für Anti-Windup und den Leistungsregler) schließen jetzt korrekt Geräte mit chargeAllowed/dischargeAllowed=false aus, passend zu den tatsächlichen Pro-Gerät-Verteilungslimits.
+- Einen verwaisten `useFullChargeNeeded`-Konfigurationswert entfernt, der keine zugehörige UI-Option oder Code-Nutzung mehr hatte.
+- Alte Pro-Gerät-State-Objekte (`status.devices.<id>.emergency`/`.voltageRecovery`) werden beim Upgrade jetzt aufgeräumt statt eingefroren im Objektbaum liegen zu bleiben.
+- Einen Regressionsfehler behoben, durch den Waterfill nie mehr in den Single-Device-Modus (Sticky) wechseln konnte, sobald das Concentrate-Hold-Fenster mehr als einen Zyklus umfasste (also bei `waterfillConcentrateHoldMinutes` oberhalb des Werts, der genau einem Update-Intervall entspricht – was auch den Standardwert von 3 Minuten einschließt): Der Hold-Cycle-Zähler wurde in jedem Zwischenzyklus zurückgesetzt, bevor er seinen Schwellwert erreichen konnte. Das System blieb dadurch dauerhaft im Spread-Modus mit allen aktiven Geräten hängen, statt geringe Lasten auf ein Gerät zu konzentrieren (gemeldet in #14).
+- Waterfill blendet die Leistung jetzt auch beim Konzentrieren aus dem Spread- in den Single-Device-Modus graduell über (bisher wurde nur der Gerät-zu-Gerät-Wechsel geblendet; das Zusammenführen mehrerer aktiver Geräte auf eines sprang weiterhin hart). Dafür wird ein kürzeres, eigenes Hold-Fenster verwendet als beim Gerät-zu-Gerät-Wechsel, da sich hier nur die Aufteilung ändert, nicht die angeforderte Gesamtleistung. Das Blending greift ausschließlich bei einem echten Wechsel der aktiven Geräte-Menge; eine reine Leistungsänderung bei unverändertem Single-Device oder unverändertem Spread-Set wird weiterhin sofort und ohne Blending beantwortet (gemeldet in #14).
+- Einen Sprung am Anfang des Spread-zu-Single-Blendings selbst behoben: Das neu aktiv werdende Gerät wurde bisher immer so behandelt, als würde es beim Blending bei 0W starten, auch wenn es im Spread-Modus gerade eben schon einen echten Anteil der Last trug – dadurch fiel die Leistung erst unnötig ab und wieder hoch, bevor der eigentliche sanfte Übergang begann. Das Blending startet jetzt bei der tatsächlich zuletzt gelieferten Leistung jedes Geräts und interpoliert von dort aus, sodass der erste Blend-Zyklus genau an das anschließt, was ohnehin schon anlag (gemeldet in #14).
+
 ## v1.0.0 (2026-08-11)
 
 ### English

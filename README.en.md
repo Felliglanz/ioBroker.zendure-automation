@@ -40,8 +40,19 @@ Automatically controls your Zendure Solarflow battery for **zero feed-in** and *
 
 **Power Distribution:**
 - **Equal Split** – power is distributed evenly across all active devices
+- **Waterfill + Sticky Device (optional)** – distributes power using individual device limits and SOC weighting; low demand can be concentrated on one suitable device
 - **Dynamic Exclusion** – devices at limits are automatically excluded
 - **Per-Device Tracking** – each device has its own states in the object tree
+
+### Waterfill + Sticky Device
+
+Select the optional distribution strategy in the Multi-Device settings. Each enabled device can have its own minimum and maximum SOC limits, charge and discharge power limits, and charge/discharge permissions.
+
+Waterfill first distributes the requested power according to each device's available SOC range. When a device reaches its configured power or SOC limit, the remaining power is redistributed to other eligible devices. At low power demand, the strategy can concentrate power on one device after a configurable hold time. The preferred device is changed only when another device has a sufficient SOC advantage.
+
+Equal Split remains the default strategy. In Waterfill mode, the global SOC protection limits remain active. Power limits and charge/discharge permissions are configured per device in the table; voltage, emergency, and recovery protection remain active.
+
+> **⚠️ Note:** Waterfill is an additional Multi-Device strategy and should initially be checked with the configured device limits and a small test setup. PV headroom and automatic bypass control are not part of this version yet.
 
 **Example with 2x Solarflow 2400:**
 ```
@@ -56,7 +67,9 @@ Device 2 reaches max SOC (95%):
 
 ### Configuration
 
-**Important:** All settings apply **globally to ALL devices**!
+**Equal Split:** Power and SOC settings apply globally to all devices.
+
+**Waterfill:** Global SOC limits still apply to all devices. Power limits and charge/discharge permissions are configured per device in the table.
 
 Configure values as if you had **a single device**:
 
@@ -67,6 +80,8 @@ Configure values as if you had **a single device**:
 | **minBatterySoc** | 10% | Applies to **all devices** |
 | **maxBatterySoc** | 95% | Applies to **all devices** |
 | **operatingDeadbandW** | 10 | **Per device** (auto-scaled) |
+
+In Waterfill mode, the following additional per-device values are used: `maxChargePowerW`, `maxDischargePowerW`, `chargeAllowed`, and `dischargeAllowed`. `waterfillSocMargin` still controls the SOC advantage required for a sticky-device switch.
 
 The system automatically multiplies:
 - 2 Devices × 2400W = **4800W Total Discharge**
@@ -90,21 +105,24 @@ Multi-Device creates additional states:
 **Per Device (device1, device2, ...):**
 - `status.devices.device1.soc` – Device SOC
 - `status.devices.device1.powerW` – Current power
-- `status.devices.device1.emergency` – Emergency status
+- `status.devices.device1.emergencyRecoveryActive` – Emergency charging due to critical voltage active
+- `status.devices.device1.voltageRecoveryActive` – Voltage recovery active (discharge blocked)
+- `status.devices.device1.socRecoveryActive` – SOC recovery active (discharge blocked)
+- `status.devices.device1.minSocRecoveryActive` – Zendure hardware minSoc recovery active
 - `status.devices.device1.excluded` – Excluded from distribution?
 
 ### Emergency Handling
 
 **Per-Device Emergency:**
-- Each device is monitored individually (SOC, voltage, flags)
-- **If ONE device has emergency** → ALL eligible devices charge
-- Emergency charge power is distributed across active devices
+- Each device is monitored individually (SOC, voltage, flags) and decided independently
+- Only the device(s) that actually meet the emergency criteria are charged with `emergencyChargePowerW` (capped to that device's own `maxChargePowerW`)
+- Other devices are unaffected and keep running under normal I-regulator control
 
 **Example:**
 ```
 Device 1: Pack voltage 2.95V → EMERGENCY!
-System: Charges both devices with 800W each (if active)
-Device 2 reaches max SOC → Excluded, Device 1 continues charging alone
+System: Charges only Device 1 (up to 800W, capped to its maxChargePowerW)
+Device 2 stays in normal operation, still following the grid target
 ```
 
 ### Limits & Exclusion
@@ -112,6 +130,8 @@ Device 2 reaches max SOC → Excluded, Device 1 continues charging alone
 A device is automatically excluded from distribution when:
 - ✅ **Emergency Recovery active** (may only charge)
 - ✅ **Voltage Recovery active** (may only charge)
+- ✅ **SOC Recovery active** (may only charge)
+- ✅ **MinSoc Recovery active** (Zendure hardware protection, may only charge)
 - ✅ **Max SOC reached** (no more charging)
 - ✅ **Min SOC reached** (no more discharging)
 
@@ -245,7 +265,7 @@ Smooths the grid power signal to avoid reacting to fast load spikes (TV, microwa
 - **Too jittery?** → Decrease alpha (e.g., 0.5 → 0.3)
 - **No filter?** → Alpha = 1.0 (legacy behavior)
 
-### � Validation Source (For Devices with PV Modules)
+### 🔍 Validation Source (For Devices with PV Modules)
 
 **Problem:** For devices with directly connected PV modules (e.g., Solarflow Pro), `packPower` is not equal to the API setpoint:
 ```
@@ -275,12 +295,14 @@ packPower = API setpoint + PV input + AC charging
 - **AC+ / Hyper** without PV → `packPower` (default)
 - If unsure → test `packPower`, if validation errors occur → switch to `gridInputPower`
 
-### �🚨 Emergency & Recovery
+### 🚨 Emergency & Recovery
 
 **Emergency Charging** (highest priority):
-- Activated at: `lowVoltageBlock` flag OR voltage < 3.0V
+- Activated only at critical pack voltage according to `emergencyChargeVoltageV`
 - Charges with 800W until exit SOC (20%)
 - Overrides all other automations
+
+`lowVoltageBlock` only stops discharging as additional device protection and does not trigger emergency charging.
 
 **Recovery Mode**:
 - Active from 20% to 30% SOC (configurable)

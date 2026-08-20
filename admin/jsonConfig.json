@@ -158,7 +158,7 @@
                     "en": "ProductKey",
                     "de": "ProductKey"
                   },
-                  "width": "25%"
+                  "width": "20%"
                 },
                 {
                   "type": "text",
@@ -167,7 +167,7 @@
                     "en": "DeviceKey",
                     "de": "DeviceKey"
                   },
-                  "width": "25%"
+                  "width": "20%"
                 },
                 {
                   "type": "text",
@@ -176,7 +176,49 @@
                     "en": "Name (optional)",
                     "de": "Name (optional)"
                   },
-                  "width": "15%"
+                  "width": "12%"
+                },
+                {
+                  "type": "number",
+                  "attr": "maxChargePowerW",
+                  "title": {
+                    "en": "Charge W",
+                    "de": "Laden W"
+                  },
+                  "width": "9%",
+                  "min": 1,
+                  "max": 3000
+                },
+                {
+                  "type": "number",
+                  "attr": "maxDischargePowerW",
+                  "title": {
+                    "en": "Discharge W",
+                    "de": "Entladen W"
+                  },
+                  "width": "9%",
+                  "min": 1,
+                  "max": 3000
+                },
+                {
+                  "type": "checkbox",
+                  "attr": "chargeAllowed",
+                  "title": {
+                    "en": "Charge",
+                    "de": "Laden"
+                  },
+                  "width": "6%",
+                  "default": true
+                },
+                {
+                  "type": "checkbox",
+                  "attr": "dischargeAllowed",
+                  "title": {
+                    "en": "Discharge",
+                    "de": "Entladen"
+                  },
+                  "width": "6%",
+                  "default": true
                 },
                 {
                   "type": "select",
@@ -185,7 +227,7 @@
                     "en": "Validation",
                     "de": "Validierung"
                   },
-                  "width": "25%",
+                  "width": "12%",
                   "default": "packPower",
                   "options": [
                     {
@@ -214,9 +256,117 @@
                     "de": "Aktiv"
                   },
                   "default": true,
-                  "width": "10%"
+                  "width": "6%"
                 }
               ]
+            },
+            "multiDeviceDistributionStrategy": {
+              "type": "select",
+              "label": {
+                "en": "Multi-Device distribution strategy",
+                "de": "Multi-Device-Verteilstrategie"
+              },
+              "hidden": "!data.multiDeviceEnabled",
+              "sm": 12,
+              "options": [
+                {
+                  "label": {
+                    "en": "Legacy Equal Split",
+                    "de": "Legacy Equal Split"
+                  },
+                  "value": "equalSplit"
+                },
+                {
+                  "label": {
+                    "en": "Waterfill + Sticky Device",
+                    "de": "Waterfill + Sticky Device"
+                  },
+                  "value": "waterfill"
+                }
+              ],
+              "default": "equalSplit",
+                "help": {
+                  "en": "Waterfill uses the global SOC protection limits and the per-device power limits below.",
+                  "de": "Waterfill verwendet die globalen SOC-Schutzgrenzen und die folgenden Leistungsgrenzen pro Gerät."
+              }
+            },
+            "_waterfillSettings": {
+              "type": "panel",
+              "label": {
+                "en": "Waterfill settings",
+                "de": "Waterfill-Einstellungen"
+              },
+              "hidden": "!data.multiDeviceEnabled || data.multiDeviceDistributionStrategy !== 'waterfill'",
+              "items": {
+                "waterfillDischargeConcentrateBelowW": {
+                  "type": "number",
+                  "label": {
+                    "en": "Discharge concentrate below (W)",
+                    "de": "Entladen konzentrieren unter (W)"
+                  },
+                  "sm": 6,
+                  "min": 0,
+                  "max": 3000,
+                  "default": 600
+                },
+                "waterfillDischargeSpreadAboveW": {
+                  "type": "number",
+                  "label": {
+                    "en": "Discharge spread above (W)",
+                    "de": "Entladen verteilen ab (W)"
+                  },
+                  "sm": 6,
+                  "min": 1,
+                  "max": 6000,
+                  "default": 1200
+                },
+                "waterfillChargeConcentrateBelowW": {
+                  "type": "number",
+                  "label": {
+                    "en": "Charge concentrate below (W)",
+                    "de": "Laden konzentrieren unter (W)"
+                  },
+                  "sm": 6,
+                  "min": 0,
+                  "max": 3000,
+                  "default": 600
+                },
+                "waterfillChargeSpreadAboveW": {
+                  "type": "number",
+                  "label": {
+                    "en": "Charge spread above (W)",
+                    "de": "Laden verteilen ab (W)"
+                  },
+                  "sm": 6,
+                  "min": 1,
+                  "max": 6000,
+                  "default": 1200
+                },
+                "waterfillConcentrateHoldMinutes": {
+                  "type": "number",
+                  "label": {
+                    "en": "Concentrate hold time (minutes)",
+                    "de": "Haltezeit Einzelgerät (Minuten)"
+                  },
+                  "sm": 6,
+                  "min": 0,
+                  "max": 60,
+                  "step": 1,
+                  "default": 3
+                },
+                "waterfillSocMargin": {
+                  "type": "number",
+                  "label": {
+                    "en": "Sticky-device SOC margin (%)",
+                    "de": "SOC-Vorsprung für Gerätewechsel (%)"
+                  },
+                  "sm": 6,
+                  "min": 0,
+                  "max": 50,
+                  "step": 1,
+                  "default": 10
+                }
+              }
             },
             "_multiDeviceHint": {
               "type": "staticText",
@@ -1010,8 +1160,8 @@
         "_emergencyInfo": {
           "type": "staticText",
           "text": {
-            "en": "🚨 Emergency charging is triggered by: critical pack voltage, device flags (lowVoltageBlock/fullChargeNeeded). Ignores grid target and charges with full power until recovery SOC is reached.",
-            "de": "🚨 Notladen wird aktiviert bei: kritischer Pack-Spannung, Geräte-Flags (lowVoltageBlock/fullChargeNeeded). Ignoriert Grid-Target und lädt mit voller Kraft bis Recovery-SOC erreicht ist."
+            "en": "🚨 Emergency charging is triggered only when a pack reaches the configured critical voltage. It ignores the grid target and charges with the configured emergency power until the exit SOC is reached.",
+            "de": "🚨 Notladen wird ausschließlich ausgelöst, wenn ein Pack die konfigurierte kritische Spannung erreicht. Das Grid-Target wird ignoriert und bis zum Notlade-Ende-SOC mit der konfigurierten Leistung geladen."
           },
           "sm": 12,
           "style": {
@@ -1025,34 +1175,21 @@
         "_panelEmergencyTrigger": {
           "type": "panel",
           "label": {
-            "en": "Emergency Triggers",
-            "de": "Notlade-Auslöser"
+            "en": "Additional discharge protection",
+            "de": "Zusätzlicher Entladeschutz"
           },
           "items": {
             "useLowVoltageBlock": {
               "type": "checkbox",
               "label": {
-                "en": "Respect device low voltage flag",
-                "de": "Geräte-Unterspannungs-Flag beachten"
+                "en": "Honor device low voltage flag",
+                "de": "Geräte-Unterspannungs-Flag als Entladeschutz beachten"
               },
               "sm": 6,
               "default": true,
               "help": {
-                "en": "When device reports 'lowVoltageBlock=true', stop discharge immediately",
-                "de": "Wenn Gerät 'lowVoltageBlock=true' meldet, Entladung sofort stoppen"
-              }
-            },
-            "useFullChargeNeeded": {
-              "type": "checkbox",
-              "label": {
-                "en": "Respect device full charge request",
-                "de": "Geräte-Vollladungs-Anfrage beachten"
-              },
-              "sm": 6,
-              "default": true,
-              "help": {
-                "en": "When device reports 'fullChargeNeeded=true', force full charge (calibration)",
-                "de": "Wenn Gerät 'fullChargeNeeded=true' meldet, Vollladung erzwingen (Kalibrierung)"
+                "en": "When the device reports 'lowVoltageBlock=true', stop discharging immediately. This does not trigger emergency charging.",
+                "de": "Wenn das Gerät 'lowVoltageBlock=true' meldet, Entladung sofort stoppen. Dies löst kein Notladen aus."
               }
             },
             "emergencyChargeVoltageV": {

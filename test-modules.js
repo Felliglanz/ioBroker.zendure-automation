@@ -1,9 +1,12 @@
 #!/usr/bin/env node
 'use strict';
 
+const fs = require('fs');
+const path = require('path');
+
 /**
  * Comprehensive Test Suite for ioBroker.zendure-automation
- * 
+ *
  * Tests all critical paths including:
  * - Module loading and basic functionality
  * - ValidationService signature (3 params)
@@ -11,7 +14,8 @@
  * - Safety limiters in multi-device distribution
  * - Edge cases and error handling
  * - Full integration tests
- * 
+ * - Package/config file consistency (install-time safety net)
+ *
  * Run: node test-modules.js or npm test
  */
 
@@ -94,7 +98,6 @@ const mockConfig = {
     dischargeThresholdW: 200,
     dischargeDelayTicks: 3,
     useLowVoltageBlock: true,
-    useFullChargeNeeded: true,
     dischargeProtectionMode: 'soc',
     emergencyChargePowerW: 800,
     emergencyExitSoc: 20,
@@ -170,7 +173,7 @@ async function testModules() {
     console.log('─'.repeat(70));
 
     let DataReader, EmergencyManager, RelayProtection, SafetyLimiter;
-    let PowerRegulator, ValidationService, MultiDeviceManager;
+    let PowerRegulator, ValidationService, MultiDeviceManager, WaterfillDistributor;
 
     await runTest('[1.1] Load all library modules', async () => {
         DataReader = require('./lib/DataReader');
@@ -180,7 +183,8 @@ async function testModules() {
         PowerRegulator = require('./lib/PowerRegulator');
         ValidationService = require('./lib/ValidationService');
         MultiDeviceManager = require('./lib/MultiDeviceManager');
-        assert(DataReader && EmergencyManager && ValidationService, 'Modules loaded');
+        WaterfillDistributor = require('./lib/WaterfillDistributor');
+        assert(DataReader && EmergencyManager && ValidationService && WaterfillDistributor, 'Modules loaded');
     });
 
     await runTest('[1.2] Instantiate all modules', async () => {
@@ -191,7 +195,10 @@ async function testModules() {
         const safetyLimiter = new SafetyLimiter(mockAdapter, deviceBasePath);
         const powerRegulator = new PowerRegulator(mockAdapter);
         const validationService = new ValidationService(mockAdapter);
-        assert(dataReader && validationService, 'Modules instantiated');
+        assert(
+            dataReader && emergencyMgr && relayProtection && safetyLimiter && powerRegulator && validationService,
+            'Modules instantiated'
+        );
     });
 
     await runTest('[1.3] DataReader reads states correctly', async () => {
@@ -335,6 +342,95 @@ async function testModules() {
         assert(emergencyManagers.get('device1').inEmergencyRecovery !== undefined, 'Emergency state tracked');
     });
 
+    await runTest('[2.4] Emergency charge power is capped to each device\'s own charge limit', async () => {
+        initializeMockStates();
+        const MultiDeviceController = require('./lib/MultiDeviceController');
+
+        const controller = new MultiDeviceController(mockAdapter, {
+            multiDeviceMgr: {
+                devices: [
+                    { id: 'device1', basePath: 'test.0.device1.pk1', maxChargePowerW: 500 },
+                    { id: 'device2', basePath: 'test.0.device2.pk2', maxChargePowerW: 1600 }
+                ]
+            },
+            validationService: new ValidationService(mockAdapter)
+        });
+
+        const totalWrittenPowerW = await controller.handleEmergencyDevices(
+            { emergencyChargePowerW: 800 },
+            [
+                { id: 'device1', name: 'Device 1' },
+                { id: 'device2', name: 'Device 2' }
+            ]
+        );
+
+        const device1Limit = getMockState('test.0.device1.pk1.control.setDeviceAutomationInOutLimit').val;
+        const device2Limit = getMockState('test.0.device2.pk2.control.setDeviceAutomationInOutLimit').val;
+        assertEqual(device1Limit, -500, 'Smaller device is capped to its own configured charge limit, not the global emergency power');
+        assertEqual(device2Limit, -800, 'Larger device uses the full global emergency charge power');
+        assertEqual(totalWrittenPowerW, -1300, 'Returned total reflects the actually written (capped) power, not the naive sum');
+    });
+
+    await runTest('[2.5] Mode status shows recovery for SOC/minSoc recovery, not just emergency/voltage', async () => {
+        initializeMockStates();
+        const MultiDeviceController = require('./lib/MultiDeviceController');
+
+        const controller = new MultiDeviceController(mockAdapter, {
+            multiDeviceMgr: { devices: [{ id: 'device1', basePath: 'test.0.device1.pk1' }] }
+        });
+        const emergencyManager = new EmergencyManager(mockAdapter, 'test.0.device1.pk1');
+        emergencyManager.inSocRecovery = true;
+        controller.emergencyManagers = new Map([['device1', emergencyManager]]);
+
+        await controller.updateModeStatus([], 0);
+        assertEqual(getMockState('status.mode').val, 'recovery', 'SOC recovery alone is reflected as recovery mode');
+    });
+
+    await runTest('[2.6] createFullDistribution reports the actual capped emergency power, not the raw global value', async () => {
+        initializeMockStates();
+        const MultiDeviceController = require('./lib/MultiDeviceController');
+
+        const controller = new MultiDeviceController(mockAdapter, {
+            multiDeviceMgr: {
+                devices: [
+                    { id: 'device1', basePath: 'test.0.device1.pk1', maxChargePowerW: 500 },
+                    { id: 'device2', basePath: 'test.0.device2.pk2', maxChargePowerW: 1600 }
+                ]
+            }
+        });
+
+        const fullDistribution = controller.createFullDistribution(
+            { emergencyChargePowerW: 800 },
+            [{ id: 'device1', name: 'Device 1' }, { id: 'device2', name: 'Device 2' }],
+            []
+        );
+
+        assertEqual(fullDistribution.find(d => d.deviceId === 'device1').powerW, -500, 'Reported power matches the capped value actually written for the smaller device');
+        assertEqual(fullDistribution.find(d => d.deviceId === 'device2').powerW, -800, 'Larger device reports the full global emergency power');
+    });
+
+    await runTest('[2.7] Waterfill system limits exclude devices with chargeAllowed/dischargeAllowed disabled', async () => {
+        initializeMockStates();
+        const MultiDeviceController = require('./lib/MultiDeviceController');
+
+        const controller = new MultiDeviceController(mockAdapter, {
+            multiDeviceMgr: {
+                devices: [
+                    { id: 'device1', maxChargePowerW: 900, maxDischargePowerW: 700, chargeAllowed: false },
+                    { id: 'device2', maxChargePowerW: 2100, maxDischargePowerW: 1500, dischargeAllowed: false }
+                ]
+            }
+        });
+
+        const limits = controller.getWaterfillSystemLimits([
+            { id: 'device1' },
+            { id: 'device2' }
+        ]);
+
+        assertEqual(limits.maxChargePowerW, 2100, 'Charge-disabled device1 is excluded from the charge ceiling');
+        assertEqual(limits.maxDischargePowerW, 700, 'Discharge-disabled device2 is excluded from the discharge ceiling');
+    });
+
     console.log('\n' + '─'.repeat(70));
     console.log('SECTION 3: EDGE CASES & ERROR HANDLING');
     console.log('─'.repeat(70));
@@ -378,15 +474,82 @@ async function testModules() {
         assertEqual(result.powerW, 0, 'Discharge blocked at min voltage');
     });
 
-    await runTest('[3.3] EmergencyManager detects low voltage emergency', async () => {
+    await runTest('[3.3] EmergencyManager detects only critical pack voltage', async () => {
         initializeMockStates();
         setMockState('test.0.device1.control.lowVoltageBlock', true);
+        setMockState('test.0.device1.control.fullChargeNeeded', true);
         
         const emergencyMgr = new EmergencyManager(mockAdapter, deviceBasePath);
+        const flagsOnly = await emergencyMgr.checkEmergencyConditions(mockConfig, 15, 3.2);
+        assertEqual(flagsOnly.isEmergency, false, 'Device flags do not trigger emergency charging');
+
         const emergency = await emergencyMgr.checkEmergencyConditions(mockConfig, 15, 2.8);
         
         assertEqual(emergency.isEmergency, true, 'Emergency detected');
         assert(emergency.reason && emergency.reason.toLowerCase().includes('voltage'), 'Reason contains voltage');
+    });
+
+    await runTest('[3.7] Zendure minSoc recovery blocks discharge without emergency charge', async () => {
+        initializeMockStates();
+        setMockState('test.0.device1.minSoc', 10);
+
+        const safetyLimiter = new SafetyLimiter(mockAdapter, deviceBasePath);
+        const emergencyMgr = new EmergencyManager(mockAdapter, deviceBasePath);
+        const voltageConfig = {
+            ...mockConfig,
+            dischargeProtectionMode: 'voltage',
+            useZendureMinSoc: true,
+            zendureMinSocMargin: 1,
+            emergencyChargeVoltageV: 2.8
+        };
+
+        const result = await safetyLimiter.applySafetyLimits({
+            config: voltageConfig,
+            emergencyManager: emergencyMgr,
+            batterySoc: 11,
+            minPackVoltageV: 3.2,
+            powerW: 500
+        });
+
+        assertEqual(result.powerW, 0, 'minSoc recovery blocks discharge');
+        assertEqual(emergencyMgr.inMinSocRecovery, true, 'minSoc recovery is active');
+        const emergency = await emergencyMgr.checkEmergencyConditions(voltageConfig, 11, 3.2);
+        assertEqual(emergency.isEmergency, false, 'minSoc recovery does not trigger emergency charging');
+    });
+
+    await runTest('[3.8] Voltage recovery does not trigger emergency charging', async () => {
+        initializeMockStates();
+        const MultiDeviceController = require('./lib/MultiDeviceController');
+
+        const controller = new MultiDeviceController(mockAdapter, {
+            multiDeviceMgr: {
+                devices: [{ id: 'device1', basePath: deviceBasePath }]
+            },
+            emergencyManagers: new Map(),
+            safetyLimiters: new Map(),
+            relayProtection: new RelayProtection(mockAdapter),
+            powerRegulator: new PowerRegulator(mockAdapter),
+            validationService: new ValidationService(mockAdapter)
+        });
+        const emergencyManager = new EmergencyManager(mockAdapter, deviceBasePath);
+        emergencyManager.inVoltageRecovery = true;
+        controller.emergencyManagers.set('device1', emergencyManager);
+
+        const device = {
+            id: 'device1', name: 'Device 1', basePath: deviceBasePath,
+            available: true, soc: 9, minPackVoltageV: 3.15
+        };
+        const result = await controller.checkEmergencies({
+            dischargeProtectionMode: 'voltage',
+            minBatteryVoltageV: 3.15,
+            useZendureMinSoc: false,
+            emergencyChargePowerW: 300,
+            emergencyChargeVoltageV: 2.8
+        }, [device]);
+
+        assertEqual(result.emergencyDevices.length, 0, 'Voltage recovery is not an emergency device');
+        assertEqual(result.normalDevices.length, 1, 'Voltage recovery remains in normal device flow');
+        assertEqual(emergencyManager.inVoltageRecovery, true, 'Voltage recovery remains active');
     });
 
     await runTest('[3.4] Multi-Device handles all devices excluded', async () => {
@@ -651,6 +814,606 @@ async function testModules() {
         assertEqual(needsResend, false, 'Validation succeeded (no resend needed)');
     });
 
+    await runTest('[4.7] Waterfill uses sticky device and redistributes capped power', async () => {
+        const distributor = new WaterfillDistributor();
+        const devices = [
+            {
+                id: 'device1', name: 'Device 1', soc: 80, minSoc: 10, maxSoc: 100,
+                maxChargePowerW: 1600, maxDischargePowerW: 500,
+                chargeAllowed: true, dischargeAllowed: true
+            },
+            {
+                id: 'device2', name: 'Device 2', soc: 40, minSoc: 10, maxSoc: 100,
+                maxChargePowerW: 1600, maxDischargePowerW: 2000,
+                chargeAllowed: true, dischargeAllowed: true
+            }
+        ];
+        const waterfillConfig = {
+            minBatterySoc: 10,
+            maxBatterySoc: 100,
+            updateIntervalSec: 5,
+            waterfillConcentrateHoldMinutes: 0,
+            waterfillDischargeConcentrateBelowW: 600,
+            waterfillDischargeSpreadAboveW: 1200,
+            waterfillSocMargin: 10
+        };
+
+        const single = distributor.distribute(400, devices, waterfillConfig);
+        assertEqual(single.filter(d => d.powerW > 0).length, 1, 'Low demand uses one device');
+        assertEqual(single.find(d => d.powerW > 0).deviceId, 'device1', 'Highest SOC device is sticky');
+
+        const spread = distributor.distribute(2500, devices, waterfillConfig);
+        assertEqual(spread.reduce((sum, d) => sum + d.powerW, 0), 2500, 'Waterfill uses full target');
+        assertEqual(spread.find(d => d.deviceId === 'device1').powerW, 500, 'First device is capped');
+        assertEqual(spread.find(d => d.deviceId === 'device2').powerW, 2000, 'Remainder reaches second device');
+    });
+
+    await runTest('[4.8] Multi-device manager selects Waterfill strategy', async () => {
+        initializeMockStates();
+        const devices = [
+            {
+                productKey: 'device1', deviceKey: 'pk1', name: 'Device 1', enabled: true,
+                minSoc: 10, maxSoc: 100, maxChargePowerW: 1600, maxDischargePowerW: 500,
+                chargeAllowed: true, dischargeAllowed: true
+            },
+            {
+                productKey: 'device2', deviceKey: 'pk2', name: 'Device 2', enabled: true,
+                minSoc: 10, maxSoc: 100, maxChargePowerW: 1600, maxDischargePowerW: 2000,
+                chargeAllowed: true, dischargeAllowed: true
+            }
+        ];
+        const multiDeviceMgr = new MultiDeviceManager(mockAdapter, 'test.0', devices);
+        const emergencyManagers = new Map();
+        const safetyLimiters = new Map();
+        multiDeviceMgr.devices.forEach(dev => {
+            emergencyManagers.set(dev.id, new EmergencyManager(mockAdapter, dev.basePath));
+            safetyLimiters.set(dev.id, new SafetyLimiter(mockAdapter, dev.basePath));
+        });
+
+        const distribution = await multiDeviceMgr.distributePower(
+            2500,
+            await multiDeviceMgr.aggregateDeviceStates(),
+            {
+                ...mockConfig,
+                multiDeviceDistributionStrategy: 'waterfill',
+                waterfillConcentrateHoldMinutes: 0,
+                waterfillDischargeConcentrateBelowW: 600,
+                waterfillDischargeSpreadAboveW: 1200,
+                waterfillSocMargin: 10
+            },
+            emergencyManagers,
+            safetyLimiters
+        );
+
+        const activeDistribution = distribution.filter(d => !d.excluded);
+        assertEqual(activeDistribution.reduce((sum, d) => sum + d.powerW, 0), 2500, 'Waterfill target reaches manager output');
+        assertEqual(activeDistribution.find(d => d.deviceId === 'device1').powerW, 500, 'Manager applies device one limit');
+        assertEqual(activeDistribution.find(d => d.deviceId === 'device2').powerW, 2000, 'Manager applies device two limit');
+    });
+
+    await runTest('[4.9] Waterfill handles changing loads and direction changes', async () => {
+        const distributor = new WaterfillDistributor();
+        const devices = [
+            {
+                id: 'device1', name: 'PV Hub', soc: 75, minSoc: 15, maxSoc: 95,
+                maxChargePowerW: 1200, maxDischargePowerW: 800,
+                chargeAllowed: true, dischargeAllowed: true
+            },
+            {
+                id: 'device2', name: 'AC Hub', soc: 45, minSoc: 10, maxSoc: 100,
+                maxChargePowerW: 2400, maxDischargePowerW: 1600,
+                chargeAllowed: true, dischargeAllowed: true
+            }
+        ];
+        const config = {
+            minBatterySoc: 10,
+            maxBatterySoc: 100,
+            updateIntervalSec: 5,
+            waterfillConcentrateHoldMinutes: 0,
+            waterfillDischargeConcentrateBelowW: 600,
+            waterfillDischargeSpreadAboveW: 1200,
+            waterfillChargeConcentrateBelowW: 600,
+            waterfillChargeSpreadAboveW: 1200,
+            waterfillSocMargin: 10
+        };
+        const changingLoads = [250, 1100, 1800, 300, 1500, 0, -250, -1400, -3200, 0];
+        const results = changingLoads.map(load => distributor.distribute(load, devices, config));
+
+        results.forEach((distribution, index) => {
+            const requested = changingLoads[index];
+            const total = distribution.reduce((sum, item) => sum + item.powerW, 0);
+            const capacity = requested < 0 ? 3600 : 2400;
+            assert(Math.abs(total) <= Math.abs(requested), `Cycle ${index} does not over-allocate`);
+            assert(Math.abs(total) <= capacity, `Cycle ${index} respects aggregate capacity`);
+            assert(distribution[0].powerW <= 800 && distribution[1].powerW <= 1600, `Cycle ${index} respects discharge limits`);
+            assert(distribution[0].powerW >= -1200 && distribution[1].powerW >= -2400, `Cycle ${index} respects charge limits`);
+        });
+
+        assertEqual(results[0].filter(item => item.powerW !== 0).length, 1, 'Low discharge load is concentrated');
+        assertEqual(results[2].filter(item => item.powerW > 0).length, 2, 'High discharge load is spread');
+        assertEqual(results[6].filter(item => item.powerW < 0).length, 1, 'Low charge load is concentrated');
+        assertEqual(results[8].filter(item => item.powerW < 0).length, 2, 'High charge load is spread');
+        assertEqual(results[5].every(item => item.powerW === 0), true, 'Standby clears both directions');
+    });
+
+    await runTest('[4.10] Waterfill excludes devices at SOC limits or disabled directions', async () => {
+        const distributor = new WaterfillDistributor();
+        const devices = [
+            {
+                id: 'full', name: 'Full', soc: 100, minSoc: 10, maxSoc: 100,
+                maxChargePowerW: 1000, maxDischargePowerW: 1000,
+                chargeAllowed: true, dischargeAllowed: false
+            },
+            {
+                id: 'disabled', name: 'Disabled', soc: 60, minSoc: 10, maxSoc: 100,
+                maxChargePowerW: 1000, maxDischargePowerW: 1000,
+                chargeAllowed: false, dischargeAllowed: false
+            },
+            {
+                id: 'usable', name: 'Usable', soc: 60, minSoc: 10, maxSoc: 100,
+                maxChargePowerW: 1000, maxDischargePowerW: 1000,
+                chargeAllowed: true, dischargeAllowed: true
+            }
+        ];
+        const config = {
+            minBatterySoc: 10,
+            maxBatterySoc: 100,
+            waterfillConcentrateHoldMinutes: 0
+        };
+
+        const charge = distributor.distribute(-800, devices, config);
+        assertEqual(charge.find(item => item.deviceId === 'full').powerW, 0, 'Full device is excluded from charge');
+        assertEqual(charge.find(item => item.deviceId === 'disabled').powerW, 0, 'Charge-disabled device is excluded');
+        assertEqual(charge.find(item => item.deviceId === 'usable').powerW, -800, 'Usable device receives charge');
+
+        const discharge = distributor.distribute(800, devices, config);
+        assertEqual(discharge.find(item => item.deviceId === 'disabled').powerW, 0, 'Discharge-disabled device is excluded');
+        assertEqual(discharge.find(item => item.deviceId === 'usable').powerW, 800, 'Usable device receives discharge');
+    });
+
+    await runTest('[4.11] Waterfill aggregate limits reach regulator and manager', async () => {
+        const MultiDeviceController = require('./lib/MultiDeviceController');
+        const PowerRegulator = require('./lib/PowerRegulator');
+        const controller = new MultiDeviceController(mockAdapter, {
+            multiDeviceMgr: {
+                devices: [
+                    { id: 'device1', maxChargePowerW: 900, maxDischargePowerW: 700 },
+                    { id: 'device2', maxChargePowerW: 2100, maxDischargePowerW: 1500 }
+                ]
+            }
+        });
+        const limits = controller.getWaterfillSystemLimits([
+            { id: 'device1' },
+            { id: 'device2' }
+        ]);
+        assertEqual(limits.maxChargePowerW, 3000, 'Controller sums per-device charge limits');
+        assertEqual(limits.maxDischargePowerW, 2200, 'Controller sums per-device discharge limits');
+
+        const manager = new MultiDeviceManager(mockAdapter, 'test.0', [
+            { productKey: 'device1', deviceKey: 'pk1', enabled: true, maxChargePowerW: 900, maxDischargePowerW: 700 },
+            { productKey: 'device2', deviceKey: 'pk2', enabled: true, maxChargePowerW: 2100, maxDischargePowerW: 1500 }
+        ]);
+        const eligibleDevices = manager.devices.map(device => ({ ...device, available: true }));
+        assertEqual(
+            manager.limitPowerToEligibleDevices(-4000, eligibleDevices, { multiDeviceDistributionStrategy: 'waterfill' }),
+            -3000,
+            'Manager clamps charge to summed device limits'
+        );
+        assertEqual(
+            manager.limitPowerToEligibleDevices(4000, eligibleDevices, { multiDeviceDistributionStrategy: 'waterfill' }),
+            2200,
+            'Manager clamps discharge to summed device limits'
+        );
+
+        const regulatorController = new MultiDeviceController(mockAdapter, {
+            multiDeviceMgr: controller.multiDeviceMgr,
+            relayProtection: {
+                applyProtection: params => ({
+                    powerW: params.newBatteryPowerW,
+                    feedInCounter: 0,
+                    dischargeCounter: 0,
+                    deadbandCounter: 0
+                })
+            },
+            powerRegulator: new PowerRegulator(mockAdapter)
+        });
+        const regulatedPower = await regulatorController.calculateTargetPower(
+            {
+                multiDeviceDistributionStrategy: 'waterfill',
+                maxChargePowerW: 1600,
+                maxDischargePowerW: 1600,
+                operatingDeadbandW: 10,
+                hysteresisW: 1,
+                rampChargeWPerCycle: 0,
+                rampDischargeWPerCycle: 0
+            },
+            4000,
+            0,
+            [{ id: 'device1', powerW: 0 }, { id: 'device2', powerW: 0 }],
+            { totalPowerW: 0, avgSoc: 50, availableDevicesCount: 2 }
+        );
+        assertEqual(regulatedPower, 2200, 'PowerRegulator receives summed Waterfill discharge limit');
+    });
+
+    await runTest('[4.12] Waterfill blends power gradually during sticky-device handover', async () => {
+        const distributor = new WaterfillDistributor();
+        const devices = [
+            {
+                id: 'device1', name: 'Device 1', soc: 80, minSoc: 10, maxSoc: 100,
+                maxChargePowerW: 1600, maxDischargePowerW: 800,
+                chargeAllowed: true, dischargeAllowed: true
+            },
+            {
+                id: 'device2', name: 'Device 2', soc: 40, minSoc: 10, maxSoc: 100,
+                maxChargePowerW: 1600, maxDischargePowerW: 800,
+                chargeAllowed: true, dischargeAllowed: true
+            }
+        ];
+        const config = {
+            minBatterySoc: 10,
+            maxBatterySoc: 100,
+            updateIntervalSec: 5,
+            waterfillConcentrateHoldMinutes: 0,
+            waterfillDischargeConcentrateBelowW: 600,
+            waterfillDischargeSpreadAboveW: 1200,
+            waterfillSocMargin: 10
+        };
+
+        distributor.distribute(400, devices, config);
+        devices[0].soc = 40;
+        devices[1].soc = 80;
+
+        // Handover triggers (device1 -> device2), but the outgoing device keeps its
+        // full power on this exact cycle - the swap only starts ramping in on the
+        // following handover-hold cycles, so no device ever jumps instantly.
+        const trigger = distributor.distribute(400, devices, config);
+        assertEqual(trigger.find(item => item.deviceId === 'device1').powerW, 400, 'Trigger cycle keeps outgoing device at its previous power');
+        assertEqual(trigger.find(item => item.deviceId === 'device2').powerW, 0, 'Trigger cycle has not ramped in the incoming device yet');
+
+        // Over the 4 handover-hold cycles, power is linearly blended from the
+        // outgoing device to the incoming device's target - device2's target is
+        // capped to its own 800W discharge limit (below the 1000W requested),
+        // so the ramp is 0 -> 200 -> 400 -> 600 -> 800 against that 800W target,
+        // not against the raw 1000W request; the outgoing device picks up
+        // whatever's left of the requested 1000W each cycle.
+        const expectedSteps = [
+            { device1: 800, device2: 200 },
+            { device1: 600, device2: 400 },
+            { device1: 400, device2: 600 },
+            { device1: 0, device2: 800 }
+        ];
+        for (let cycle = 0; cycle < 4; cycle++) {
+            const held = distributor.distribute(1000, devices, config);
+            const step = expectedSteps[cycle];
+            assertEqual(held.find(item => item.deviceId === 'device1').powerW, step.device1, `Handover blend step ${cycle + 1} splits power to outgoing device`);
+            assertEqual(held.find(item => item.deviceId === 'device2').powerW, step.device2, `Handover blend step ${cycle + 1} splits power to incoming device`);
+        }
+
+        const afterHold = distributor.distribute(1000, devices, config);
+        assertEqual(afterHold.filter(item => item.powerW > 0).length, 2, 'Spread is allowed after handover hold completes');
+    });
+
+    await runTest('[4.13] Waterfill voltage mode does not filter at global SOC floor', async () => {
+        const distributor = new WaterfillDistributor();
+        const devices = [
+            {
+                id: 'device1', name: 'Device 1', soc: 10, maxChargePowerW: 1600,
+                maxDischargePowerW: 800, chargeAllowed: true, dischargeAllowed: true
+            },
+            {
+                id: 'device2', name: 'Device 2', soc: 10, maxChargePowerW: 1600,
+                maxDischargePowerW: 800, chargeAllowed: true, dischargeAllowed: true
+            }
+        ];
+        const config = {
+            minBatterySoc: 10,
+            maxBatterySoc: 100,
+            dischargeProtectionMode: 'voltage',
+            waterfillDischargeConcentrateBelowW: 600,
+            waterfillDischargeSpreadAboveW: 1200,
+            waterfillConcentrateHoldMinutes: 0,
+            waterfillSocMargin: 10
+        };
+
+        const voltageDistribution = distributor.distribute(400, devices, config);
+        assertEqual(
+            voltageDistribution.reduce((sum, item) => sum + item.powerW, 0),
+            400,
+            'Voltage mode can distribute while SOC is at global floor'
+        );
+
+        const socDistribution = distributor.distribute(400, devices, {
+            ...config,
+            dischargeProtectionMode: 'soc'
+        });
+        assertEqual(
+            socDistribution.every(item => item.powerW === 0),
+            true,
+            'SOC mode still blocks at global SOC floor'
+        );
+    });
+
+    await runTest('[4.14] Equal-split strategy also honors per-device chargeAllowed/dischargeAllowed', async () => {
+        initializeMockStates();
+
+        const devices = [
+            { productKey: 'device1', deviceKey: 'pk1', name: 'Device 1', enabled: true, chargeAllowed: false },
+            { productKey: 'device2', deviceKey: 'pk2', name: 'Device 2', enabled: true }
+        ];
+        const multiDeviceMgr = new MultiDeviceManager(mockAdapter, 'test.0', devices);
+        const emergencyManagers = new Map();
+        const safetyLimiters = new Map();
+        multiDeviceMgr.devices.forEach(dev => {
+            emergencyManagers.set(dev.id, new EmergencyManager(mockAdapter, dev.basePath));
+            safetyLimiters.set(dev.id, new SafetyLimiter(mockAdapter, dev.basePath));
+        });
+
+        // mockConfig has no multiDeviceDistributionStrategy set, i.e. default equalSplit.
+        const distribution = await multiDeviceMgr.distributePower(
+            -1000,
+            await multiDeviceMgr.aggregateDeviceStates(),
+            mockConfig,
+            emergencyManagers,
+            safetyLimiters
+        );
+
+        const device1 = distribution.find(d => d.deviceId === 'device1');
+        const device2 = distribution.find(d => d.deviceId === 'device2');
+        assertEqual(device1.excluded, true, 'Charge-disabled device is excluded even in equalSplit mode');
+        assertEqual(device1.powerW, 0, 'Charge-disabled device receives no power in equalSplit mode');
+        assertEqual(device2.excluded, false, 'Other device still participates normally');
+    });
+
+    await runTest('[4.15] Waterfill marks ineligible devices as excluded for UI transparency', async () => {
+        const distributor = new WaterfillDistributor();
+        const devices = [
+            {
+                id: 'atMaxSoc', name: 'At Max SOC', soc: 100, minSoc: 10, maxSoc: 100,
+                maxChargePowerW: 1000, maxDischargePowerW: 1000,
+                chargeAllowed: true, dischargeAllowed: true
+            },
+            {
+                id: 'usable', name: 'Usable', soc: 60, minSoc: 10, maxSoc: 100,
+                maxChargePowerW: 1000, maxDischargePowerW: 1000,
+                chargeAllowed: true, dischargeAllowed: true
+            }
+        ];
+        const config = { minBatterySoc: 10, maxBatterySoc: 100, waterfillConcentrateHoldMinutes: 0 };
+
+        const charge = distributor.distribute(-500, devices, config);
+        assertEqual(charge.find(item => item.deviceId === 'atMaxSoc').excluded, true, 'Device at max SOC is marked excluded, not just 0W');
+        assertEqual(charge.find(item => item.deviceId === 'usable').excluded, false, 'Participating device is not marked excluded');
+    });
+
+    await runTest('[4.16] A third device cannot hijack an in-progress handover blend', async () => {
+        const distributor = new WaterfillDistributor();
+        const devices = [
+            { id: 'A', name: 'A', soc: 80, minSoc: 10, maxSoc: 100, maxChargePowerW: 1600, maxDischargePowerW: 800, chargeAllowed: true, dischargeAllowed: true },
+            { id: 'B', name: 'B', soc: 40, minSoc: 10, maxSoc: 100, maxChargePowerW: 1600, maxDischargePowerW: 800, chargeAllowed: true, dischargeAllowed: true },
+            { id: 'C', name: 'C', soc: 40, minSoc: 10, maxSoc: 100, maxChargePowerW: 1600, maxDischargePowerW: 800, chargeAllowed: true, dischargeAllowed: true }
+        ];
+        const config = {
+            minBatterySoc: 10, maxBatterySoc: 100, updateIntervalSec: 5,
+            waterfillConcentrateHoldMinutes: 0,
+            waterfillDischargeConcentrateBelowW: 600,
+            waterfillDischargeSpreadAboveW: 1200,
+            waterfillSocMargin: 10
+        };
+
+        distributor.distribute(400, devices, config); // A becomes sticky active
+        devices[0].soc = 40;
+        devices[1].soc = 80;
+        distributor.distribute(400, devices, config); // handover A -> B triggers, blend starts
+
+        // Mid-blend, device C suddenly becomes the strongest candidate by far.
+        // The old (buggy) behavior re-evaluated the sticky device every cycle,
+        // so this would hijack the handover to C and drop A from its partial
+        // allocation straight to 0W instead of continuing the A->B ramp-down.
+        devices[2].soc = 95;
+        const midBlend = distributor.distribute(1000, devices, config);
+        // B's target is capped to its own 800W discharge limit (see [4.12]),
+        // so this first held cycle is 25% of the way from 0W to 800W, not 1000W.
+        assertEqual(midBlend.find(item => item.deviceId === 'A').powerW, 800, 'Outgoing device A continues its scheduled ramp-down, unaffected by C');
+        assertEqual(midBlend.find(item => item.deviceId === 'B').powerW, 200, 'Incoming device B continues its scheduled ramp-in, unaffected by C');
+        assertEqual(midBlend.find(item => item.deviceId === 'C').powerW, 0, 'C is ignored until the in-progress A->B handover hold completes');
+    });
+
+    await runTest('[4.17] A load spike above the spread threshold breaks out of an active handover hold', async () => {
+        const distributor = new WaterfillDistributor();
+        const devices = [
+            { id: 'A', name: 'A', soc: 80, minSoc: 10, maxSoc: 100, maxChargePowerW: 1600, maxDischargePowerW: 800, chargeAllowed: true, dischargeAllowed: true },
+            { id: 'B', name: 'B', soc: 40, minSoc: 10, maxSoc: 100, maxChargePowerW: 1600, maxDischargePowerW: 800, chargeAllowed: true, dischargeAllowed: true },
+            { id: 'C', name: 'C', soc: 40, minSoc: 10, maxSoc: 100, maxChargePowerW: 1600, maxDischargePowerW: 800, chargeAllowed: true, dischargeAllowed: true }
+        ];
+        const config = {
+            minBatterySoc: 10, maxBatterySoc: 100, updateIntervalSec: 5,
+            waterfillConcentrateHoldMinutes: 0,
+            waterfillDischargeConcentrateBelowW: 600,
+            waterfillDischargeSpreadAboveW: 1200,
+            waterfillSocMargin: 10
+        };
+
+        distributor.distribute(400, devices, config); // A becomes sticky active
+        devices[0].soc = 40;
+        devices[1].soc = 80;
+        distributor.distribute(400, devices, config); // handover A -> B triggers, blend starts
+
+        // A sudden load spike above the spread threshold arrives mid-hold. The
+        // old (buggy) behavior stayed forced into single/blend mode for the
+        // rest of the hold window, capping total power to just A+B's limits
+        // (1600W) and leaving the idle, eligible device C untouched even
+        // though the requested 1500W needs it.
+        const spike = distributor.distribute(1500, devices, config);
+        const total = spike.reduce((sum, item) => sum + item.powerW, 0);
+        assertEqual(total, 1500, 'Full requested power is met by spreading across all eligible devices');
+        assert(spike.find(item => item.deviceId === 'C').powerW > 0, 'Idle device C is pulled in during the spike instead of being ignored for the rest of the hold');
+    });
+
+    await runTest('[4.18] Waterfill reaches single-device mode after the configured hold window, not just cycle 1', async () => {
+        const distributor = new WaterfillDistributor();
+        const devices = [
+            { id: 'device1', name: 'Device 1', soc: 80, minSoc: 10, maxSoc: 100, maxChargePowerW: 1600, maxDischargePowerW: 800, chargeAllowed: true, dischargeAllowed: true },
+            { id: 'device2', name: 'Device 2', soc: 40, minSoc: 10, maxSoc: 100, maxChargePowerW: 1600, maxDischargePowerW: 1600, chargeAllowed: true, dischargeAllowed: true }
+        ];
+        const config = {
+            minBatterySoc: 10, maxBatterySoc: 100, updateIntervalSec: 5,
+            // A non-zero hold window is the whole point of this test: it forces
+            // selectMode() to stay on mode 'spread' (returning via enterSpread)
+            // for several cycles in a row before it may flip to 'single'. A
+            // regression that resets holdCycles on every one of those interim
+            // enterSpread calls would keep the counter at 1 forever and the
+            // system would never reach single-device mode at all.
+            waterfillConcentrateHoldMinutes: 1,
+            waterfillDischargeConcentrateBelowW: 600,
+            waterfillDischargeSpreadAboveW: 1200,
+            waterfillSocMargin: 10
+        };
+        const holdCycles = Math.round((1 * 60000) / (5 * 1000)); // 12
+
+        let lastResult;
+        for (let cycle = 0; cycle < holdCycles - 1; cycle++) {
+            lastResult = distributor.distribute(400, devices, config);
+            assertEqual(lastResult.filter(item => item.powerW > 0).length, 2,
+                `Cycle ${cycle + 1}/${holdCycles - 1}: still spreading while the hold window accumulates`);
+        }
+
+        // Hold window complete: this cycle starts the (separate, shorter)
+        // mode-transition blend rather than jumping straight to single - see
+        // [4.19] for that transition in detail. It settles into pure single
+        // MODE_TRANSITION_HOLD_CYCLES (2) cycles later.
+        distributor.distribute(400, devices, config);
+        distributor.distribute(400, devices, config);
+        const settled = distributor.distribute(400, devices, config);
+        assertEqual(settled.filter(item => item.powerW > 0).length, 1,
+            `Hold window and mode-transition blend complete: pure single-device mode by cycle ${holdCycles + 2}`);
+        assertEqual(settled.find(item => item.powerW > 0).deviceId, 'device1', 'Highest SOC device becomes sticky');
+    });
+
+    await runTest('[4.19] Waterfill blends power gradually when concentrating out of spread mode', async () => {
+        const distributor = new WaterfillDistributor();
+        const devices = [
+            { id: 'device1', name: 'Device 1', soc: 80, minSoc: 10, maxSoc: 100, maxChargePowerW: 1600, maxDischargePowerW: 800, chargeAllowed: true, dischargeAllowed: true },
+            { id: 'device2', name: 'Device 2', soc: 40, minSoc: 10, maxSoc: 100, maxChargePowerW: 1600, maxDischargePowerW: 1600, chargeAllowed: true, dischargeAllowed: true }
+        ];
+        const config = {
+            minBatterySoc: 10, maxBatterySoc: 100, updateIntervalSec: 5,
+            // 10s / 5s-interval = exactly 2 hold cycles: the first call stays in
+            // spread (a genuine prior cycle to blend away from), the second
+            // crosses the threshold and starts concentrating - unlike [4.18]'s
+            // 0-minute config, which would flip to single on the very first call
+            // and never produce a real spread cycle beforehand.
+            waterfillConcentrateHoldMinutes: 10 / 60,
+            waterfillDischargeConcentrateBelowW: 600,
+            waterfillDischargeSpreadAboveW: 1200,
+            waterfillSocMargin: 10
+        };
+
+        // First call ever: nothing real has been written yet, so there is nothing
+        // to blend away from, but the hold counter has not reached its threshold
+        // (2 cycles) yet either - goes straight to spread.
+        const spreadStep = distributor.distribute(400, devices, config);
+        assertEqual(spreadStep.find(item => item.deviceId === 'device1').powerW, 280, 'Spread step: device1 gets its SOC-weighted share');
+        assertEqual(spreadStep.find(item => item.deviceId === 'device2').powerW, 120, 'Spread step: device2 gets its SOC-weighted share');
+
+        // Second cycle at the same load crosses the hold threshold and starts
+        // concentrating. Same trigger-cycle pattern as a plain sticky-device swap
+        // ([4.12]): the split stays exactly where it was one moment ago - device1
+        // keeps its own real spread share (280W) instead of being dropped to 0W
+        // and ramped back up, and device2 keeps its own real spread share (120W)
+        // instead of being force-fed the full 400W it never actually carried
+        // alone. The blend only starts moving from the next cycle onward.
+        const transitionStart = distributor.distribute(400, devices, config);
+        assertEqual(transitionStart.find(item => item.deviceId === 'device1').powerW, 280, 'Mode-transition step 1: incoming device keeps its real previous share, no jump');
+        assertEqual(transitionStart.find(item => item.deviceId === 'device2').powerW, 120, 'Mode-transition step 1: outgoing device keeps its real previous share, no jump');
+
+        const transitionMid = distributor.distribute(400, devices, config);
+        assertEqual(transitionMid.find(item => item.deviceId === 'device1').powerW, 340, 'Mode-transition step 2: power is half-way blended from device1\'s real 280W start to the 400W target');
+        assertEqual(transitionMid.find(item => item.deviceId === 'device2').powerW, 60, 'Mode-transition step 2: power is half-way blended away from device2\'s real 120W start');
+
+        const transitionDone = distributor.distribute(400, devices, config);
+        assertEqual(transitionDone.find(item => item.deviceId === 'device1').powerW, 400, 'Mode-transition step 3: incoming device now carries the full load');
+        assertEqual(transitionDone.find(item => item.deviceId === 'device2').powerW, 0, 'Mode-transition step 3: outgoing device has fully ramped down');
+
+        const total = [transitionStart, transitionMid, transitionDone].map(
+            result => result.reduce((sum, item) => sum + item.powerW, 0)
+        );
+        assert(total.every(sum => sum === 400), 'Total power stays at the requested target throughout the blend - only its split moves');
+    });
+
+    await runTest('[4.20] Waterfill never blends a plain power-level change on an already-settled device set', async () => {
+        const distributor = new WaterfillDistributor();
+        const devices = [
+            { id: 'device1', name: 'Device 1', soc: 80, minSoc: 10, maxSoc: 100, maxChargePowerW: 1600, maxDischargePowerW: 800, chargeAllowed: true, dischargeAllowed: true },
+            { id: 'device2', name: 'Device 2', soc: 40, minSoc: 10, maxSoc: 100, maxChargePowerW: 1600, maxDischargePowerW: 1600, chargeAllowed: true, dischargeAllowed: true }
+        ];
+        const config = {
+            minBatterySoc: 10, maxBatterySoc: 100, updateIntervalSec: 5,
+            waterfillConcentrateHoldMinutes: 0,
+            waterfillDischargeConcentrateBelowW: 600,
+            waterfillDischargeSpreadAboveW: 1200,
+            waterfillSocMargin: 10
+        };
+
+        // Settle into single-device mode on device1 (cold start, no prior
+        // allocation to blend away from - immediate, per [4.7]/[4.12]).
+        distributor.distribute(400, devices, config);
+
+        // Same active device, three different power levels in a row: every one
+        // of these must be answered immediately at the new target. A blend must
+        // never be triggered just because the requested magnitude changed while
+        // the device set stayed the same.
+        for (const targetW of [300, 550, 100]) {
+            const result = distributor.distribute(targetW, devices, config);
+            assertEqual(result.find(item => item.deviceId === 'device1').powerW, targetW, `Instant response to ${targetW}W on the unchanged active device`);
+            assertEqual(result.find(item => item.deviceId === 'device2').powerW, 0, `Idle device stays untouched at ${targetW}W`);
+        }
+
+        // Force a large spike into spread mode, then vary the magnitude within
+        // spread while the same two devices stay eligible - again, no blend
+        // should ever engage, only waterfill()'s direct SOC-weighted split.
+        distributor.distribute(1500, devices, config);
+        for (const targetW of [1300, 1250, 1400]) {
+            const result = distributor.distribute(targetW, devices, config);
+            const total = result.reduce((sum, item) => sum + item.powerW, 0);
+            assertEqual(total, targetW, `Spread mode answers ${targetW}W immediately with the full target`);
+            assert(result.every(item => item.reason === 'Waterfill spread'), `No blend reason appears while spread stays spread at ${targetW}W`);
+        }
+    });
+
+    console.log('\n' + '='.repeat(70));
+    console.log('SECTION 5: PACKAGE & CONFIG CONSISTENCY');
+    console.log('='.repeat(70));
+
+    // These guard the custom-URL install path (js-controller reads io-package.json
+    // directly, no npm registry validation in between) - a malformed or
+    // out-of-sync file here breaks the adapter before any adapter code runs.
+    await runTest('[5.1] package.json and io-package.json versions match', async () => {
+        const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, 'package.json'), 'utf8'));
+        const ioPkg = JSON.parse(fs.readFileSync(path.join(__dirname, 'io-package.json'), 'utf8'));
+        assertEqual(ioPkg.common.version, pkg.version, 'io-package.json common.version matches package.json version');
+    });
+
+    await runTest('[5.2] io-package.json has required common fields', async () => {
+        const ioPkg = JSON.parse(fs.readFileSync(path.join(__dirname, 'io-package.json'), 'utf8'));
+        for (const field of ['name', 'title', 'version', 'type', 'mode', 'adminUI']) {
+            assert(ioPkg.common[field] !== undefined, `common.${field} is present`);
+        }
+        assert(ioPkg.common.name === 'zendure-automation', 'common.name matches expected adapter name');
+    });
+
+    await runTest('[5.3] admin/jsonConfig.json is valid JSON with required structure', async () => {
+        const jsonConfig = JSON.parse(fs.readFileSync(path.join(__dirname, 'admin', 'jsonConfig.json'), 'utf8'));
+        assert(jsonConfig.type && jsonConfig.items, 'jsonConfig has type and items');
+    });
+
+    await runTest('[5.4] admin/i18n translation files are valid JSON', async () => {
+        for (const lang of ['de', 'en']) {
+            const file = path.join(__dirname, 'admin', 'i18n', `${lang}.json`);
+            const translations = JSON.parse(fs.readFileSync(file, 'utf8'));
+            assert(Object.keys(translations).length > 0, `${lang}.json contains translations`);
+        }
+    });
+
     // Summary
     console.log('\n' + '='.repeat(70));
     if (testsFailed === 0) {
@@ -663,6 +1426,7 @@ async function testModules() {
         console.log('  ✓ Edge cases (NaN/null values, SOC/voltage limits)');
         console.log('  ✓ Emergency handling and safety limiters');
         console.log('  ✓ Full automation cycles (single & multi-device)');
+        console.log('  ✓ Package/config file consistency');
     } else {
         console.log(`✗ ${testsFailed} TEST(S) FAILED (${testsPassed} passed)`);
         console.log('='.repeat(70));
