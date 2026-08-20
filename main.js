@@ -147,7 +147,7 @@ class ZendureAutomation extends utils.Adapter {
                 await this.createDeviceStates();
 
                 // Restore emergency recovery states for all devices
-                for (const [deviceId, emergencyMgr] of this.emergencyManagers) {
+                for (const [, emergencyMgr] of this.emergencyManagers) {
                     await emergencyMgr.restoreRecoveryStates();
                 }
 
@@ -708,7 +708,7 @@ class ZendureAutomation extends utils.Adapter {
             for (const staleId of ['emergency', 'voltageRecovery']) {
                 try {
                     await this.delObjectAsync(`status.devices.${device.id}.${staleId}`);
-                } catch (err) {
+                } catch {
                     // Already gone (fresh install) - nothing to clean up.
                 }
             }
@@ -934,7 +934,7 @@ class ZendureAutomation extends utils.Adapter {
             await this.setStateAsync('info.connection', false, true);
 
             callback();
-        } catch (e) {
+        } catch {
             callback();
         }
     }

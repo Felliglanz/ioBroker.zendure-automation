@@ -265,7 +265,7 @@ Smooths the grid power signal to avoid reacting to fast load spikes (TV, microwa
 - **Too jittery?** → Decrease alpha (e.g., 0.5 → 0.3)
 - **No filter?** → Alpha = 1.0 (legacy behavior)
 
-### � Validation Source (For Devices with PV Modules)
+### 🔍 Validation Source (For Devices with PV Modules)
 
 **Problem:** For devices with directly connected PV modules (e.g., Solarflow Pro), `packPower` is not equal to the API setpoint:
 ```
@@ -295,7 +295,7 @@ packPower = API setpoint + PV input + AC charging
 - **AC+ / Hyper** without PV → `packPower` (default)
 - If unsure → test `packPower`, if validation errors occur → switch to `gridInputPower`
 
-### �🚨 Emergency & Recovery
+### 🚨 Emergency & Recovery
 
 **Emergency Charging** (highest priority):
 - Activated only at critical pack voltage according to `emergencyChargeVoltageV`

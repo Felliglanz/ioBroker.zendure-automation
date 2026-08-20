@@ -1,9 +1,12 @@
 #!/usr/bin/env node
 'use strict';
 
+const fs = require('fs');
+const path = require('path');
+
 /**
  * Comprehensive Test Suite for ioBroker.zendure-automation
- * 
+ *
  * Tests all critical paths including:
  * - Module loading and basic functionality
  * - ValidationService signature (3 params)
@@ -11,7 +14,8 @@
  * - Safety limiters in multi-device distribution
  * - Edge cases and error handling
  * - Full integration tests
- * 
+ * - Package/config file consistency (install-time safety net)
+ *
  * Run: node test-modules.js or npm test
  */
 
@@ -191,7 +195,10 @@ async function testModules() {
         const safetyLimiter = new SafetyLimiter(mockAdapter, deviceBasePath);
         const powerRegulator = new PowerRegulator(mockAdapter);
         const validationService = new ValidationService(mockAdapter);
-        assert(dataReader && validationService, 'Modules instantiated');
+        assert(
+            dataReader && emergencyMgr && relayProtection && safetyLimiter && powerRegulator && validationService,
+            'Modules instantiated'
+        );
     });
 
     await runTest('[1.3] DataReader reads states correctly', async () => {
@@ -1373,6 +1380,40 @@ async function testModules() {
         }
     });
 
+    console.log('\n' + '='.repeat(70));
+    console.log('SECTION 5: PACKAGE & CONFIG CONSISTENCY');
+    console.log('='.repeat(70));
+
+    // These guard the custom-URL install path (js-controller reads io-package.json
+    // directly, no npm registry validation in between) - a malformed or
+    // out-of-sync file here breaks the adapter before any adapter code runs.
+    await runTest('[5.1] package.json and io-package.json versions match', async () => {
+        const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, 'package.json'), 'utf8'));
+        const ioPkg = JSON.parse(fs.readFileSync(path.join(__dirname, 'io-package.json'), 'utf8'));
+        assertEqual(ioPkg.common.version, pkg.version, 'io-package.json common.version matches package.json version');
+    });
+
+    await runTest('[5.2] io-package.json has required common fields', async () => {
+        const ioPkg = JSON.parse(fs.readFileSync(path.join(__dirname, 'io-package.json'), 'utf8'));
+        for (const field of ['name', 'title', 'version', 'type', 'mode', 'adminUI']) {
+            assert(ioPkg.common[field] !== undefined, `common.${field} is present`);
+        }
+        assert(ioPkg.common.name === 'zendure-automation', 'common.name matches expected adapter name');
+    });
+
+    await runTest('[5.3] admin/jsonConfig.json is valid JSON with required structure', async () => {
+        const jsonConfig = JSON.parse(fs.readFileSync(path.join(__dirname, 'admin', 'jsonConfig.json'), 'utf8'));
+        assert(jsonConfig.type && jsonConfig.items, 'jsonConfig has type and items');
+    });
+
+    await runTest('[5.4] admin/i18n translation files are valid JSON', async () => {
+        for (const lang of ['de', 'en']) {
+            const file = path.join(__dirname, 'admin', 'i18n', `${lang}.json`);
+            const translations = JSON.parse(fs.readFileSync(file, 'utf8'));
+            assert(Object.keys(translations).length > 0, `${lang}.json contains translations`);
+        }
+    });
+
     // Summary
     console.log('\n' + '='.repeat(70));
     if (testsFailed === 0) {
@@ -1385,6 +1426,7 @@ async function testModules() {
         console.log('  ✓ Edge cases (NaN/null values, SOC/voltage limits)');
         console.log('  ✓ Emergency handling and safety limiters');
         console.log('  ✓ Full automation cycles (single & multi-device)');
+        console.log('  ✓ Package/config file consistency');
     } else {
         console.log(`✗ ${testsFailed} TEST(S) FAILED (${testsPassed} passed)`);
         console.log('='.repeat(70));
