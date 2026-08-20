@@ -2,8 +2,12 @@
   "common": {
     "name": "zendure-automation",
     "title": "Zendure Automation",
-    "version": "1.0.1",
+    "version": "1.0.2",
     "news": {
+      "1.0.2": {
+        "en": "Standalone Web Dashboard: the adapter now ships its own live dashboard - no vis setup required. Shows a flow diagram (Grid/PV/House/Battery around a central hub, with a real battery-cell visualization for SOC) that works in both single- and multi-device mode, plus control buttons wired directly to the control.* states. Configurable in a new admin tab (enable, port, optional real house-consumption and PV-production datapoints). When a house-consumption datapoint is set, you can optionally subtract each device's own AC charging draw (gridInputPower) from it, so a whole-house meter doesn't show inflated consumption while the battery charges via AC - PV-direct charging is correctly left out of that correction since it never touches the house meter. Click the battery (or a device card in multi-device mode) to see live per-pack details (cell voltages, temperature, etc. - whatever the connected Zendure device actually reports). Installable as a home screen app (PWA) on iOS/Android. Automatic dark/light theme. Fixed: Max Charge/Discharge override modes now keep status.currentPowerW (and related status fields) live-updated instead of freezing at whatever they showed before the override was activated.",
+        "de": "Eigenständiges Web-Dashboard: Der Adapter bringt jetzt ein eigenes Live-Dashboard mit - keine vis-Einrichtung nötig. Zeigt ein Flussdiagramm (Netz/PV/Haus/Batterie um einen zentralen Knotenpunkt, mit echter Batteriezellen-Visualisierung für den Ladezustand) sowohl im Single- als auch im Multi-Device-Modus, dazu Steuerbuttons direkt verbunden mit den control.*-States. Konfigurierbar über einen neuen Admin-Tab (Aktivieren, Port, optionale Datenpunkte für echten Hausverbrauch und PV-Produktion). Ist ein Hausverbrauchs-Datenpunkt gesetzt, kann optional die eigene AC-Ladeleistung jedes Geräts (gridInputPower) davon abgezogen werden, damit ein Gesamthauszähler beim AC-Laden nicht überhöhten Verbrauch anzeigt - PV-Direktladung bleibt bei dieser Korrektur bewusst außen vor, da sie nie über den Hauszähler läuft. Klick auf die Batterie (bzw. im Multi-Device-Modus auf eine Gerätekarte) zeigt Live-Details je Pack (Zellspannungen, Temperatur usw. - was auch immer das angeschlossene Zendure-Gerät tatsächlich liefert). Als App auf dem Homescreen installierbar (PWA) unter iOS/Android. Automatischer Hell-/Dunkelmodus. Fix: Max Charge/Discharge-Override hält status.currentPowerW (und zugehörige Status-Felder) jetzt live aktuell, statt beim zuletzt vor der Aktivierung angezeigten Wert einzufrieren."
+      },
       "1.0.1": {
         "en": "Multi-Device fixes: recovery states (emergency/voltage/SOC/minSoc) are now tracked per device instead of sharing one global state; SOC recovery is now evaluated in the multi-device cycle; Max Charge/Discharge overrides now check each device individually instead of blocking all on one; chargeAllowed/dischargeAllowed are now respected in equal-split mode too; emergency charge power is capped to each device's own limit; Waterfill sticky-device handover now blends power gradually instead of jumping instantly, and can no longer be hijacked mid-blend by a third device or bottlenecked during a load spike; Waterfill's excluded flag and aggregate system limits now correctly reflect ineligible devices. Fixed a regression that kept Waterfill stuck in spread mode forever whenever the concentrate-hold window was more than one cycle, so it never concentrated onto a single device. Concentrating out of spread mode now also blends gradually instead of jumping instantly, while a plain power-level change on an already-settled device set is still answered immediately with no blend. Fixed that same blend starting with an unnecessary drop-and-recover step instead of continuing smoothly from what each device was already delivering. Orphaned config/state leftovers cleaned up. Documentation corrected accordingly.",
         "de": "Multi-Device-Fixes: Recovery-States (Emergency/Voltage/SOC/MinSoc) werden jetzt pro Gerät statt in einem gemeinsamen globalen State geführt; SOC-Recovery wird im Multi-Device-Zyklus jetzt berücksichtigt; Max Charge/Discharge-Override prüft jetzt jedes Gerät einzeln statt alle wegen eines einzelnen Geräts zu blockieren; chargeAllowed/dischargeAllowed werden jetzt auch im Equal-Split-Modus beachtet; Notladeleistung wird auf das jeweilige Gerätelimit gedeckelt; Waterfill-Gerätewechsel (Sticky-Modus) blendet die Leistung jetzt graduell über statt hart zu springen, und kann nicht mehr mitten im Blend von einem dritten Gerät gekapert oder bei Lastspitzen ausgebremst werden; das excluded-Flag und die aggregierten Systemlimits bei Waterfill zeigen nicht-eligible Geräte jetzt korrekt an. Einen Regressionsfehler behoben, durch den Waterfill dauerhaft im Spread-Modus hängen blieb, sobald das Concentrate-Hold-Fenster mehr als einen Zyklus umfasste, und dadurch nie mehr auf ein einzelnes Gerät konzentrierte. Das Konzentrieren aus dem Spread-Modus heraus blendet jetzt ebenfalls graduell über statt hart zu springen, während eine reine Leistungsänderung bei unverändertem Gerätezustand weiterhin sofort und ohne Blending beantwortet wird. Diesen Blend-Übergang zusätzlich korrigiert, damit er nicht mehr mit einem unnötigen Abfall-und-Erholung-Schritt beginnt, sondern nahtlos an die bereits gelieferte Leistung jedes Geräts anschließt. Verwaiste Config-/State-Reste aufgeräumt. Dokumentation entsprechend korrigiert."
@@ -56,6 +60,7 @@
     "extIcon": "https://raw.githubusercontent.com/Felliglanz/iobroker.zendure-automation/main/admin/zendure-automation.png",
     "readme": "https://github.com/Felliglanz/iobroker.zendure-automation/blob/main/README.md",
     "loglevel": "info",
+    "localLink": "http://%ip%:%native.dashboardPort%/",
     "adminUI": {
       "config": "json"
     },
@@ -108,7 +113,14 @@
     "emergencyChargePowerW": 800,
     "emergencyExitSoc": 20,
     "emergencyRecoverySoc": 30,
-    "logLevel": "info"
+    "logLevel": "info",
+    "dashboardEnabled": true,
+    "dashboardPort": 3005,
+    "enableHousePower": false,
+    "housePowerDp": "",
+    "subtractBatteryChargeFromHouse": false,
+    "enablePvPower": false,
+    "pvPowerDp": ""
   },
   "objects": [],
   "instanceObjects": [

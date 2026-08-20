@@ -12,6 +12,7 @@ const ValidationService = require('./lib/ValidationService');
 const MultiDeviceManager = require('./lib/MultiDeviceManager');
 const SingleDeviceController = require('./lib/SingleDeviceController');
 const MultiDeviceController = require('./lib/MultiDeviceController');
+const DashboardServer = require('./lib/DashboardServer');
 
 /**
  * Battery Automation Engine
@@ -65,6 +66,7 @@ class ZendureAutomation extends utils.Adapter {
         this.multiDeviceMgr = null;  // Multi-device manager
         this.singleDeviceController = null;  // Single-device automation controller
         this.multiDeviceController = null;  // Multi-device automation controller
+        this.dashboardServer = null;  // Standalone web dashboard
     }
 
     /**
@@ -240,6 +242,18 @@ class ZendureAutomation extends utils.Adapter {
 
             // Subscribe to device protection flags
             await this.subscribeForeignStatesAsync(`${this._deviceBasePath}.control.lowVoltageBlock`);
+        }
+
+        // Start standalone dashboard (opt-out via config)
+        if (this.config.dashboardEnabled !== false) {
+            const port = Number(this.config.dashboardPort) || 3005;
+            this.dashboardServer = new DashboardServer(this);
+            try {
+                await this.dashboardServer.start(port);
+            } catch (err) {
+                this.log.error(`Dashboard could not be started: ${err.message}`);
+                this.dashboardServer = null;
+            }
         }
 
         // Start automation loop
@@ -439,6 +453,14 @@ class ZendureAutomation extends utils.Adapter {
                 return this.validationService.writePowerSetpoint(device.id, device.basePath, powerW);
             }));
 
+            // Re-read telemetry so status.* (and the dashboard) reflect the override too, not just
+            // the normal automation cycle - this used to stay frozen at whatever it showed before
+            // Max Charge was activated.
+            const aggregatedAfter = await this.multiDeviceMgr.aggregateDeviceStates();
+            const gridPowerW = await this.multiDeviceController.getGridPower(config.powerMeterDp);
+            await this.multiDeviceController.updateGlobalStates(gridPowerW, aggregatedAfter);
+            await this.multiDeviceController.updateDeviceStates(aggregatedAfter.devices);
+
             const anyCharging = setpoints.some(({ allowed }) => allowed);
             if (!anyCharging) {
                 this.log.info(`Max SOC ${maxBatterySoc}% reached on all devices, disabling Max Charge mode`);
@@ -460,6 +482,13 @@ class ZendureAutomation extends utils.Adapter {
 
         this.log.debug(`Max Charge: ${-globalChargePowerW}W`);
         await this.validationService.writePowerSetpoint(this._deviceBasePath, this._deviceBasePath, -globalChargePowerW);
+
+        // Same as above: keep status.* live while the override is active, not just on the next
+        // normal cycle.
+        const gridPowerW = await this.dataReader.getGridPowerW(config.powerMeterDp);
+        const currentPowerW = await this.dataReader.getCurrentBatteryPowerW();
+        const minPackVoltageV = await this.dataReader.getMinimumPackVoltageV();
+        await this.singleDeviceController.updateStatusStates(gridPowerW, batterySoc, currentPowerW, minPackVoltageV);
     }
 
     /**
@@ -505,6 +534,13 @@ class ZendureAutomation extends utils.Adapter {
                 this.log.debug(`Max Discharge: ${device.name} ${powerW}W`);
                 return this.validationService.writePowerSetpoint(device.id, device.basePath, powerW);
             }));
+
+            // Re-read telemetry so status.* (and the dashboard) reflect the override too, not just
+            // the normal automation cycle.
+            const aggregatedAfter = await this.multiDeviceMgr.aggregateDeviceStates();
+            const gridPowerW = await this.multiDeviceController.getGridPower(config.powerMeterDp);
+            await this.multiDeviceController.updateGlobalStates(gridPowerW, aggregatedAfter);
+            await this.multiDeviceController.updateDeviceStates(aggregatedAfter.devices);
 
             const anyDischarging = setpoints.some(({ allowed }) => allowed);
             if (!anyDischarging) {
@@ -554,6 +590,12 @@ class ZendureAutomation extends utils.Adapter {
 
         this.log.debug(`Max Discharge: ${globalDischargePowerW}W`);
         await this.validationService.writePowerSetpoint(this._deviceBasePath, this._deviceBasePath, globalDischargePowerW);
+
+        // Same as above: keep status.* live while the override is active, not just on the next
+        // normal cycle.
+        const gridPowerW = await this.dataReader.getGridPowerW(config.powerMeterDp);
+        const currentPowerW = await this.dataReader.getCurrentBatteryPowerW();
+        await this.singleDeviceController.updateStatusStates(gridPowerW, batterySoc, currentPowerW, minPackVoltageV);
     }
 
 
@@ -914,6 +956,11 @@ class ZendureAutomation extends utils.Adapter {
         try {
             this.log.info('Stopping Zendure Automation...');
             this._isRunning = false;
+
+            if (this.dashboardServer) {
+                await this.dashboardServer.stop();
+                this.dashboardServer = null;
+            }
 
             if (this._updateTimer) {
                 this.clearInterval(this._updateTimer);

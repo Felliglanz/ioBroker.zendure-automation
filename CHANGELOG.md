@@ -2,6 +2,26 @@
 
 All notable changes to this project are documented in this file.
 
+## v1.0.2 (2026-08-20)
+
+### English
+- Added a standalone web dashboard, served directly by the adapter - no `vis`/`vis-2` setup required. Shows a live flow diagram (Grid/PV/House/Battery around a central hub) with a real battery-cell visualization for state of charge, works in both single- and multi-device mode, and includes control buttons wired directly to the `control.*` states.
+- New admin tab to configure the dashboard: enable/disable, port (default 3005, free to change on conflicts), and optional real house-consumption and PV-production datapoints.
+- When a house-consumption datapoint is configured, you can optionally subtract each device's own AC charging draw (`gridInputPower`) from it, so a whole-house meter's reading isn't inflated by the battery's own AC charging - PV-direct charging is intentionally excluded from that correction since it never touches the house meter.
+- Clicking the battery (or a device card in multi-device mode) opens a detail view with live per-pack data (cell voltages, temperature, etc.) - dynamically discovered from whatever the connected Zendure device actually reports, not a hardcoded field list.
+- The dashboard is installable as a home screen app (PWA) on iOS and Android.
+- Automatic dark/light theme based on the browser/OS setting.
+- Fixed: the Max Charge/Discharge override modes now keep `status.currentPowerW` (and the related grid/SOC/voltage status fields) live-updated every cycle while active, instead of freezing at whatever they showed right before the override was activated.
+
+### Deutsch
+- Ein eigenständiges Web-Dashboard hinzugefügt, das der Adapter selbst ausliefert - kein `vis`/`vis-2`-Setup nötig. Zeigt ein Live-Flussdiagramm (Netz/PV/Haus/Batterie um einen zentralen Knotenpunkt) mit echter Batteriezellen-Visualisierung für den Ladezustand, funktioniert im Single- wie im Multi-Device-Modus, inklusive Steuerbuttons direkt verbunden mit den `control.*`-States.
+- Neuer Admin-Tab zur Dashboard-Konfiguration: Aktivieren/Deaktivieren, Port (Standard 3005, bei Kollisionen frei änderbar) sowie optionale Datenpunkte für echten Hausverbrauch und PV-Produktion.
+- Ist ein Hausverbrauchs-Datenpunkt konfiguriert, kann optional die eigene AC-Ladeleistung jedes Geräts (`gridInputPower`) davon abgezogen werden, damit ein Gesamthauszähler durch die AC-Ladung der Batterie nicht überhöht anzeigt - PV-Direktladung bleibt bei dieser Korrektur bewusst außen vor, da sie nie über den Hauszähler läuft.
+- Klick auf die Batterie (bzw. im Multi-Device-Modus auf eine Gerätekarte) öffnet eine Detailansicht mit Live-Pro-Pack-Daten (Zellspannungen, Temperatur usw.) - dynamisch ermittelt aus dem, was das angeschlossene Zendure-Gerät tatsächlich liefert, keine fest verdrahtete Feldliste.
+- Das Dashboard ist als App auf dem Homescreen installierbar (PWA) unter iOS und Android.
+- Automatischer Hell-/Dunkelmodus passend zur Browser-/Systemeinstellung.
+- Fix: Die Max Charge/Discharge-Override-Modi halten `status.currentPowerW` (und die zugehörigen Netz-/SOC-/Spannungs-Status-Felder) jetzt in jedem Zyklus live aktuell, statt beim zuletzt vor der Aktivierung angezeigten Wert einzufrieren.
+
 ## v1.0.1 (2026-08-19)
 
 ### English
