@@ -18,6 +18,7 @@ All notable changes to this project are documented in this file.
 - Waterfill's aggregate charge/discharge system limits (used for anti-windup and the power regulator) now correctly exclude devices with `chargeAllowed`/`dischargeAllowed` set to false, matching the actual per-device distribution limits.
 - Removed an orphaned `useFullChargeNeeded` config default that no longer had any corresponding UI option or code path.
 - Old per-device state objects (`status.devices.<id>.emergency`/`.voltageRecovery`) are now cleaned up on upgrade instead of being left behind, frozen, in the object tree.
+- Fixed a regression that prevented Waterfill from ever reaching single-device (sticky) mode when the concentrate-hold window was more than one cycle (i.e. `waterfillConcentrateHoldMinutes` above the value that makes the hold last exactly one update interval, which includes the default of 3 minutes): the hold-cycle counter was reset on every interim cycle before it could reach its threshold, so the system stayed in spread mode with all devices active indefinitely instead of concentrating low loads onto one device (reported in #14).
 
 ### Deutsch
 - Multi-Device-Recovery-States (Emergency/Voltage/SOC/MinSoc) werden jetzt pro Gerät unter `status.devices.<id>.*RecoveryActive` geführt statt sich einen globalen State zu teilen – behebt Datenmüll und fehlerhafte Wiederherstellung nach Adapter-Neustart bei mehreren Geräten.
@@ -33,6 +34,7 @@ All notable changes to this project are documented in this file.
 - Die aggregierten Waterfill-Systemlimits (für Anti-Windup und den Leistungsregler) schließen jetzt korrekt Geräte mit chargeAllowed/dischargeAllowed=false aus, passend zu den tatsächlichen Pro-Gerät-Verteilungslimits.
 - Einen verwaisten `useFullChargeNeeded`-Konfigurationswert entfernt, der keine zugehörige UI-Option oder Code-Nutzung mehr hatte.
 - Alte Pro-Gerät-State-Objekte (`status.devices.<id>.emergency`/`.voltageRecovery`) werden beim Upgrade jetzt aufgeräumt statt eingefroren im Objektbaum liegen zu bleiben.
+- Einen Regressionsfehler behoben, durch den Waterfill nie mehr in den Single-Device-Modus (Sticky) wechseln konnte, sobald das Concentrate-Hold-Fenster mehr als einen Zyklus umfasste (also bei `waterfillConcentrateHoldMinutes` oberhalb des Werts, der genau einem Update-Intervall entspricht – was auch den Standardwert von 3 Minuten einschließt): Der Hold-Cycle-Zähler wurde in jedem Zwischenzyklus zurückgesetzt, bevor er seinen Schwellwert erreichen konnte. Das System blieb dadurch dauerhaft im Spread-Modus mit allen aktiven Geräten hängen, statt geringe Lasten auf ein Gerät zu konzentrieren (gemeldet in #14).
 
 ## v1.0.0 (2026-08-11)
 

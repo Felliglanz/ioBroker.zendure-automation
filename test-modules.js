@@ -1237,6 +1237,40 @@ async function testModules() {
         assert(spike.find(item => item.deviceId === 'C').powerW > 0, 'Idle device C is pulled in during the spike instead of being ignored for the rest of the hold');
     });
 
+    await runTest('[4.18] Waterfill reaches single-device mode after the configured hold window, not just cycle 1', async () => {
+        const distributor = new WaterfillDistributor();
+        const devices = [
+            { id: 'device1', name: 'Device 1', soc: 80, minSoc: 10, maxSoc: 100, maxChargePowerW: 1600, maxDischargePowerW: 800, chargeAllowed: true, dischargeAllowed: true },
+            { id: 'device2', name: 'Device 2', soc: 40, minSoc: 10, maxSoc: 100, maxChargePowerW: 1600, maxDischargePowerW: 1600, chargeAllowed: true, dischargeAllowed: true }
+        ];
+        const config = {
+            minBatterySoc: 10, maxBatterySoc: 100, updateIntervalSec: 5,
+            // A non-zero hold window is the whole point of this test: it forces
+            // selectMode() to stay on mode 'spread' (returning via enterSpread)
+            // for several cycles in a row before it may flip to 'single'. A
+            // regression that resets holdCycles on every one of those interim
+            // enterSpread calls would keep the counter at 1 forever and the
+            // system would never reach single-device mode at all.
+            waterfillConcentrateHoldMinutes: 1,
+            waterfillDischargeConcentrateBelowW: 600,
+            waterfillDischargeSpreadAboveW: 1200,
+            waterfillSocMargin: 10
+        };
+        const holdCycles = Math.round((1 * 60000) / (5 * 1000)); // 12
+
+        let lastResult;
+        for (let cycle = 0; cycle < holdCycles - 1; cycle++) {
+            lastResult = distributor.distribute(400, devices, config);
+            assertEqual(lastResult.filter(item => item.powerW > 0).length, 2,
+                `Cycle ${cycle + 1}/${holdCycles - 1}: still spreading while the hold window accumulates`);
+        }
+
+        const settled = distributor.distribute(400, devices, config);
+        assertEqual(settled.filter(item => item.powerW > 0).length, 1,
+            `Hold window complete: switches to single-device mode on cycle ${holdCycles}`);
+        assertEqual(settled.find(item => item.powerW > 0).deviceId, 'device1', 'Highest SOC device becomes sticky');
+    });
+
     // Summary
     console.log('\n' + '='.repeat(70));
     if (testsFailed === 0) {
