@@ -1064,12 +1064,15 @@ async function testModules() {
         assertEqual(trigger.find(item => item.deviceId === 'device2').powerW, 0, 'Trigger cycle has not ramped in the incoming device yet');
 
         // Over the 4 handover-hold cycles, power is linearly blended from the
-        // outgoing to the incoming device (75/25 -> 50/50 -> 25/75 -> 0/100),
-        // each side capped to its own configured discharge limit.
+        // outgoing device to the incoming device's target - device2's target is
+        // capped to its own 800W discharge limit (below the 1000W requested),
+        // so the ramp is 0 -> 200 -> 400 -> 600 -> 800 against that 800W target,
+        // not against the raw 1000W request; the outgoing device picks up
+        // whatever's left of the requested 1000W each cycle.
         const expectedSteps = [
-            { device1: 750, device2: 250 },
-            { device1: 500, device2: 500 },
-            { device1: 250, device2: 750 },
+            { device1: 800, device2: 200 },
+            { device1: 600, device2: 400 },
+            { device1: 400, device2: 600 },
             { device1: 0, device2: 800 }
         ];
         for (let cycle = 0; cycle < 4; cycle++) {
@@ -1201,8 +1204,10 @@ async function testModules() {
         // allocation straight to 0W instead of continuing the A->B ramp-down.
         devices[2].soc = 95;
         const midBlend = distributor.distribute(1000, devices, config);
-        assertEqual(midBlend.find(item => item.deviceId === 'A').powerW, 750, 'Outgoing device A continues its scheduled ramp-down, unaffected by C');
-        assertEqual(midBlend.find(item => item.deviceId === 'B').powerW, 250, 'Incoming device B continues its scheduled ramp-in, unaffected by C');
+        // B's target is capped to its own 800W discharge limit (see [4.12]),
+        // so this first held cycle is 25% of the way from 0W to 800W, not 1000W.
+        assertEqual(midBlend.find(item => item.deviceId === 'A').powerW, 800, 'Outgoing device A continues its scheduled ramp-down, unaffected by C');
+        assertEqual(midBlend.find(item => item.deviceId === 'B').powerW, 200, 'Incoming device B continues its scheduled ramp-in, unaffected by C');
         assertEqual(midBlend.find(item => item.deviceId === 'C').powerW, 0, 'C is ignored until the in-progress A->B handover hold completes');
     });
 
@@ -1304,18 +1309,19 @@ async function testModules() {
         assertEqual(spreadStep.find(item => item.deviceId === 'device2').powerW, 120, 'Spread step: device2 gets its SOC-weighted share');
 
         // Second cycle at the same load crosses the hold threshold and starts
-        // concentrating. Unlike the trigger cycle of a plain sticky-device swap
-        // (which keeps the full outgoing power on one device for one cycle - see
-        // [4.12]), here the outgoing portion is redistributed across whatever was
-        // actually running in spread mode, so it lands back on device2 alone (it
-        // was spread mode's only other participant).
+        // concentrating. Same trigger-cycle pattern as a plain sticky-device swap
+        // ([4.12]): the split stays exactly where it was one moment ago - device1
+        // keeps its own real spread share (280W) instead of being dropped to 0W
+        // and ramped back up, and device2 keeps its own real spread share (120W)
+        // instead of being force-fed the full 400W it never actually carried
+        // alone. The blend only starts moving from the next cycle onward.
         const transitionStart = distributor.distribute(400, devices, config);
-        assertEqual(transitionStart.find(item => item.deviceId === 'device1').powerW, 0, 'Mode-transition step 1: incoming device has not ramped in yet');
-        assertEqual(transitionStart.find(item => item.deviceId === 'device2').powerW, 400, 'Mode-transition step 1: full power still comes from the outgoing spread device');
+        assertEqual(transitionStart.find(item => item.deviceId === 'device1').powerW, 280, 'Mode-transition step 1: incoming device keeps its real previous share, no jump');
+        assertEqual(transitionStart.find(item => item.deviceId === 'device2').powerW, 120, 'Mode-transition step 1: outgoing device keeps its real previous share, no jump');
 
         const transitionMid = distributor.distribute(400, devices, config);
-        assertEqual(transitionMid.find(item => item.deviceId === 'device1').powerW, 200, 'Mode-transition step 2: power is half-way blended to the incoming device');
-        assertEqual(transitionMid.find(item => item.deviceId === 'device2').powerW, 200, 'Mode-transition step 2: power is half-way blended away from the outgoing device');
+        assertEqual(transitionMid.find(item => item.deviceId === 'device1').powerW, 340, 'Mode-transition step 2: power is half-way blended from device1\'s real 280W start to the 400W target');
+        assertEqual(transitionMid.find(item => item.deviceId === 'device2').powerW, 60, 'Mode-transition step 2: power is half-way blended away from device2\'s real 120W start');
 
         const transitionDone = distributor.distribute(400, devices, config);
         assertEqual(transitionDone.find(item => item.deviceId === 'device1').powerW, 400, 'Mode-transition step 3: incoming device now carries the full load');
