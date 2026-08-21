@@ -1380,6 +1380,147 @@ async function testModules() {
         }
     });
 
+    // ------------------------------------------------------------------
+    // Issue #21: sustained heavy feed-in never reached charge mode because
+    // RelayProtection's deliberate relay-safety setpoints (0W, or exactly
+    // ±operatingDeadbandW) were smaller than hysteresisW, so
+    // PowerRegulator's hysteresis kept reverting them to the old setpoint -
+    // deadlocking the mode switch forever. Fix: RelayProtection reports
+    // `relayModified` whenever it enforces such a setpoint, and both
+    // controllers forward that as `bypassHysteresis` so only that one
+    // regulation step is skipped - ramping, absolute limits and rounding
+    // (and, upstream, the RelayProtection telemetry wait for the battery
+    // to actually reach ~0W) still apply exactly as before.
+    // ------------------------------------------------------------------
+
+    await runTest('[4.21] RelayProtection + PowerRegulator: relay-safety setpoints bypass hysteresis, not the whole regulator (issue #21, single-device shape)', async () => {
+        const relayProtection = new RelayProtection(mockAdapter);
+        const powerRegulator = new PowerRegulator(mockAdapter);
+
+        // Single-device config: operatingDeadbandW is used as-is (no per-device
+        // scaling), matching lib/SingleDeviceController.js.
+        const config = {
+            ...mockConfig,
+            hysteresisW: 30,
+            operatingDeadbandW: 10,
+            deadbandHoldTicks: 1,
+            feedInThresholdW: -150,
+            feedInDelayTicks: 5
+        };
+
+        // Sustained feed-in already confirmed (counter past feedInDelayTicks),
+        // as it would be after minutes of heavy PV export.
+        relayProtection.feedInCounter = 5;
+
+        const gridPowerW = -300; // well below feedInThresholdW
+        const currentBatteryPowerW = 25; // still discharging, not yet ~0W
+        const rawTargetW = -500; // I-Regulator wants a hard charge transition
+
+        // Cycle A: deadband takes over for the first time this transition -
+        // holds at exactly +operatingDeadbandW (10W), same as before the fix.
+        let relayResult = relayProtection.applyProtection({
+            config, gridPowerW, currentBatteryPowerW,
+            lastSetPowerW: 10, newBatteryPowerW: rawTargetW
+        });
+        assertEqual(relayResult.powerW, 10, 'Cycle A: deadband holds at +operatingDeadbandW');
+        assert(relayResult.relayModified, 'Cycle A: RelayProtection reports it overrode the setpoint');
+
+        let regResult = powerRegulator.applyRegulation({
+            config, powerW: relayResult.powerW, lastSetPowerW: 10,
+            safetyActive: false, bypassHysteresis: relayResult.relayModified
+        });
+        assertEqual(regResult.powerW, 10, 'Cycle A: regulator output unchanged (no relay switch needed yet)');
+
+        // Cycle B: deadband hold has now lasted deadbandHoldTicks - RelayProtection
+        // releases to the safety-critical 0W setpoint. Delta to lastSetPowerW (10W)
+        // is only 10W, well under hysteresisW (30W): pre-fix this got silently
+        // reverted to 10W and the relay could never switch.
+        relayResult = relayProtection.applyProtection({
+            config, gridPowerW, currentBatteryPowerW,
+            lastSetPowerW: 10, newBatteryPowerW: rawTargetW
+        });
+        assertEqual(relayResult.powerW, 0, 'Cycle B: deadband released, RelayProtection targets exactly 0W');
+        assert(relayResult.relayModified, 'Cycle B: RelayProtection reports it overrode the setpoint');
+
+        regResult = powerRegulator.applyRegulation({
+            config, powerW: relayResult.powerW, lastSetPowerW: 10,
+            safetyActive: false, bypassHysteresis: relayResult.relayModified
+        });
+        assertEqual(regResult.powerW, 0, 'Cycle B: 0W setpoint reaches the device instead of being reverted by hysteresis');
+
+        // Control: without the bypass flag, the exact same 0W setpoint gets
+        // reverted by hysteresis - this is the bug as reported in issue #21.
+        const unfixedResult = powerRegulator.applyRegulation({
+            config, powerW: 0, lastSetPowerW: 10, safetyActive: false
+            // bypassHysteresis omitted, as pre-fix call sites did
+        });
+        assertEqual(unfixedResult.powerW, 10, 'Control: omitting bypassHysteresis reproduces the reported deadlock');
+    });
+
+    await runTest('[4.22] MultiDeviceController.calculateTargetPower: sustained heavy feed-in reaches 0W instead of oscillating at hysteresis (issue #21, reporter\'s exact config)', async () => {
+        const MultiDeviceController = require('./lib/MultiDeviceController');
+
+        // Config values as attached to issue #21 (2x AC2400+ multi-device setup).
+        const config = {
+            hysteresisW: 30,
+            operatingDeadbandW: 10, // scaled to 20W by the controller for 2 devices
+            deadbandHoldTicks: 1,
+            feedInThresholdW: -150,
+            feedInDelayTicks: 5,
+            dischargeThresholdW: 100,
+            dischargeDelayTicks: 3,
+            maxChargePowerW: 2400,
+            maxDischargePowerW: 2400,
+            rampChargeWPerCycle: 100,
+            rampDischargeWPerCycle: 250
+        };
+
+        const controller = new MultiDeviceController(mockAdapter, {
+            multiDeviceMgr: { devices: [{ id: 'device1' }, { id: 'device2' }] },
+            relayProtection: new RelayProtection(mockAdapter),
+            powerRegulator: new PowerRegulator(mockAdapter)
+        });
+
+        // Reproduces the reported log: stuck discharging at 20W total while the
+        // grid is feeding in ~3200W - way past feedInDelayTicks already.
+        controller.lastTotalWrittenPowerW = 20;
+        controller.relayProtection.feedInCounter = 90;
+
+        const filteredGridPowerW = -3200;
+        const targetGridPowerW = -100;
+        const normalDevices = [{ id: 'device1', powerW: 20 }, { id: 'device2', powerW: 20 }];
+        const aggregatedState = { totalPowerW: 40, avgSoc: 18, availableDevicesCount: 2 };
+
+        const cycleA = await controller.calculateTargetPower(config, filteredGridPowerW, targetGridPowerW, normalDevices, aggregatedState);
+        assertEqual(cycleA, 20, 'Cycle A: deadband holds at scaled operatingDeadbandW (20W for 2 devices)');
+
+        controller.lastTotalWrittenPowerW = cycleA;
+        const cycleB = await controller.calculateTargetPower(config, filteredGridPowerW, targetGridPowerW, normalDevices, aggregatedState);
+        assertEqual(cycleB, 0, 'Cycle B: deadband release reaches 0W - relay is finally allowed to switch to charge');
+    });
+
+    await runTest('[4.23] PowerRegulator hysteresis still suppresses ordinary I-Regulator jitter (regression guard for issue #21 fix)', async () => {
+        const relayProtection = new RelayProtection(mockAdapter);
+        const powerRegulator = new PowerRegulator(mockAdapter);
+
+        const config = { ...mockConfig, hysteresisW: 30, operatingDeadbandW: 10, deadbandHoldTicks: 1 };
+
+        // Steady discharge, small I-Regulator fluctuation - no transition, no
+        // deadband involvement, RelayProtection has nothing to enforce here.
+        const relayResult = relayProtection.applyProtection({
+            config, gridPowerW: 300, currentBatteryPowerW: 500,
+            lastSetPowerW: 500, newBatteryPowerW: 520
+        });
+        assertEqual(relayResult.powerW, 520, 'RelayProtection passes ordinary regulation through untouched');
+        assert(!relayResult.relayModified, 'RelayProtection reports no override for ordinary regulation');
+
+        const regResult = powerRegulator.applyRegulation({
+            config, powerW: relayResult.powerW, lastSetPowerW: 500,
+            safetyActive: false, bypassHysteresis: relayResult.relayModified
+        });
+        assertEqual(regResult.powerW, 500, 'Hysteresis still suppresses a 20W jitter below the 30W threshold');
+    });
+
     console.log('\n' + '='.repeat(70));
     console.log('SECTION 5: PACKAGE & CONFIG CONSISTENCY');
     console.log('='.repeat(70));
