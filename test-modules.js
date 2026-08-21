@@ -281,9 +281,11 @@ async function testModules() {
         // Device1 should be available, Device2 should NOT be available due to invalid states
         assertEqual(aggregated.devices.length, 2, 'Both devices returned');
         
-        const dev1 = aggregated.devices.find(d => d.id === 'device1');
-        const dev2 = aggregated.devices.find(d => d.id === 'device2');
-        
+        // Device ids are now derived from deviceKey (stable per physical unit, #23), not table
+        // position - these fixtures use deviceKey 'pk1'/'pk2', so that's the resulting id too.
+        const dev1 = aggregated.devices.find(d => d.id === 'pk1');
+        const dev2 = aggregated.devices.find(d => d.id === 'pk2');
+
         assertEqual(dev1.available, true, 'Device1 with valid states is available');
         assertEqual(dev2.available, false, 'Device2 with NaN/null states is NOT available');
     });
@@ -306,16 +308,17 @@ async function testModules() {
         
         const aggregated = await multiDeviceMgr.aggregateDeviceStates();
         
-        // Create emergency managers (will detect lowVoltageBlock)
+        // Create emergency managers (will detect lowVoltageBlock), keyed by the deviceKey-derived
+        // id (#23) - same as multiDeviceMgr.devices[i].id for these fixtures.
         const emergencyManagers = new Map();
         const safetyLimiters = new Map();
-        emergencyManagers.set('device1', new EmergencyManager(mockAdapter, 'test.0.device1.pk1'));
-        emergencyManagers.set('device2', new EmergencyManager(mockAdapter, 'test.0.device2.pk2'));
-        safetyLimiters.set('device1', new SafetyLimiter(mockAdapter, 'test.0.device1.pk1'));
-        safetyLimiters.set('device2', new SafetyLimiter(mockAdapter, 'test.0.device2.pk2'));
-        
+        emergencyManagers.set('pk1', new EmergencyManager(mockAdapter, 'test.0.device1.pk1'));
+        emergencyManagers.set('pk2', new EmergencyManager(mockAdapter, 'test.0.device2.pk2'));
+        safetyLimiters.set('pk1', new SafetyLimiter(mockAdapter, 'test.0.device1.pk1'));
+        safetyLimiters.set('pk2', new SafetyLimiter(mockAdapter, 'test.0.device2.pk2'));
+
         // Check emergency state first
-        await emergencyManagers.get('device1').checkEmergencyConditions(mockConfig, 15, 2.9);
+        await emergencyManagers.get('pk1').checkEmergencyConditions(mockConfig, 15, 2.9);
         
         // Try to discharge 1000W - device1 should be excluded due to emergency recovery
         const voltageConfig = { ...mockConfig, dischargeProtectionMode: 'voltage', minBatteryVoltageV: 3.0 };
@@ -327,8 +330,8 @@ async function testModules() {
             safetyLimiters
         );
         
-        const dev1Dist = distribution.find(d => d.deviceId === 'device1');
-        const dev2Dist = distribution.find(d => d.deviceId === 'device2');
+        const dev1Dist = distribution.find(d => d.deviceId === 'pk1');
+        const dev2Dist = distribution.find(d => d.deviceId === 'pk2');
         
         // Device1 should be excluded (emergency recovery from low voltage)
         assert(dev1Dist, 'Device1 in distribution result');
@@ -339,7 +342,7 @@ async function testModules() {
         assertEqual(totalDistributed, 1000, 'Total power correctly distributed');
         
         // Emergency state was checked (even if not excluding in this test scenario)
-        assert(emergencyManagers.get('device1').inEmergencyRecovery !== undefined, 'Emergency state tracked');
+        assert(emergencyManagers.get('pk1').inEmergencyRecovery !== undefined, 'Emergency state tracked');
     });
 
     await runTest('[2.4] Emergency charge power is capped to each device\'s own charge limit', async () => {
@@ -887,8 +890,8 @@ async function testModules() {
 
         const activeDistribution = distribution.filter(d => !d.excluded);
         assertEqual(activeDistribution.reduce((sum, d) => sum + d.powerW, 0), 2500, 'Waterfill target reaches manager output');
-        assertEqual(activeDistribution.find(d => d.deviceId === 'device1').powerW, 500, 'Manager applies device one limit');
-        assertEqual(activeDistribution.find(d => d.deviceId === 'device2').powerW, 2000, 'Manager applies device two limit');
+        assertEqual(activeDistribution.find(d => d.deviceId === 'pk1').powerW, 500, 'Manager applies device one limit');
+        assertEqual(activeDistribution.find(d => d.deviceId === 'pk2').powerW, 2000, 'Manager applies device two limit');
     });
 
     await runTest('[4.9] Waterfill handles changing loads and direction changes', async () => {
@@ -1157,8 +1160,8 @@ async function testModules() {
             safetyLimiters
         );
 
-        const device1 = distribution.find(d => d.deviceId === 'device1');
-        const device2 = distribution.find(d => d.deviceId === 'device2');
+        const device1 = distribution.find(d => d.deviceId === 'pk1');
+        const device2 = distribution.find(d => d.deviceId === 'pk2');
         assertEqual(device1.excluded, true, 'Charge-disabled device is excluded even in equalSplit mode');
         assertEqual(device1.powerW, 0, 'Charge-disabled device receives no power in equalSplit mode');
         assertEqual(device2.excluded, false, 'Other device still participates normally');

@@ -393,6 +393,11 @@ class ZendureAutomation extends utils.Adapter {
             // Build effective config (static config + runtime control.* overrides)
             const effectiveConfig = await this.getEffectiveConfig();
 
+            // Same overlay, per device (Waterfill limits/allowed-flags) - see #23
+            if (this._isMultiDevice) {
+                await this.multiDeviceMgr.refreshEffectiveDeviceConfig();
+            }
+
             // Check for manual override modes (highest priority)
             const maxChargeState = await this.getStateAsync('control.maxCharge');
             const maxDischargeState = await this.getStateAsync('control.maxDischarge');
@@ -603,16 +608,64 @@ class ZendureAutomation extends utils.Adapter {
 
 
     /**
+     * Removes status.devices.<id>/control.devices.<id> subtrees for device ids that are no
+     * longer configured - either because a device was removed, or (once, on upgrade) because the
+     * old positional device1/device2 ids were replaced by stable deviceKey-based ones (#23).
+     * Subtrees for ids that are still configured are never touched here; createDeviceStates()
+     * only adds missing objects for those via setObjectNotExistsAsync, so their persisted values
+     * survive restarts untouched.
+     */
+    async _removeOrphanedDeviceTrees() {
+        const currentIds = new Set(this.multiDeviceMgr.devices.map(d => d.id));
+
+        for (const root of ['status.devices', 'control.devices']) {
+            const prefix = `${this.namespace}.${root}.`;
+            let rows;
+            try {
+                const view = await this.getObjectViewAsync('system', 'state', {
+                    startkey: prefix,
+                    endkey: `${prefix}香`
+                });
+                rows = view.rows;
+            } catch {
+                rows = [];
+            }
+
+            const staleIds = new Set();
+            for (const row of rows) {
+                const rel = row.id.slice(prefix.length);
+                const id = rel.split('.')[0];
+                if (id && !currentIds.has(id)) staleIds.add(id);
+            }
+
+            for (const staleId of staleIds) {
+                this.log.info(`Removing state tree for no-longer-configured device: ${root}.${staleId}`);
+                await this.delObjectAsync(`${root}.${staleId}`, { recursive: true });
+            }
+        }
+    }
+
+    /**
      * Create device channels and states for multi-device mode
      */
     async createDeviceStates() {
         if (!this._isMultiDevice || !this.multiDeviceMgr) return;
+
+        await this._removeOrphanedDeviceTrees();
 
         // Create devices channel
         await this.setObjectNotExistsAsync('status.devices', {
             type: 'channel',
             common: {
                 name: 'Multi-Device States'
+            },
+            native: {}
+        });
+
+        await this.setObjectNotExistsAsync('control.devices', {
+            type: 'channel',
+            common: {
+                name: 'Per-Device Control Overrides'
             },
             native: {}
         });
@@ -781,6 +834,73 @@ class ZendureAutomation extends utils.Adapter {
                 },
                 native: {}
             });
+
+            // Per-device control overrides (#23) - same shape/behavior as the global control.*
+            // states: object definitions are created once and never touched again, but the
+            // *value* is reset to the current admin-config default on every restart, so a live
+            // dashboard override only lasts for the running session (see getEffectiveConfig()).
+            await this.setObjectNotExistsAsync(`control.devices.${device.id}`, {
+                type: 'channel',
+                common: {
+                    name: device.name
+                },
+                native: {}
+            });
+
+            await this.setObjectNotExistsAsync(`control.devices.${device.id}.maxChargePowerW`, {
+                type: 'state',
+                common: {
+                    name: 'Max Charge Power (this device)',
+                    type: 'number',
+                    role: 'value.power',
+                    unit: 'W',
+                    read: true,
+                    write: true
+                },
+                native: {}
+            });
+
+            await this.setObjectNotExistsAsync(`control.devices.${device.id}.maxDischargePowerW`, {
+                type: 'state',
+                common: {
+                    name: 'Max Discharge Power (this device)',
+                    type: 'number',
+                    role: 'value.power',
+                    unit: 'W',
+                    read: true,
+                    write: true
+                },
+                native: {}
+            });
+
+            await this.setObjectNotExistsAsync(`control.devices.${device.id}.chargeAllowed`, {
+                type: 'state',
+                common: {
+                    name: 'Charging Allowed (this device)',
+                    type: 'boolean',
+                    role: 'switch',
+                    read: true,
+                    write: true
+                },
+                native: {}
+            });
+
+            await this.setObjectNotExistsAsync(`control.devices.${device.id}.dischargeAllowed`, {
+                type: 'state',
+                common: {
+                    name: 'Discharging Allowed (this device)',
+                    type: 'boolean',
+                    role: 'switch',
+                    read: true,
+                    write: true
+                },
+                native: {}
+            });
+
+            await this.setStateAsync(`control.devices.${device.id}.maxChargePowerW`, device.maxChargePowerW, true);
+            await this.setStateAsync(`control.devices.${device.id}.maxDischargePowerW`, device.maxDischargePowerW, true);
+            await this.setStateAsync(`control.devices.${device.id}.chargeAllowed`, device.chargeAllowed, true);
+            await this.setStateAsync(`control.devices.${device.id}.dischargeAllowed`, device.dischargeAllowed, true);
         }
 
         // Create additional multi-device global states
