@@ -43,17 +43,24 @@
   const detailsTitle = document.getElementById('detailsTitle');
   const detailsBody = document.getElementById('detailsBody');
   const detailsClose = document.getElementById('detailsClose');
+  const controlHint = document.getElementById('controlHint');
+
+  // control.* keys whose global value is only a fallback in multi-device Waterfill mode - the
+  // per-device limits from the admin table are what's actually effective there (see issue #22).
+  const WATERFILL_AMBIGUOUS_KEYS = ['maxChargePowerW', 'maxDischargePowerW'];
 
   // Battery cell interior, matches #batteryClip in index.html
   const BATTERY_TOP = 200;
   const BATTERY_HEIGHT = 120;
 
   const controlInputs = {};
+  const controlRows = {};
 
   function buildControlPanel() {
     for (const def of CONTROLS) {
       const row = document.createElement('div');
       row.className = 'control-item';
+      controlRows[def.key] = row;
 
       const label = document.createElement('label');
       label.textContent = def.label + (def.unit ? ` (${def.unit})` : '');
@@ -131,7 +138,7 @@
     }
   }
 
-  function renderDeviceCards(devices) {
+  function renderDeviceCards(devices, waterfillActive) {
     if (!devices || devices.length === 0) {
       deviceCards.hidden = true;
       deviceCards.innerHTML = '';
@@ -153,13 +160,48 @@
 
       card.classList.add('clickable');
       card.innerHTML = `
-        <div class="name"><span class="dot"></span>${escapeHtml(dev.name || dev.id)}</div>
+        <div class="name">
+          <span class="dot"></span>${escapeHtml(dev.name || dev.id)}
+          <button type="button" class="gear-btn" title="Geräte-Limits" aria-label="Geräte-Limits">⚙</button>
+        </div>
         <div class="metrics"><span>${fmtW(dev.powerW)}</span><span>${soc}%</span></div>
         <div class="bar-track"><div class="bar-fill ${barClass}" style="width:${socPct}%"></div></div>
       `;
       card.addEventListener('click', () => openDetails(dev.id));
+      card.querySelector('.gear-btn').addEventListener('click', e => {
+        e.stopPropagation();
+        openDeviceLimits(dev, waterfillActive);
+      });
       deviceCards.appendChild(card);
     }
+  }
+
+  /**
+   * Read-only popup showing each device's actually-configured Waterfill limits (native admin
+   * config, not a writable state yet - see issue #22). Reuses the details modal.
+   */
+  function openDeviceLimits(dev, waterfillActive) {
+    detailsTitle.textContent = `Geräte-Limits – ${dev.name || dev.id}`;
+
+    const rows = [
+      ['Laden erlaubt', dev.chargeAllowed === false ? 'Nein' : 'Ja'],
+      ['Entladen erlaubt', dev.dischargeAllowed === false ? 'Nein' : 'Ja'],
+      ['Max. Ladeleistung', fmtW(dev.maxChargePowerW)],
+      ['Max. Entladeleistung', fmtW(dev.maxDischargePowerW)]
+    ];
+    const body = rows.map(([label, val]) =>
+      `<tr><td>${escapeHtml(label)}</td><td>${escapeHtml(String(val))}</td></tr>`
+    ).join('');
+
+    const hint = waterfillActive
+      ? 'Waterfill-Modus aktiv: diese Werte werden für dieses Gerät verwendet.'
+      : 'Equal-Split-Modus aktiv: diese Werte werden aktuell nicht verwendet – maßgeblich ist die globale Steuerung.';
+
+    detailsBody.innerHTML = `
+      <table class="pack-table"><tbody>${body}</tbody></table>
+      <p class="modal-hint">${escapeHtml(hint)}</p>
+    `;
+    detailsOverlay.hidden = false;
   }
 
   function escapeHtml(str) {
@@ -243,11 +285,14 @@
     const batteryW = data.multiDevice ? data.status.totalPowerW : data.status.currentPowerW;
     const gridW = data.status.gridPowerW;
     const soc = data.multiDevice ? data.status.avgSoc : data.status.batterySoc;
-    const houseW = data.house && data.house.enabled ? data.house.powerW : null;
+    const houseEnabled = !!(data.house && data.house.enabled);
+    const houseW = houseEnabled ? data.house.powerW : null;
     const pvW = data.pv && data.pv.enabled ? data.pv.powerW : null;
 
     gridPowerValue.textContent = fmtW(gridW);
-    housePowerValue.textContent = fmtW(houseW);
+    // No house datapoint configured: show the node without a value instead of a placeholder like
+    // "– W", which reads as broken/missing data rather than "not measured" (issue #22).
+    housePowerValue.textContent = houseEnabled ? fmtW(houseW) : '';
     pvPowerValue.textContent = fmtW(pvW);
     batteryPowerValue.textContent = fmtW(batteryW);
     batterySocValue.textContent = soc !== null && soc !== undefined ? `${Math.round(soc)}%` : '–%';
@@ -282,7 +327,14 @@
 
     hub.classList.toggle('active', !!(gridDir || batteryDir || houseDir || pvDir));
 
-    renderDeviceCards(data.devices);
+    const waterfillActive = data.multiDevice && data.multiDeviceDistributionStrategy === 'waterfill';
+    for (const key of WATERFILL_AMBIGUOUS_KEYS) {
+      const row = controlRows[key];
+      if (row) row.hidden = waterfillActive;
+    }
+    controlHint.hidden = !waterfillActive;
+
+    renderDeviceCards(data.devices, waterfillActive);
     updateControls(data.control);
 
     emergencyReason.textContent = data.status.emergencyReason || '';
