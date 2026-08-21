@@ -228,6 +228,23 @@ async function testModules() {
         assertEqual(batterySoc, null, 'NaN SOC returns null');
     });
 
+    await runTest('[1.4b] DataReader treats a frozen (stale) packPower/SOC/grid state as unavailable', async () => {
+        initializeMockStates();
+        const staleTs = Date.now() - (4 * 60 * 1000); // older than the 3-minute staleness window
+        mockStates.set('test.0.gridPower', { val: 100, ack: true, ts: staleTs });
+        mockStates.set('test.0.device1.electricLevel', { val: 50, ack: true, ts: staleTs });
+        mockStates.set('test.0.device1.packPower', { val: -100, ack: true, ts: staleTs });
+
+        const dataReader = new DataReader(mockAdapter, deviceBasePath);
+        assertEqual(await dataReader.getGridPowerW('test.0.gridPower'), null, 'Stale grid power returns null');
+        assertEqual(await dataReader.getBatterySoc(), null, 'Stale SOC returns null');
+        assertEqual(await dataReader.getCurrentBatteryPowerW(), null, 'Stale battery power returns null, not the frozen value');
+
+        // A fresh value right after must be trusted again (no lingering "stuck" state)
+        setMockState('test.0.device1.packPower', -100);
+        assertEqual(await dataReader.getCurrentBatteryPowerW(), 100, 'Fresh battery power is trusted again');
+    });
+
     await runTest('[1.5] MultiDeviceController rejects invalid grid power values', async () => {
         initializeMockStates();
         const MultiDeviceController = require('./lib/MultiDeviceController');
@@ -288,6 +305,30 @@ async function testModules() {
 
         assertEqual(dev1.available, true, 'Device1 with valid states is available');
         assertEqual(dev2.available, false, 'Device2 with NaN/null states is NOT available');
+    });
+
+    await runTest('[2.2b] Multi-Device excludes a device whose packPower/SOC has frozen (gone stale)', async () => {
+        initializeMockStates();
+
+        const devices = [
+            { productKey: 'device1', deviceKey: 'pk1', name: 'Device 1', enabled: true },
+            { productKey: 'device2', deviceKey: 'pk2', name: 'Device 2', enabled: true }
+        ];
+
+        const multiDeviceMgr = new MultiDeviceManager(mockAdapter, 'test.0', devices);
+
+        // Device2 looks numerically valid, but its source adapter stopped refreshing it
+        // (e.g. the physical device went offline) - simulates issue #15 (HolgerBF).
+        const staleTs = Date.now() - (4 * 60 * 1000);
+        mockStates.set('test.0.device2.pk2.packPower', { val: -50, ack: true, ts: staleTs });
+
+        const aggregated = await multiDeviceMgr.aggregateDeviceStates();
+
+        const dev1 = aggregated.devices.find(d => d.id === 'pk1');
+        const dev2 = aggregated.devices.find(d => d.id === 'pk2');
+
+        assertEqual(dev1.available, true, 'Device1 with a fresh reading stays available');
+        assertEqual(dev2.available, false, 'Device2 with a frozen packPower reading is excluded, not trusted');
     });
 
     await runTest('[2.3] Multi-Device safety limiters block discharge at low voltage', async () => {
