@@ -631,6 +631,39 @@ async function testModules() {
         assert(distribution.every(d => d.excluded || d.powerW === 0), 'All devices excluded from charging at max SOC');
     });
 
+    await runTest('[3.4b] Excluded devices bypass zero-avoidance and always get a literal 0W (issue #28)', async () => {
+        initializeMockStates();
+
+        const devices = [
+            { productKey: 'device1', deviceKey: 'pk1', name: 'Device 1', enabled: true },
+            { productKey: 'device2', deviceKey: 'pk2', name: 'Device 2', enabled: true }
+        ];
+        const multiDeviceMgr = new MultiDeviceManager(mockAdapter, 'test.0', devices);
+        const validationService = new ValidationService(mockAdapter);
+        const [device1, device2] = multiDeviceMgr.devices;
+
+        // Device 2 is discharging normally; Device 1 is structurally excluded (e.g. Waterfill
+        // Sticky-Device's resting side) and should be told 0W outright.
+        const distribution = [
+            { deviceId: device1.id, deviceName: device1.name, powerW: 0, reason: 'Waterfill: device not eligible', excluded: true },
+            { deviceId: device2.id, deviceName: device2.name, powerW: 300, reason: 'Waterfill active device', excluded: false }
+        ];
+
+        const avoidZeroConfig = { ...mockConfig, avoidZeroSetpoint: true, standbyKeepAliveW: 10, smartModeIdleTimeoutSec: 300, zeroHoldOffSec: 8 };
+
+        await multiDeviceMgr.writePowerSetpoints(distribution, {}, validationService, avoidZeroConfig);
+
+        const excludedLimit = getMockState(`${device1.basePath}.control.setDeviceAutomationInOutLimit`).val;
+        assertEqual(excludedLimit, 0, 'Excluded device gets literal 0W even with avoidZeroSetpoint enabled, not a keep-alive value');
+
+        // Repeated cycles (device stays excluded) must never wake it back up with a keep-alive.
+        for (let i = 0; i < 5; i++) {
+            await multiDeviceMgr.writePowerSetpoints(distribution, {}, validationService, avoidZeroConfig);
+        }
+        const stillExcludedLimit = getMockState(`${device1.basePath}.control.setDeviceAutomationInOutLimit`).val;
+        assertEqual(stillExcludedLimit, 0, 'Sustained exclusion never re-arms the device with a keep-alive setpoint');
+    });
+
     await runTest('[3.5] RelayProtection prevents rapid mode switching', async () => {
         initializeMockStates();
         const relayProtection = new RelayProtection(mockAdapter);
