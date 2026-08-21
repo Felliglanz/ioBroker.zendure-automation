@@ -253,9 +253,14 @@
     return spaced.charAt(0).toUpperCase() + spaced.slice(1);
   }
 
-  function fmtCell(val) {
+  function fmtCell(val, field) {
     if (val === null || val === undefined) return '–';
+    if (typeof val === 'number' && /temp/i.test(field)) return escapeHtml(val.toFixed(1));
     return escapeHtml(String(val));
+  }
+
+  function isSerialField(field) {
+    return /^sn$|serial/i.test(field);
   }
 
   async function openDetails(deviceId) {
@@ -288,12 +293,13 @@
       return;
     }
 
-    const fields = [...new Set(packIds.flatMap(id => Object.keys(data.packs[id])))];
+    const fields = [...new Set(packIds.flatMap(id => Object.keys(data.packs[id])))]
+      .sort((a, b) => Number(isSerialField(a)) - Number(isSerialField(b)));
 
     const head = `<tr><th>Pack</th>${fields.map(f => `<th>${escapeHtml(prettifyField(f))}</th>`).join('')}</tr>`;
     const body = packIds.map(id => {
       const pack = data.packs[id];
-      return `<tr><td>${escapeHtml(id)}</td>${fields.map(f => `<td>${fmtCell(pack[f])}</td>`).join('')}</tr>`;
+      return `<tr><td>${escapeHtml(id)}</td>${fields.map(f => `<td>${fmtCell(pack[f], f)}</td>`).join('')}</tr>`;
     }).join('');
 
     detailsBody.innerHTML = `<table class="pack-table"><thead>${head}</thead><tbody>${body}</tbody></table>`;
