@@ -176,32 +176,72 @@
     }
   }
 
+  const DEVICE_LIMIT_FIELDS = [
+    { key: 'chargeAllowed', label: 'Laden erlaubt', type: 'boolean' },
+    { key: 'dischargeAllowed', label: 'Entladen erlaubt', type: 'boolean' },
+    { key: 'maxChargePowerW', label: 'Max. Ladeleistung (W)', type: 'number' },
+    { key: 'maxDischargePowerW', label: 'Max. Entladeleistung (W)', type: 'number' }
+  ];
+
   /**
-   * Read-only popup showing each device's actually-configured Waterfill limits (native admin
-   * config, not a writable state yet - see issue #22). Reuses the details modal.
+   * Editable popup for this device's control.devices.<id>.* overrides (#24) - same
+   * live-apply-on-change pattern as the global control panel, built with the same row markup so
+   * it reuses the existing .control-item/.switch styling. Values already reflect the live
+   * override if one is set (server-side effective-value overlay), else the config default.
    */
   function openDeviceLimits(dev, waterfillActive) {
     detailsTitle.textContent = `Geräte-Limits – ${dev.name || dev.id}`;
-
-    const rows = [
-      ['Laden erlaubt', dev.chargeAllowed === false ? 'Nein' : 'Ja'],
-      ['Entladen erlaubt', dev.dischargeAllowed === false ? 'Nein' : 'Ja'],
-      ['Max. Ladeleistung', fmtW(dev.maxChargePowerW)],
-      ['Max. Entladeleistung', fmtW(dev.maxDischargePowerW)]
-    ];
-    const body = rows.map(([label, val]) =>
-      `<tr><td>${escapeHtml(label)}</td><td>${escapeHtml(String(val))}</td></tr>`
-    ).join('');
 
     const hint = waterfillActive
       ? 'Waterfill-Modus aktiv: diese Werte werden für dieses Gerät verwendet.'
       : 'Equal-Split-Modus aktiv: diese Werte werden aktuell nicht verwendet – maßgeblich ist die globale Steuerung.';
 
     detailsBody.innerHTML = `
-      <table class="pack-table"><tbody>${body}</tbody></table>
+      <div class="control-list" id="deviceLimitsList"></div>
       <p class="modal-hint">${escapeHtml(hint)}</p>
     `;
+
+    const list = document.getElementById('deviceLimitsList');
+    for (const field of DEVICE_LIMIT_FIELDS) {
+      const row = document.createElement('div');
+      row.className = 'control-item';
+
+      const label = document.createElement('label');
+      label.textContent = field.label;
+      row.appendChild(label);
+
+      if (field.type === 'boolean') {
+        const wrap = document.createElement('label');
+        wrap.className = 'switch';
+        const input = document.createElement('input');
+        input.type = 'checkbox';
+        input.checked = dev[field.key] !== false;
+        const slider = document.createElement('span');
+        slider.className = 'slider';
+        wrap.appendChild(input);
+        wrap.appendChild(slider);
+        input.addEventListener('change', () => sendDeviceControl(dev.id, field.key, input.checked));
+        row.appendChild(wrap);
+      } else {
+        const input = document.createElement('input');
+        input.type = 'number';
+        input.value = dev[field.key] ?? '';
+        input.addEventListener('change', () => sendDeviceControl(dev.id, field.key, Number(input.value)));
+        row.appendChild(input);
+      }
+
+      list.appendChild(row);
+    }
+
     detailsOverlay.hidden = false;
+  }
+
+  function sendDeviceControl(deviceId, key, value) {
+    fetch('/api/device-control', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ device: deviceId, key, value })
+    }).catch(() => {});
   }
 
   function escapeHtml(str) {
