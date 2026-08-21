@@ -1342,6 +1342,7 @@
       "items": {
         "_headerDashboard": {
           "type": "header",
+          "size": 2,
           "text": {
             "en": "Standalone Web Dashboard",
             "de": "Eigenständiges Web-Dashboard"
@@ -1382,6 +1383,7 @@
         },
         "_headerFlow": {
           "type": "header",
+          "size": 2,
           "text": {
             "en": "Real Data Sources (optional)",
             "de": "Echte Datenquellen (optional)"
