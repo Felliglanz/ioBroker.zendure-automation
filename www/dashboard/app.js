@@ -317,7 +317,13 @@
     // green-when-charging/amber-when-discharging convention instead of the generic hub-relative one.
     const gridDir = gridW > THRESHOLD ? 'fwd' : gridW < -THRESHOLD ? 'rev' : null; // import=into hub, export=out
     const batteryDir = batteryW < -THRESHOLD ? 'fwd' : batteryW > THRESHOLD ? 'rev' : null; // charge=fwd, discharge=rev
-    const houseDir = houseW > THRESHOLD ? 'rev' : null; // consumption only ever flows out of the hub
+
+    // No house datapoint configured: derive flow *direction only* (never a fabricated wattage)
+    // from the hub's own power balance - grid net-import + battery net-discharge + PV production
+    // is whatever power isn't otherwise accounted for, i.e. it's going to the house (issue #22).
+    const houseDir = houseEnabled
+      ? (houseW > THRESHOLD ? 'rev' : null)
+      : ((gridW || 0) + (batteryW || 0) + (pvW || 0) > THRESHOLD ? 'rev' : null); // consumption only ever flows out of the hub
     const pvDir = pvW > THRESHOLD ? 'fwd' : null; // production only ever flows into the hub
 
     setFlow(flowLineGridHub, nodeGrid, gridDir);
