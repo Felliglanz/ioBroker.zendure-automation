@@ -455,7 +455,7 @@ class ZendureAutomation extends utils.Adapter {
 
             await Promise.all(setpoints.map(({ device, powerW }) => {
                 this.log.debug(`Max Charge: ${device.name} ${powerW}W`);
-                return this.validationService.writePowerSetpoint(device.id, device.basePath, powerW);
+                return this.validationService.writePowerSetpoint(device.id, device.basePath, powerW, config);
             }));
 
             // Re-read telemetry so status.* (and the dashboard) reflect the override too, not just
@@ -481,12 +481,12 @@ class ZendureAutomation extends utils.Adapter {
             this.log.info(`Max SOC ${maxBatterySoc}% reached, disabling Max Charge mode`);
             await this.setStateAsync('control.maxCharge', false, true);
             await this.setStateAsync('status.mode', 'idle', true);
-            await this.validationService.writePowerSetpoint(this._deviceBasePath, this._deviceBasePath, 0);
+            await this.validationService.writePowerSetpoint(this._deviceBasePath, this._deviceBasePath, 0, config);
             return;
         }
 
         this.log.debug(`Max Charge: ${-globalChargePowerW}W`);
-        await this.validationService.writePowerSetpoint(this._deviceBasePath, this._deviceBasePath, -globalChargePowerW);
+        await this.validationService.writePowerSetpoint(this._deviceBasePath, this._deviceBasePath, -globalChargePowerW, config);
 
         // Same as above: keep status.* live while the override is active, not just on the next
         // normal cycle.
@@ -537,7 +537,7 @@ class ZendureAutomation extends utils.Adapter {
 
             await Promise.all(setpoints.map(({ device, powerW }) => {
                 this.log.debug(`Max Discharge: ${device.name} ${powerW}W`);
-                return this.validationService.writePowerSetpoint(device.id, device.basePath, powerW);
+                return this.validationService.writePowerSetpoint(device.id, device.basePath, powerW, config);
             }));
 
             // Re-read telemetry so status.* (and the dashboard) reflect the override too, not just
@@ -562,7 +562,7 @@ class ZendureAutomation extends utils.Adapter {
             this.log.info('Battery in recovery mode, disabling Max Discharge');
             await this.setStateAsync('control.maxDischarge', false, true);
             await this.setStateAsync('status.mode', 'idle', true);
-            await this.validationService.writePowerSetpoint(this._deviceBasePath, this._deviceBasePath, 0);
+            await this.validationService.writePowerSetpoint(this._deviceBasePath, this._deviceBasePath, 0, config);
             return;
         }
 
@@ -581,7 +581,7 @@ class ZendureAutomation extends utils.Adapter {
             this.log.info(`Min SOC ${effectiveMinSoc}% reached, disabling Max Discharge mode`);
             await this.setStateAsync('control.maxDischarge', false, true);
             await this.setStateAsync('status.mode', 'idle', true);
-            await this.validationService.writePowerSetpoint(this._deviceBasePath, this._deviceBasePath, 0);
+            await this.validationService.writePowerSetpoint(this._deviceBasePath, this._deviceBasePath, 0, config);
             return;
         }
 
@@ -589,12 +589,12 @@ class ZendureAutomation extends utils.Adapter {
             this.log.info(`Min voltage ${minBatteryVoltageV}V reached (current: ${minPackVoltageV}V), disabling Max Discharge mode`);
             await this.setStateAsync('control.maxDischarge', false, true);
             await this.setStateAsync('status.mode', 'idle', true);
-            await this.validationService.writePowerSetpoint(this._deviceBasePath, this._deviceBasePath, 0);
+            await this.validationService.writePowerSetpoint(this._deviceBasePath, this._deviceBasePath, 0, config);
             return;
         }
 
         this.log.debug(`Max Discharge: ${globalDischargePowerW}W`);
-        await this.validationService.writePowerSetpoint(this._deviceBasePath, this._deviceBasePath, globalDischargePowerW);
+        await this.validationService.writePowerSetpoint(this._deviceBasePath, this._deviceBasePath, globalDischargePowerW, config);
 
         // Same as above: keep status.* live while the override is active, not just on the next
         // normal cycle.
@@ -947,10 +947,10 @@ class ZendureAutomation extends utils.Adapter {
                 if (this._isMultiDevice) {
                     // Stop all devices
                     for (const device of this.multiDeviceMgr.devices) {
-                        await this.validationService.writePowerSetpoint(device.id, device.basePath, 0);
+                        await this.validationService.writePowerSetpoint(device.id, device.basePath, 0, this.config);
                     }
                 } else {
-                    await this.validationService.writePowerSetpoint(this._deviceBasePath, this._deviceBasePath, 0);
+                    await this.validationService.writePowerSetpoint(this._deviceBasePath, this._deviceBasePath, 0, this.config);
                 }
                 await this.setStateAsync('status.mode', 'idle', true);
             }
@@ -970,10 +970,10 @@ class ZendureAutomation extends utils.Adapter {
                 // Set all devices to 0W
                 if (this._isMultiDevice) {
                     for (const device of this.multiDeviceMgr.devices) {
-                        await this.validationService.writePowerSetpoint(device.id, device.basePath, 0);
+                        await this.validationService.writePowerSetpoint(device.id, device.basePath, 0, this.config);
                     }
                 } else {
-                    await this.validationService.writePowerSetpoint(this._deviceBasePath, this._deviceBasePath, 0);
+                    await this.validationService.writePowerSetpoint(this._deviceBasePath, this._deviceBasePath, 0, this.config);
                 }
                 await this.setStateAsync('status.mode', 'idle', true);
             }
@@ -993,10 +993,10 @@ class ZendureAutomation extends utils.Adapter {
                 // Set all devices to 0W
                 if (this._isMultiDevice) {
                     for (const device of this.multiDeviceMgr.devices) {
-                        await this.validationService.writePowerSetpoint(device.id, device.basePath, 0);
+                        await this.validationService.writePowerSetpoint(device.id, device.basePath, 0, this.config);
                     }
                 } else {
-                    await this.validationService.writePowerSetpoint(this._deviceBasePath, this._deviceBasePath, 0);
+                    await this.validationService.writePowerSetpoint(this._deviceBasePath, this._deviceBasePath, 0, this.config);
                 }
                 await this.setStateAsync('status.mode', 'idle', true);
             }
@@ -1091,10 +1091,10 @@ class ZendureAutomation extends utils.Adapter {
             if (this._isMultiDevice) {
                 // Stop all devices
                 for (const device of this.multiDeviceMgr.devices) {
-                    await this.validationService.writePowerSetpoint(device.id, device.basePath, 0);
+                    await this.validationService.writePowerSetpoint(device.id, device.basePath, 0, this.config);
                 }
             } else {
-                await this.validationService.writePowerSetpoint(this._deviceBasePath, this._deviceBasePath, 0);
+                await this.validationService.writePowerSetpoint(this._deviceBasePath, this._deviceBasePath, 0, this.config);
             }
             
             await this.setStateAsync('status.mode', 'idle', true);

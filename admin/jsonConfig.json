@@ -555,6 +555,90 @@
             }
           }
         },
+        "_panelZeroAvoidance": {
+          "type": "panel",
+          "label": {
+            "en": "Avoid Zero Setpoint (Flash-Write Protection)",
+            "de": "Nullwert vermeiden (Flash-Schutz)"
+          },
+          "items": {
+            "avoidZeroSetpoint": {
+              "type": "checkbox",
+              "label": {
+                "en": "Never send a literal 0 to setDeviceAutomationInOutLimit",
+                "de": "Nie eine reine 0 an setDeviceAutomationInOutLimit senden"
+              },
+              "sm": 6,
+              "default": false,
+              "help": {
+                "en": "Setting the automation limit to exactly 0 triggers a delayed sequence in the underlying Solarflow integration that switches acMode/smartMode off a few seconds later. If a new setpoint arrives in that window, this can duplicate flash writes or collide with the new command. Every non-zero value takes a different, immediate code path with no delayed sequence at all. When enabled, short standby periods hold at 'Standby keep-alive power' instead of 0; only after 'smartMode idle timeout' of sustained standby is a real 0 sent (deliberately, to let the inverter decouple), followed by a protected grace window.",
+                "de": "Wird das Automatisierungslimit exakt auf 0 gesetzt, löst das in der zugrunde liegenden Solarflow-Integration eine verzögerte Abfolge aus, die acMode/smartMode einige Sekunden später abschaltet. Trifft in der Zeit ein neuer Sollwert ein, kann das Flash-Writes duplizieren oder mit dem neuen Befehl kollidieren. Jeder Wert ungleich 0 läuft über einen anderen, sofortigen Pfad ohne verzögerte Abfolge. Bei Aktivierung wird bei kurzem Standby stattdessen 'Standby-Haltewert' gesendet; erst nach 'smartMode Idle-Timeout' anhaltendem Standby geht eine echte 0 raus (bewusst, damit der Wechselrichter entkoppelt), gefolgt von einer geschützten Sperrfrist."
+              }
+            },
+            "standbyKeepAliveW": {
+              "type": "number",
+              "label": {
+                "en": "Standby keep-alive power (W)",
+                "de": "Standby-Haltewert (W)"
+              },
+              "sm": 4,
+              "min": 1,
+              "max": 100,
+              "default": 10,
+              "help": {
+                "en": "Sent instead of 0W during short standby, in the last active direction. Small enough to be negligible for zero-grid regulation.",
+                "de": "Wird statt 0W bei kurzem Standby gesendet, in der zuletzt aktiven Richtung. Klein genug, um für die Nullpunktregelung vernachlässigbar zu sein."
+              }
+            },
+            "smartModeIdleTimeoutSec": {
+              "type": "number",
+              "label": {
+                "en": "smartMode idle timeout (seconds)",
+                "de": "smartMode Idle-Timeout (Sekunden)"
+              },
+              "sm": 4,
+              "min": 30,
+              "max": 3600,
+              "default": 300,
+              "help": {
+                "en": "How long standby must be sustained (at the keep-alive power) before a real 0W is finally sent, letting the device disarm and drop its standby draw.",
+                "de": "Wie lange Standby (beim Haltewert) anhalten muss, bevor endlich eine echte 0W gesendet wird, damit das Gerät entkoppelt und der Standby-Verbrauch sinkt."
+              }
+            },
+            "zeroHoldOffSec": {
+              "type": "number",
+              "label": {
+                "en": "Post-zero grace window (seconds)",
+                "de": "Sperrfrist nach echter 0 (Sekunden)"
+              },
+              "sm": 4,
+              "min": 6,
+              "max": 60,
+              "default": 8,
+              "help": {
+                "en": "After a real 0W is sent, no other setpoint is written for this long, so the underlying integration's own delayed acMode/smartMode-off sequence (roughly 2-4s) always finishes undisturbed. Floor of 6s is enforced regardless of this setting. Emergency charging always bypasses this window.",
+                "de": "Nach einer echten 0W wird für diese Zeit kein weiterer Sollwert geschrieben, damit die verzögerte acMode/smartMode-Abschaltung der zugrunde liegenden Integration (ca. 2-4s) immer ungestört durchläuft. Ein Minimum von 6s wird unabhängig von dieser Einstellung erzwungen. Notladen umgeht dieses Fenster immer."
+              }
+            },
+            "_zeroAvoidanceHint": {
+              "type": "staticText",
+              "text": {
+                "en": "💡 Uses the proven control.setDeviceAutomationInOutLimit datapoint throughout - just chooses what value to send and when. Doesn't rely on control.setOutputLimit/setInputLimit, which require a device-reported 'autoModel' state of 0 that ZenSDK devices (1600AC+/2400AC+) don't appear to report.",
+                "de": "💡 Nutzt durchgehend den bewährten control.setDeviceAutomationInOutLimit-Datenpunkt - entscheidet nur, welcher Wert wann gesendet wird. Verlässt sich nicht auf control.setOutputLimit/setInputLimit, die einen vom Gerät gemeldeten Status 'autoModel' von 0 voraussetzen, den ZenSDK-Geräte (1600AC+/2400AC+) offenbar nicht melden."
+              },
+              "sm": 12,
+              "style": {
+                "fontSize": "0.85em",
+                "color": "#1565c0",
+                "marginTop": "8px",
+                "padding": "8px",
+                "backgroundColor": "#e3f2fd",
+                "borderRadius": "4px",
+                "borderLeft": "3px solid #1976d2"
+              }
+            }
+          }
+        },
         "_panelRegulation": {
           "type": "panel",
           "label": {
