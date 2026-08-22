@@ -2,8 +2,12 @@
   "common": {
     "name": "zendure-automation",
     "title": "Zendure Automation",
-    "version": "1.0.4",
+    "version": "1.0.5",
     "news": {
+      "1.0.5": {
+        "en": "Fixed: Multi-Device Mode with Equal-Split distribution failed to start (\"undefined is not a valid state value\") if a device's optional per-device Charge W/Discharge W override was left blank - these are only required when using the Waterfill strategy. Multi-Device now logs each pack's minimum voltage at debug level (previously only Single-Device did, making it impossible to tell a stuck voltage-recovery state apart from a genuinely low/frozen reading). Grid power and gridInputPower readings in Multi-Device now also detect stale/frozen source values, matching the protection Single-Device already had.",
+        "de": "Fix: Multi-Device-Modus mit Equal-Split-Verteilung startete nicht (\"undefined is not a valid state value\"), wenn die optionalen Pro-Geräte-Felder Charge W/Discharge W leer gelassen wurden - diese sind nur bei der Waterfill-Strategie erforderlich. Multi-Device loggt jetzt pro Pack die minimale Spannung auf Debug-Level (bisher nur bei Single-Device), damit sich ein feststeckender Voltage-Recovery-Zustand von einem echten niedrigen/eingefrorenen Messwert unterscheiden lässt. Netzleistung und gridInputPower werden in Multi-Device jetzt ebenfalls auf eingefrorene Quellwerte geprüft, analog zum bestehenden Schutz bei Single-Device."
+      },
       "1.0.4": {
         "en": "Dashboard: added a daily Telemetry panel (hamburger menu, top right) showing today's grid import/export, battery charge/discharge, real relay mode switches, and emergency events - accumulated in new telemetry.* states that reset at local midnight, no history/statistics adapter needed. Mode-switch counting is based on actual measured battery power direction, not raw setpoint changes, so relay-protection debounce noise never inflates the count. Fixed: dashboard responses now send Cache-Control: no-store so browsers can no longer serve a stale app.js/style.css after an update.",
         "de": "Dashboard: neues Telemetrie-Panel (Hamburger-Menü oben rechts) mit Tageswerten für Netzbezug/-einspeisung, Batterie laden/entladen, echte Relais-Moduswechsel und Notfall-Events - gesammelt in neuen telemetry.*-States, die um Mitternacht (lokale Zeit) zurückgesetzt werden, ganz ohne History-/Statistics-Adapter. Moduswechsel werden anhand der tatsächlich gemessenen Batterieleistungsrichtung gezählt, nicht anhand roher Sollwertänderungen, damit das Entprellen der Relaisschutzlogik die Zahl nicht künstlich aufbläht. Fix: Dashboard-Antworten senden jetzt Cache-Control: no-store, damit Browser nach einem Update kein veraltetes app.js/style.css mehr ausliefern."
