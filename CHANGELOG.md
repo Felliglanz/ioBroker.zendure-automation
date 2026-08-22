@@ -2,6 +2,20 @@
 
 All notable changes to this project are documented in this file.
 
+## v1.0.3 (2026-08-22)
+
+### English
+- Dashboard: added a daily Telemetry panel, opened via a new hamburger menu (top right of the header) so it stays out of the way until needed. Shows today's grid import/export energy, battery charge/discharge energy, real relay mode switches, and emergency-mode activations - PV energy is included too when the optional PV datapoint is configured.
+- New `lib/Telemetry.js` module accumulates these daily totals in new `telemetry.*` states, resetting automatically at local midnight and surviving adapter restarts (hydrated from the persisted states) - no history/statistics adapter dependency, everything is self-contained.
+- Mode-switch counting is based on the actually measured battery power direction flipping, not the raw setpoint or relay-protection debounce counters, so it reflects real relay switches only - not the debounce noise around them.
+- Fixed: dashboard responses (HTML/JS/CSS/icons and the `/api/*` endpoints) now send `Cache-Control: no-store`. Previously no caching headers were set at all, which could leave a browser serving a stale `app.js`/`style.css` after an update while the freshly-loaded `index.html` already expected the new markup.
+
+### Deutsch
+- Dashboard: neues Telemetrie-Panel hinzugefügt, aufrufbar über ein neues Hamburger-Menü (oben rechts im Header), damit es nicht dauerhaft im Weg ist. Zeigt die heutige Netzbezugs-/Einspeise-Energie, Batterie-Lade-/Entlade-Energie, echte Relais-Moduswechsel und Notfallmodus-Aktivierungen - PV-Energie wird ebenfalls einbezogen, sofern der optionale PV-Datenpunkt konfiguriert ist.
+- Neues Modul `lib/Telemetry.js` sammelt diese Tageswerte in neuen `telemetry.*`-States, die automatisch um Mitternacht (lokale Zeit) zurückgesetzt werden und Adapter-Neustarts überstehen (werden aus den persistierten States wiederhergestellt) - ganz ohne History-/Statistics-Adapter, komplett eigenständig.
+- Moduswechsel werden anhand der tatsächlich gemessenen Batterieleistungsrichtung gezählt, nicht anhand des rohen Sollwerts oder der Entprellzähler der Relaisschutzlogik, damit nur echte Relaisschaltungen gezählt werden - nicht das Rauschen drumherum.
+- Fix: Dashboard-Antworten (HTML/JS/CSS/Icons sowie die `/api/*`-Endpunkte) senden jetzt `Cache-Control: no-store`. Bisher wurden gar keine Caching-Header gesetzt, wodurch ein Browser nach einem Update weiterhin ein veraltetes `app.js`/`style.css` ausliefern konnte, während das frisch geladene `index.html` schon das neue Markup erwartete.
+
 ## v1.0.2 (2026-08-20)
 
 ### English
