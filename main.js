@@ -148,6 +148,17 @@ class ZendureAutomation extends utils.Adapter {
                 // Create device channels and states
                 await this.createDeviceStates();
 
+                // Remove single-device-only global states left over from a prior single-device
+                // run (see #27: they stayed forever frozen once Multi-Device Mode was enabled,
+                // since only status.totalPowerW/avgSoc get written here).
+                for (const staleId of ['currentPowerW', 'batterySoc']) {
+                    try {
+                        await this.delObjectAsync(`status.${staleId}`);
+                    } catch {
+                        // Already gone - nothing to clean up.
+                    }
+                }
+
                 // Restore emergency recovery states for all devices
                 for (const [, emergencyMgr] of this.emergencyManagers) {
                     await emergencyMgr.restoreRecoveryStates();
@@ -208,6 +219,43 @@ class ZendureAutomation extends utils.Adapter {
             );
             
             this.log.info('✓ Modular components initialized');
+
+            // Create single-device-only global states (no longer in io-package.json
+            // instanceObjects, since they must not appear/freeze in Multi-Device Mode - see #27)
+            await this.setObjectNotExistsAsync('status.currentPowerW', {
+                type: 'state',
+                common: {
+                    name: 'Current battery power (W, negative=charge)',
+                    type: 'number',
+                    role: 'value.power',
+                    read: true,
+                    write: false,
+                    unit: 'W'
+                },
+                native: {}
+            });
+
+            await this.setObjectNotExistsAsync('status.batterySoc', {
+                type: 'state',
+                common: {
+                    name: 'Battery SOC (%)',
+                    type: 'number',
+                    role: 'value.battery',
+                    read: true,
+                    write: false,
+                    unit: '%'
+                },
+                native: {}
+            });
+
+            // Remove multi-device-only global states left over from a prior multi-device run
+            for (const staleId of ['totalPowerW', 'avgSoc']) {
+                try {
+                    await this.delObjectAsync(`status.${staleId}`);
+                } catch {
+                    // Already gone - nothing to clean up.
+                }
+            }
 
             // Initialize control states
             await this.setStateAsync('control.enabled', true, true);

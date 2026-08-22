@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented in this file.
 
+## v1.0.3 (2026-08-22)
+
+### English
+- Fixed #27: in Multi-Device Mode, the single-device-only `status.currentPowerW`/`status.batterySoc` states are no longer created (and are removed if left over from a previous single-device run). They were never written to in multi-device mode, so they stayed permanently frozen at whatever they last showed - the live equivalents there are `status.totalPowerW`/`status.avgSoc`, plus the per-device `status.devices.<id>.powerW`/`soc` states. Single-device installs are unaffected; these two states are now created dynamically on startup instead of being fixed `instanceObjects`, and are removed if a previous multi-device run left `status.totalPowerW`/`status.avgSoc` behind.
+
+### Deutsch
+- Fix #27: Im Multi-Device-Modus werden die nur für den Single-Device-Modus gedachten States `status.currentPowerW`/`status.batterySoc` nicht mehr angelegt (und beim Umstieg von Single- auf Multi-Device entfernt, falls noch vorhanden). Sie wurden im Multi-Device-Modus nie beschrieben und blieben deshalb dauerhaft bei ihrem letzten Wert eingefroren - die live aktuellen Entsprechungen dort sind `status.totalPowerW`/`status.avgSoc` sowie die Pro-Geräte-States `status.devices.<id>.powerW`/`soc`. Single-Device-Installationen sind nicht betroffen; die beiden States werden jetzt dynamisch beim Start angelegt statt als feste `instanceObjects`, und werden entfernt, falls ein vorheriger Multi-Device-Lauf `status.totalPowerW`/`status.avgSoc` hinterlassen hat.
+
 ## v1.0.2 (2026-08-20)
 
 ### English
