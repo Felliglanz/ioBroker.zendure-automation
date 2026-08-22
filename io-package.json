@@ -2,8 +2,12 @@
   "common": {
     "name": "zendure-automation",
     "title": "Zendure Automation",
-    "version": "1.0.3",
+    "version": "1.0.4",
     "news": {
+      "1.0.4": {
+        "en": "Dashboard: added a daily Telemetry panel (hamburger menu, top right) showing today's grid import/export, battery charge/discharge, real relay mode switches, and emergency events - accumulated in new telemetry.* states that reset at local midnight, no history/statistics adapter needed. Mode-switch counting is based on actual measured battery power direction, not raw setpoint changes, so relay-protection debounce noise never inflates the count. Fixed: dashboard responses now send Cache-Control: no-store so browsers can no longer serve a stale app.js/style.css after an update.",
+        "de": "Dashboard: neues Telemetrie-Panel (Hamburger-Menü oben rechts) mit Tageswerten für Netzbezug/-einspeisung, Batterie laden/entladen, echte Relais-Moduswechsel und Notfall-Events - gesammelt in neuen telemetry.*-States, die um Mitternacht (lokale Zeit) zurückgesetzt werden, ganz ohne History-/Statistics-Adapter. Moduswechsel werden anhand der tatsächlich gemessenen Batterieleistungsrichtung gezählt, nicht anhand roher Sollwertänderungen, damit das Entprellen der Relaisschutzlogik die Zahl nicht künstlich aufbläht. Fix: Dashboard-Antworten senden jetzt Cache-Control: no-store, damit Browser nach einem Update kein veraltetes app.js/style.css mehr ausliefern."
+      },
       "1.0.3": {
         "en": "Fixed #27: in Multi-Device Mode, the single-device-only status.currentPowerW/status.batterySoc states are no longer created (and are removed if left over from a previous single-device run), since they were never written to there and stayed permanently frozen - the live equivalents are status.totalPowerW/status.avgSoc plus the per-device status.devices.<id>.powerW/soc states. Single-device installs are unaffected; these two states are now created dynamically on startup instead of being fixed instanceObjects.",
         "de": "Fix #27: Im Multi-Device-Modus werden die nur für Single-Device gedachten States status.currentPowerW/status.batterySoc nicht mehr angelegt (und bei Umstieg von Single- auf Multi-Device entfernt, falls noch vorhanden), da sie dort nie beschrieben wurden und dauerhaft eingefroren blieben - die live aktuellen Entsprechungen sind status.totalPowerW/status.avgSoc sowie die Pro-Geräte-States status.devices.<id>.powerW/soc. Single-Device-Installationen sind nicht betroffen; die beiden States werden jetzt dynamisch beim Start angelegt statt als feste instanceObjects."
@@ -504,6 +508,123 @@
         "role": "value.time",
         "read": true,
         "write": false
+      },
+      "native": {}
+    },
+    {
+      "_id": "telemetry",
+      "type": "channel",
+      "common": {
+        "name": "Telemetry"
+      },
+      "native": {}
+    },
+    {
+      "_id": "telemetry.lastResetDay",
+      "type": "state",
+      "common": {
+        "name": "Last daily reset (YYYY-MM-DD)",
+        "type": "string",
+        "role": "date",
+        "read": true,
+        "write": false,
+        "def": ""
+      },
+      "native": {}
+    },
+    {
+      "_id": "telemetry.gridImportWhToday",
+      "type": "state",
+      "common": {
+        "name": "Grid import energy today",
+        "type": "number",
+        "role": "value.energy",
+        "read": true,
+        "write": false,
+        "def": 0,
+        "unit": "Wh"
+      },
+      "native": {}
+    },
+    {
+      "_id": "telemetry.gridExportWhToday",
+      "type": "state",
+      "common": {
+        "name": "Grid export (feed-in) energy today",
+        "type": "number",
+        "role": "value.energy",
+        "read": true,
+        "write": false,
+        "def": 0,
+        "unit": "Wh"
+      },
+      "native": {}
+    },
+    {
+      "_id": "telemetry.pvWhToday",
+      "type": "state",
+      "common": {
+        "name": "PV production energy today",
+        "type": "number",
+        "role": "value.energy",
+        "read": true,
+        "write": false,
+        "def": 0,
+        "unit": "Wh"
+      },
+      "native": {}
+    },
+    {
+      "_id": "telemetry.batteryChargeWhToday",
+      "type": "state",
+      "common": {
+        "name": "Battery charge energy today",
+        "type": "number",
+        "role": "value.energy",
+        "read": true,
+        "write": false,
+        "def": 0,
+        "unit": "Wh"
+      },
+      "native": {}
+    },
+    {
+      "_id": "telemetry.batteryDischargeWhToday",
+      "type": "state",
+      "common": {
+        "name": "Battery discharge energy today",
+        "type": "number",
+        "role": "value.energy",
+        "read": true,
+        "write": false,
+        "def": 0,
+        "unit": "Wh"
+      },
+      "native": {}
+    },
+    {
+      "_id": "telemetry.modeSwitchesToday",
+      "type": "state",
+      "common": {
+        "name": "Real relay mode switches today",
+        "type": "number",
+        "role": "value",
+        "read": true,
+        "write": false,
+        "def": 0
+      },
+      "native": {}
+    },
+    {
+      "_id": "telemetry.emergencyEventsToday",
+      "type": "state",
+      "common": {
+        "name": "Emergency mode activations today",
+        "type": "number",
+        "role": "value",
+        "read": true,
+        "write": false,
+        "def": 0
       },
       "native": {}
     }

@@ -13,6 +13,7 @@ const MultiDeviceManager = require('./lib/MultiDeviceManager');
 const SingleDeviceController = require('./lib/SingleDeviceController');
 const MultiDeviceController = require('./lib/MultiDeviceController');
 const DashboardServer = require('./lib/DashboardServer');
+const Telemetry = require('./lib/Telemetry');
 
 /**
  * Battery Automation Engine
@@ -67,6 +68,7 @@ class ZendureAutomation extends utils.Adapter {
         this.singleDeviceController = null;  // Single-device automation controller
         this.multiDeviceController = null;  // Multi-device automation controller
         this.dashboardServer = null;  // Standalone web dashboard
+        this.telemetry = null;  // Daily telemetry counters (mode switches, energy totals)
     }
 
     /**
@@ -83,6 +85,9 @@ class ZendureAutomation extends utils.Adapter {
 
         const instance = this.config.zendureSolarflowInstance || 'zendure-solarflow.0';
         this._isMultiDevice = this.config.multiDeviceEnabled === true;
+
+        this.telemetry = new Telemetry(this);
+        await this.telemetry.init();
 
         // ========== MULTI-DEVICE MODE ==========
         if (this._isMultiDevice) {
@@ -452,11 +457,13 @@ class ZendureAutomation extends utils.Adapter {
 
             if (maxChargeState?.val) {
                 await this.handleMaxChargeMode(effectiveConfig);
+                await this.recordTelemetryTick();
                 return;
             }
 
             if (maxDischargeState?.val) {
                 await this.handleMaxDischargeMode(effectiveConfig);
+                await this.recordTelemetryTick();
                 return;
             }
 
@@ -466,12 +473,45 @@ class ZendureAutomation extends utils.Adapter {
             } else {
                 await this.singleDeviceController.runCycle(effectiveConfig);
             }
+            await this.recordTelemetryTick();
 
         } catch (err) {
             this.log.error(`Automation cycle error: ${err.message}`);
             await this.setStateAsync('status.mode', 'error', true);
         } finally {
             this._cycleRunning = false;
+        }
+    }
+
+    /**
+     * Read back the status.* states this cycle just wrote and feed them into Telemetry
+     * for daily accumulation. Isolated in its own try/catch so a telemetry hiccup can
+     * never affect the automation cycle itself.
+     */
+    async recordTelemetryTick() {
+        if (!this.telemetry) return;
+
+        try {
+            const gridPowerState = await this.getStateAsync('status.gridPowerW');
+            const batteryPowerState = await this.getStateAsync(
+                this._isMultiDevice ? 'status.totalPowerW' : 'status.currentPowerW'
+            );
+            const emergencyReasonState = await this.getStateAsync('status.emergencyReason');
+
+            let pvPowerW = null;
+            if (this.config.enablePvPower && this.config.pvPowerDp) {
+                const pvState = await this.getForeignStateAsync(this.config.pvPowerDp);
+                pvPowerW = pvState ? Number(pvState.val) : null;
+            }
+
+            await this.telemetry.recordCycle({
+                gridPowerW: gridPowerState ? Number(gridPowerState.val) : null,
+                batteryPowerW: batteryPowerState ? Number(batteryPowerState.val) : null,
+                pvPowerW,
+                emergencyActive: !!(emergencyReasonState && emergencyReasonState.val)
+            });
+        } catch (err) {
+            this.log.warn(`Telemetry recording failed: ${err.message}`);
         }
     }
 

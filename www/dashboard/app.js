@@ -44,6 +44,12 @@
   const detailsBody = document.getElementById('detailsBody');
   const detailsClose = document.getElementById('detailsClose');
   const controlHint = document.getElementById('controlHint');
+  const menuBtn = document.getElementById('menuBtn');
+  const menuOverlay = document.getElementById('menuOverlay');
+  const menuTelemetry = document.getElementById('menuTelemetry');
+  const telemetryOverlay = document.getElementById('telemetryOverlay');
+  const telemetryBody = document.getElementById('telemetryBody');
+  const telemetryClose = document.getElementById('telemetryClose');
 
   // control.* keys whose global value is only a fallback in multi-device Waterfill mode - the
   // per-device limits from the admin table are what's actually effective there (see issue #22).
@@ -118,6 +124,11 @@
   function fmtW(val) {
     if (val === null || val === undefined || Number.isNaN(val)) return '– W';
     return `${Math.round(val)} W`;
+  }
+
+  function fmtWh(val) {
+    if (val === null || val === undefined || Number.isNaN(val)) return '–';
+    return val >= 1000 ? `${(val / 1000).toFixed(2)} kWh` : `${Math.round(val)} Wh`;
   }
 
   /**
@@ -309,6 +320,58 @@
     detailsOverlay.hidden = true;
   }
 
+  function openMenu() {
+    menuOverlay.hidden = false;
+  }
+
+  function closeMenu() {
+    menuOverlay.hidden = true;
+  }
+
+  const TELEMETRY_ITEMS = [
+    { key: 'gridImportWhToday', label: 'Netzbezug' },
+    { key: 'gridExportWhToday', label: 'Netzeinspeisung' },
+    { key: 'pvWhToday', label: 'PV-Ertrag', pvOnly: true },
+    { key: 'batteryChargeWhToday', label: 'Batterie geladen' },
+    { key: 'batteryDischargeWhToday', label: 'Batterie entladen' },
+    { key: 'modeSwitchesToday', label: 'Moduswechsel', raw: true },
+    { key: 'emergencyEventsToday', label: 'Notfall-Events', raw: true }
+  ];
+
+  async function openTelemetry() {
+    closeMenu();
+    telemetryBody.innerHTML = '<div class="modal-empty">Lade…</div>';
+    telemetryOverlay.hidden = false;
+
+    try {
+      const res = await fetch('/api/telemetry', { cache: 'no-store' });
+      const data = await res.json();
+      if (!res.ok) {
+        telemetryBody.innerHTML = `<div class="modal-empty">${escapeHtml(data.error || 'Unbekannter Fehler')}</div>`;
+        return;
+      }
+      renderTelemetry(data);
+    } catch {
+      telemetryBody.innerHTML = '<div class="modal-empty">Verbindung zum Dashboard-Server fehlgeschlagen.</div>';
+    }
+  }
+
+  function renderTelemetry(data) {
+    const items = TELEMETRY_ITEMS.filter(item => !item.pvOnly || data.pvEnabled);
+    const cards = items.map(item => `
+      <div class="telemetry-item">
+        <span class="telemetry-label">${escapeHtml(item.label)}</span>
+        <span class="telemetry-value">${item.raw ? (data[item.key] ?? '–') : fmtWh(data[item.key])}</span>
+      </div>
+    `).join('');
+
+    telemetryBody.innerHTML = `<div class="telemetry-grid">${cards}</div>`;
+  }
+
+  function closeTelemetry() {
+    telemetryOverlay.hidden = true;
+  }
+
   async function poll() {
     try {
       const res = await fetch('/api/status', { cache: 'no-store' });
@@ -398,7 +461,19 @@
   batteryHero.addEventListener('click', () => openDetails(null));
   detailsClose.addEventListener('click', closeDetails);
   detailsOverlay.addEventListener('click', e => { if (e.target === detailsOverlay) closeDetails(); });
-  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDetails(); });
+
+  menuBtn.addEventListener('click', () => menuOverlay.hidden ? openMenu() : closeMenu());
+  menuOverlay.addEventListener('click', e => { if (e.target === menuOverlay) closeMenu(); });
+  menuTelemetry.addEventListener('click', openTelemetry);
+  telemetryClose.addEventListener('click', closeTelemetry);
+  telemetryOverlay.addEventListener('click', e => { if (e.target === telemetryOverlay) closeTelemetry(); });
+
+  document.addEventListener('keydown', e => {
+    if (e.key !== 'Escape') return;
+    closeDetails();
+    closeMenu();
+    closeTelemetry();
+  });
 
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('/service-worker.js').catch(() => {});
