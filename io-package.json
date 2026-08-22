@@ -68,7 +68,7 @@
     "extIcon": "https://raw.githubusercontent.com/Felliglanz/iobroker.zendure-automation/main/admin/zendure-automation.png",
     "readme": "https://github.com/Felliglanz/iobroker.zendure-automation/blob/main/README.md",
     "loglevel": "info",
-    "localLink": "http://%ip%:%native.dashboardPort%/",
+    "localLink": "http://%ip%:%native_dashboardPort%/",
     "adminUI": {
       "config": "json"
     },
