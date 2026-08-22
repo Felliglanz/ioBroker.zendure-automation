@@ -528,6 +528,123 @@
         "write": false
       },
       "native": {}
+    },
+    {
+      "_id": "telemetry",
+      "type": "channel",
+      "common": {
+        "name": "Telemetry"
+      },
+      "native": {}
+    },
+    {
+      "_id": "telemetry.lastResetDay",
+      "type": "state",
+      "common": {
+        "name": "Last daily reset (YYYY-MM-DD)",
+        "type": "string",
+        "role": "date",
+        "read": true,
+        "write": false,
+        "def": ""
+      },
+      "native": {}
+    },
+    {
+      "_id": "telemetry.gridImportWhToday",
+      "type": "state",
+      "common": {
+        "name": "Grid import energy today",
+        "type": "number",
+        "role": "value.energy",
+        "read": true,
+        "write": false,
+        "def": 0,
+        "unit": "Wh"
+      },
+      "native": {}
+    },
+    {
+      "_id": "telemetry.gridExportWhToday",
+      "type": "state",
+      "common": {
+        "name": "Grid export (feed-in) energy today",
+        "type": "number",
+        "role": "value.energy",
+        "read": true,
+        "write": false,
+        "def": 0,
+        "unit": "Wh"
+      },
+      "native": {}
+    },
+    {
+      "_id": "telemetry.pvWhToday",
+      "type": "state",
+      "common": {
+        "name": "PV production energy today",
+        "type": "number",
+        "role": "value.energy",
+        "read": true,
+        "write": false,
+        "def": 0,
+        "unit": "Wh"
+      },
+      "native": {}
+    },
+    {
+      "_id": "telemetry.batteryChargeWhToday",
+      "type": "state",
+      "common": {
+        "name": "Battery charge energy today",
+        "type": "number",
+        "role": "value.energy",
+        "read": true,
+        "write": false,
+        "def": 0,
+        "unit": "Wh"
+      },
+      "native": {}
+    },
+    {
+      "_id": "telemetry.batteryDischargeWhToday",
+      "type": "state",
+      "common": {
+        "name": "Battery discharge energy today",
+        "type": "number",
+        "role": "value.energy",
+        "read": true,
+        "write": false,
+        "def": 0,
+        "unit": "Wh"
+      },
+      "native": {}
+    },
+    {
+      "_id": "telemetry.modeSwitchesToday",
+      "type": "state",
+      "common": {
+        "name": "Real relay mode switches today",
+        "type": "number",
+        "role": "value",
+        "read": true,
+        "write": false,
+        "def": 0
+      },
+      "native": {}
+    },
+    {
+      "_id": "telemetry.emergencyEventsToday",
+      "type": "state",
+      "common": {
+        "name": "Emergency mode activations today",
+        "type": "number",
+        "role": "value",
+        "read": true,
+        "write": false,
+        "def": 0
+      },
+      "native": {}
     }
   ]
 }
