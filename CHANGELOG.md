@@ -2,6 +2,18 @@
 
 All notable changes to this project are documented in this file.
 
+## v1.0.5 (2026-08-22)
+
+### English
+- Fixed: Multi-Device Mode with the Equal-Split strategy failed to start (`undefined is not a valid state value`) if a device's optional per-device Charge W/Discharge W override was left blank. These overrides are only required when using the Waterfill strategy; Equal-Split now falls back to the global charge/discharge limits instead of crashing.
+- Multi-Device now logs each pack's minimum voltage at `debug` level (issue #21). Previously only Single-Device logged this, making it impossible to tell a stuck voltage-recovery state apart from a genuinely low or frozen reading in Multi-Device installs.
+- Grid power and `gridInputPower` readings in Multi-Device now also detect stale/frozen source values and log a warning instead of silently reusing them, matching the protection Single-Device already had since #27.
+
+### Deutsch
+- Fix: Multi-Device-Modus mit Equal-Split-Strategie startete nicht (`undefined is not a valid state value`), wenn die optionalen Pro-Geräte-Felder Charge W/Discharge W leer gelassen wurden. Diese Overrides sind nur bei der Waterfill-Strategie erforderlich; Equal-Split greift jetzt auf die globalen Lade-/Entladelimits zurück statt abzustürzen.
+- Multi-Device loggt jetzt pro Pack die minimale Spannung auf `debug`-Level (Issue #21). Bisher tat das nur Single-Device, wodurch sich in Multi-Device-Installationen ein feststeckender Voltage-Recovery-Zustand nicht von einem echten niedrigen oder eingefrorenen Messwert unterscheiden ließ.
+- Netzleistung und `gridInputPower` werden in Multi-Device jetzt ebenfalls auf eingefrorene Quellwerte geprüft und loggen eine Warnung statt sie unbemerkt weiterzuverwenden, analog zum bestehenden Schutz bei Single-Device seit #27.
+
 ## v1.0.4 (2026-08-22)
 
 ### English

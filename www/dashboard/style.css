@@ -81,7 +81,10 @@ body {
   font-size: 1.15rem;
   font-weight: 600;
   margin: 0;
+  min-width: 0;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .mode-badge {
@@ -93,6 +96,7 @@ body {
   color: #fff;
   text-transform: uppercase;
   letter-spacing: 0.02em;
+  flex-shrink: 0;
 }
 .mode-badge.charging, .mode-badge.emergency-charging, .mode-badge.max-charging { background: var(--accent-charge); }
 .mode-badge.discharging, .mode-badge.max-discharging { background: var(--accent-discharge); }
