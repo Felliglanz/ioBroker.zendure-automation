@@ -1598,6 +1598,58 @@ async function testModules() {
         assertEqual(regResult.powerW, 500, 'Hysteresis still suppresses a 20W jitter below the 30W threshold');
     });
 
+    await runTest('[4.24] Waterfill sticky single-device mode marks the resting (but still eligible) device excluded, not just 0W', async () => {
+        // Regression guard for the SF2400 Pro relay-chatter report: the #28 fix only
+        // taught MultiDeviceManager to bypass zero-avoidance for items the *distributor*
+        // already flagged excluded:true (SOC/emergency-excluded devices). But Waterfill's
+        // own sticky single-device mode left its non-active candidate at excluded:false
+        // (it's still "eligible", just not currently allocated), so that device kept
+        // going through the full avoidZeroSetpoint state machine every cycle - rearmed
+        // with a keep-alive and disarmed again every smartModeIdleTimeoutSec, exactly
+        // like the original #28 bug, just for a different flavor of "excluded".
+        const distributor = new WaterfillDistributor();
+        const devices = [
+            { id: 'pro', name: 'SF2400 Pro', soc: 80, minSoc: 10, maxSoc: 100, maxChargePowerW: 1600, maxDischargePowerW: 800, chargeAllowed: true, dischargeAllowed: true },
+            { id: 'acplus', name: 'AC+', soc: 40, minSoc: 10, maxSoc: 100, maxChargePowerW: 1600, maxDischargePowerW: 1600, chargeAllowed: true, dischargeAllowed: true }
+        ];
+        const config = {
+            minBatterySoc: 10, maxBatterySoc: 100, updateIntervalSec: 5,
+            waterfillConcentrateHoldMinutes: 0,
+            waterfillDischargeConcentrateBelowW: 600,
+            waterfillDischargeSpreadAboveW: 1200,
+            waterfillSocMargin: 10
+        };
+
+        const settled = distributor.distribute(400, devices, config); // single-device mode, 'pro' is sticky (higher SOC)
+        const active = settled.find(item => item.powerW > 0);
+        const resting = settled.find(item => item.powerW === 0);
+        assertEqual(active.deviceId, 'pro', 'Higher-SOC device is the sticky active device');
+        assertEqual(active.excluded, false, 'Active device is not excluded');
+        assertEqual(resting.deviceId, 'acplus', 'Non-active candidate is the resting device');
+        assertEqual(resting.excluded, true, 'Resting-but-eligible candidate must be flagged excluded so it bypasses zero-avoidance too');
+
+        // End-to-end: with avoidZeroSetpoint enabled, the resting device must get a
+        // literal 0W and never a keep-alive pulse, across repeated cycles.
+        initializeMockStates();
+        const multiDeviceMgr = new MultiDeviceManager(mockAdapter, 'test.0', [
+            { productKey: 'pro', deviceKey: 'pro', name: 'SF2400 Pro', enabled: true },
+            { productKey: 'acplus', deviceKey: 'acplus', name: 'AC+', enabled: true }
+        ]);
+        const validationService = new ValidationService(mockAdapter);
+        const [proDevice, acplusDevice] = multiDeviceMgr.devices;
+        const distribution = settled.map(item => ({
+            ...item,
+            deviceId: item.deviceId === 'pro' ? proDevice.id : acplusDevice.id
+        }));
+        const avoidZeroConfig = { ...mockConfig, avoidZeroSetpoint: true, standbyKeepAliveW: 10, smartModeIdleTimeoutSec: 300, zeroHoldOffSec: 8 };
+
+        for (let i = 0; i < 5; i++) {
+            await multiDeviceMgr.writePowerSetpoints(distribution, {}, validationService, avoidZeroConfig);
+        }
+        const restingLimit = getMockState(`${acplusDevice.basePath}.control.setDeviceAutomationInOutLimit`).val;
+        assertEqual(restingLimit, 0, 'Resting device stays at literal 0W, never rearmed with a keep-alive pulse');
+    });
+
     console.log('\n' + '='.repeat(70));
     console.log('SECTION 5: PACKAGE & CONFIG CONSISTENCY');
     console.log('='.repeat(70));
