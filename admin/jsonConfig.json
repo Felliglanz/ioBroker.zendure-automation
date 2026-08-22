@@ -285,9 +285,9 @@
                 }
               ],
               "default": "equalSplit",
-                "help": {
-                  "en": "Waterfill uses the global SOC protection limits and the per-device power limits below.",
-                  "de": "Waterfill verwendet die globalen SOC-Schutzgrenzen und die folgenden Leistungsgrenzen pro Gerät."
+              "help": {
+                "en": "Waterfill uses the global SOC protection limits and the per-device power limits below.",
+                "de": "Waterfill verwendet die globalen SOC-Schutzgrenzen und die folgenden Leistungsgrenzen pro Gerät."
               }
             },
             "_waterfillSettings": {
@@ -435,7 +435,9 @@
                 "de": "Netzleistungs-Datenpunkt"
               },
               "sm": 12,
-              "types": ["state"],
+              "types": [
+                "state"
+              ],
               "help": {
                 "en": "Datapoint with current grid power (positive = drawing, negative = feeding)",
                 "de": "Datenpunkt mit aktueller Netzleistung (positiv = Bezug, negativ = Einspeisung)"
@@ -549,6 +551,90 @@
                 "backgroundColor": "#fff3cd",
                 "borderRadius": "4px",
                 "borderLeft": "3px solid #ffc107"
+              }
+            }
+          }
+        },
+        "_panelZeroAvoidance": {
+          "type": "panel",
+          "label": {
+            "en": "Avoid Zero Setpoint (Flash-Write Protection)",
+            "de": "Nullwert vermeiden (Flash-Schutz)"
+          },
+          "items": {
+            "avoidZeroSetpoint": {
+              "type": "checkbox",
+              "label": {
+                "en": "Never send a literal 0 to setDeviceAutomationInOutLimit",
+                "de": "Nie eine reine 0 an setDeviceAutomationInOutLimit senden"
+              },
+              "sm": 6,
+              "default": false,
+              "help": {
+                "en": "Setting the automation limit to exactly 0 triggers a delayed sequence in the underlying Solarflow integration that switches acMode/smartMode off a few seconds later. If a new setpoint arrives in that window, this can duplicate flash writes or collide with the new command. Every non-zero value takes a different, immediate code path with no delayed sequence at all. When enabled, short standby periods hold at 'Standby keep-alive power' instead of 0; only after 'smartMode idle timeout' of sustained standby is a real 0 sent (deliberately, to let the inverter decouple), followed by a protected grace window.",
+                "de": "Wird das Automatisierungslimit exakt auf 0 gesetzt, löst das in der zugrunde liegenden Solarflow-Integration eine verzögerte Abfolge aus, die acMode/smartMode einige Sekunden später abschaltet. Trifft in der Zeit ein neuer Sollwert ein, kann das Flash-Writes duplizieren oder mit dem neuen Befehl kollidieren. Jeder Wert ungleich 0 läuft über einen anderen, sofortigen Pfad ohne verzögerte Abfolge. Bei Aktivierung wird bei kurzem Standby stattdessen 'Standby-Haltewert' gesendet; erst nach 'smartMode Idle-Timeout' anhaltendem Standby geht eine echte 0 raus (bewusst, damit der Wechselrichter entkoppelt), gefolgt von einer geschützten Sperrfrist."
+              }
+            },
+            "standbyKeepAliveW": {
+              "type": "number",
+              "label": {
+                "en": "Standby keep-alive power (W)",
+                "de": "Standby-Haltewert (W)"
+              },
+              "sm": 4,
+              "min": 1,
+              "max": 100,
+              "default": 10,
+              "help": {
+                "en": "Sent instead of 0W during short standby, in the last active direction. Small enough to be negligible for zero-grid regulation.",
+                "de": "Wird statt 0W bei kurzem Standby gesendet, in der zuletzt aktiven Richtung. Klein genug, um für die Nullpunktregelung vernachlässigbar zu sein."
+              }
+            },
+            "smartModeIdleTimeoutSec": {
+              "type": "number",
+              "label": {
+                "en": "smartMode idle timeout (seconds)",
+                "de": "smartMode Idle-Timeout (Sekunden)"
+              },
+              "sm": 4,
+              "min": 30,
+              "max": 3600,
+              "default": 300,
+              "help": {
+                "en": "How long standby must be sustained (at the keep-alive power) before a real 0W is finally sent, letting the device disarm and drop its standby draw.",
+                "de": "Wie lange Standby (beim Haltewert) anhalten muss, bevor endlich eine echte 0W gesendet wird, damit das Gerät entkoppelt und der Standby-Verbrauch sinkt."
+              }
+            },
+            "zeroHoldOffSec": {
+              "type": "number",
+              "label": {
+                "en": "Post-zero grace window (seconds)",
+                "de": "Sperrfrist nach echter 0 (Sekunden)"
+              },
+              "sm": 4,
+              "min": 6,
+              "max": 60,
+              "default": 8,
+              "help": {
+                "en": "After a real 0W is sent, no other setpoint is written for this long, so the underlying integration's own delayed acMode/smartMode-off sequence (roughly 2-4s) always finishes undisturbed. Floor of 6s is enforced regardless of this setting. Emergency charging always bypasses this window.",
+                "de": "Nach einer echten 0W wird für diese Zeit kein weiterer Sollwert geschrieben, damit die verzögerte acMode/smartMode-Abschaltung der zugrunde liegenden Integration (ca. 2-4s) immer ungestört durchläuft. Ein Minimum von 6s wird unabhängig von dieser Einstellung erzwungen. Notladen umgeht dieses Fenster immer."
+              }
+            },
+            "_zeroAvoidanceHint": {
+              "type": "staticText",
+              "text": {
+                "en": "💡 Uses the proven control.setDeviceAutomationInOutLimit datapoint throughout - just chooses what value to send and when. Doesn't rely on control.setOutputLimit/setInputLimit, which require a device-reported 'autoModel' state of 0 that ZenSDK devices (1600AC+/2400AC+) don't appear to report.",
+                "de": "💡 Nutzt durchgehend den bewährten control.setDeviceAutomationInOutLimit-Datenpunkt - entscheidet nur, welcher Wert wann gesendet wird. Verlässt sich nicht auf control.setOutputLimit/setInputLimit, die einen vom Gerät gemeldeten Status 'autoModel' von 0 voraussetzen, den ZenSDK-Geräte (1600AC+/2400AC+) offenbar nicht melden."
+              },
+              "sm": 12,
+              "style": {
+                "fontSize": "0.85em",
+                "color": "#1565c0",
+                "marginTop": "8px",
+                "padding": "8px",
+                "backgroundColor": "#e3f2fd",
+                "borderRadius": "4px",
+                "borderLeft": "3px solid #1976d2"
               }
             }
           }
@@ -963,19 +1049,19 @@
               },
               "sm": 12,
               "options": [
-                { 
+                {
                   "label": {
                     "en": "By SOC percentage (%)",
                     "de": "Nach SOC Prozent (%)"
-                  }, 
-                  "value": "soc" 
+                  },
+                  "value": "soc"
                 },
-                { 
+                {
                   "label": {
                     "en": "By pack cell voltage (V)",
                     "de": "Nach Pack-Zellspannung (V)"
-                  }, 
-                  "value": "voltage" 
+                  },
+                  "value": "voltage"
                 }
               ],
               "default": "soc",
@@ -1304,10 +1390,22 @@
               },
               "sm": 12,
               "options": [
-                { "label": "Error", "value": "error" },
-                { "label": "Warn", "value": "warn" },
-                { "label": "Info", "value": "info" },
-                { "label": "Debug", "value": "debug" }
+                {
+                  "label": "Error",
+                  "value": "error"
+                },
+                {
+                  "label": "Warn",
+                  "value": "warn"
+                },
+                {
+                  "label": "Info",
+                  "value": "info"
+                },
+                {
+                  "label": "Debug",
+                  "value": "debug"
+                }
               ],
               "default": "info",
               "help": {
@@ -1315,6 +1413,136 @@
                 "de": "Ausführlichkeit der Adapter-Protokollierung (debug = sehr detailliert)"
               }
             }
+          }
+        }
+      }
+    },
+    "_tabDashboard": {
+      "type": "panel",
+      "label": {
+        "en": "🖥️ Dashboard",
+        "de": "🖥️ Dashboard"
+      },
+      "items": {
+        "_headerDashboard": {
+          "type": "header",
+          "size": 2,
+          "text": {
+            "en": "Standalone Web Dashboard",
+            "de": "Eigenständiges Web-Dashboard"
+          }
+        },
+        "_textDashboardInfo": {
+          "type": "staticText",
+          "text": {
+            "en": "The adapter runs its own web dashboard - no vis setup required. It shows live system state (single- and multi-device) as a flow diagram plus control buttons, and adapts to light/dark mode automatically. Open it via the link icon in the instance list, or directly at http://<iobroker-ip>:<port>/.",
+            "de": "Der Adapter betreibt ein eigenes Web-Dashboard - keine vis-Einrichtung nötig. Es zeigt den aktuellen Anlagenzustand (Single- und Multi-Device) als Flussdiagramm inkl. Steuerelementen und passt sich automatisch an Hell-/Dunkelmodus an. Aufrufbar über das Link-Icon in der Instanzliste oder direkt unter http://<iobroker-ip>:<port>/."
+          },
+          "sm": 12
+        },
+        "dashboardEnabled": {
+          "type": "checkbox",
+          "label": {
+            "en": "Enable dashboard",
+            "de": "Dashboard aktivieren"
+          },
+          "sm": 12,
+          "default": true
+        },
+        "dashboardPort": {
+          "type": "number",
+          "label": {
+            "en": "Dashboard port",
+            "de": "Dashboard-Port"
+          },
+          "sm": 12,
+          "min": 1024,
+          "max": 65535,
+          "default": 3005,
+          "help": {
+            "en": "Change this if the port is already used by another service on your ioBroker host.",
+            "de": "Ändern, falls der Port auf dem ioBroker-Host bereits von einem anderen Dienst belegt ist."
+          },
+          "hidden": "!data.dashboardEnabled"
+        },
+        "_headerFlow": {
+          "type": "header",
+          "size": 2,
+          "text": {
+            "en": "Real Data Sources (optional)",
+            "de": "Echte Datenquellen (optional)"
+          }
+        },
+        "_textFlowInfo": {
+          "type": "staticText",
+          "text": {
+            "en": "Without these, the dashboard's Haus node only shows flow direction, no wattage - the adapter has no way to measure house consumption or PV production on its own. Point it at your own meter/inverter datapoints for real numbers.",
+            "de": "Ohne diese Angaben zeigt der Haus-Knoten im Dashboard nur die Flussrichtung, keinen Wattwert - der Adapter kann Hausverbrauch und PV-Produktion nicht selbst messen. Hier eigene Zähler-/Wechselrichter-Datenpunkte eintragen für echte Werte."
+          },
+          "sm": 12
+        },
+        "enableHousePower": {
+          "type": "checkbox",
+          "label": {
+            "en": "Show real house consumption",
+            "de": "Echten Hausverbrauch anzeigen"
+          },
+          "sm": 12,
+          "default": false
+        },
+        "housePowerDp": {
+          "type": "objectId",
+          "label": {
+            "en": "House consumption datapoint",
+            "de": "Hausverbrauchs-Datenpunkt"
+          },
+          "sm": 12,
+          "types": [
+            "state"
+          ],
+          "hidden": "!data.enableHousePower",
+          "help": {
+            "en": "Datapoint with current house consumption in W",
+            "de": "Datenpunkt mit aktuellem Hausverbrauch in W"
+          }
+        },
+        "subtractBatteryChargeFromHouse": {
+          "type": "checkbox",
+          "label": {
+            "en": "Subtract battery AC charging from house consumption",
+            "de": "Batterieladung (AC) aus Hausverbrauch herausrechnen"
+          },
+          "sm": 12,
+          "default": false,
+          "hidden": "!data.enableHousePower",
+          "help": {
+            "en": "Your whole-house meter also sees the batteries' own AC charging draw, inflating the consumption reading. Subtracts each device's gridInputPower (AC charging only - PV-direct charging never touches the house meter, so it's intentionally not subtracted).",
+            "de": "Der Hausverbrauchszähler sieht auch die eigene AC-Ladeleistung der Batterien mit, das verfälscht den Verbrauchswert nach oben. Zieht das gridInputPower jedes Geräts ab (nur AC-Ladung - PV-Direktladung geht nie über den Hauszähler und wird daher bewusst nicht abgezogen)."
+          }
+        },
+        "enablePvPower": {
+          "type": "checkbox",
+          "label": {
+            "en": "Show real PV production",
+            "de": "Echte PV-Produktion anzeigen"
+          },
+          "sm": 12,
+          "default": false
+        },
+        "pvPowerDp": {
+          "type": "objectId",
+          "label": {
+            "en": "PV production datapoint",
+            "de": "PV-Produktions-Datenpunkt"
+          },
+          "sm": 12,
+          "types": [
+            "state"
+          ],
+          "hidden": "!data.enablePvPower",
+          "help": {
+            "en": "Datapoint with current PV production in W. Adds a PV node to the flow diagram.",
+            "de": "Datenpunkt mit aktueller PV-Produktion in W. Ergänzt einen PV-Knoten im Flussdiagramm."
           }
         }
       }

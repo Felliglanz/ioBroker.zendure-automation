@@ -228,6 +228,23 @@ async function testModules() {
         assertEqual(batterySoc, null, 'NaN SOC returns null');
     });
 
+    await runTest('[1.4b] DataReader treats a frozen (stale) packPower/SOC/grid state as unavailable', async () => {
+        initializeMockStates();
+        const staleTs = Date.now() - (4 * 60 * 1000); // older than the 3-minute staleness window
+        mockStates.set('test.0.gridPower', { val: 100, ack: true, ts: staleTs });
+        mockStates.set('test.0.device1.electricLevel', { val: 50, ack: true, ts: staleTs });
+        mockStates.set('test.0.device1.packPower', { val: -100, ack: true, ts: staleTs });
+
+        const dataReader = new DataReader(mockAdapter, deviceBasePath);
+        assertEqual(await dataReader.getGridPowerW('test.0.gridPower'), null, 'Stale grid power returns null');
+        assertEqual(await dataReader.getBatterySoc(), null, 'Stale SOC returns null');
+        assertEqual(await dataReader.getCurrentBatteryPowerW(), null, 'Stale battery power returns null, not the frozen value');
+
+        // A fresh value right after must be trusted again (no lingering "stuck" state)
+        setMockState('test.0.device1.packPower', -100);
+        assertEqual(await dataReader.getCurrentBatteryPowerW(), 100, 'Fresh battery power is trusted again');
+    });
+
     await runTest('[1.5] MultiDeviceController rejects invalid grid power values', async () => {
         initializeMockStates();
         const MultiDeviceController = require('./lib/MultiDeviceController');
@@ -281,11 +298,37 @@ async function testModules() {
         // Device1 should be available, Device2 should NOT be available due to invalid states
         assertEqual(aggregated.devices.length, 2, 'Both devices returned');
         
-        const dev1 = aggregated.devices.find(d => d.id === 'device1');
-        const dev2 = aggregated.devices.find(d => d.id === 'device2');
-        
+        // Device ids are now derived from deviceKey (stable per physical unit, #23), not table
+        // position - these fixtures use deviceKey 'pk1'/'pk2', so that's the resulting id too.
+        const dev1 = aggregated.devices.find(d => d.id === 'pk1');
+        const dev2 = aggregated.devices.find(d => d.id === 'pk2');
+
         assertEqual(dev1.available, true, 'Device1 with valid states is available');
         assertEqual(dev2.available, false, 'Device2 with NaN/null states is NOT available');
+    });
+
+    await runTest('[2.2b] Multi-Device excludes a device whose packPower/SOC has frozen (gone stale)', async () => {
+        initializeMockStates();
+
+        const devices = [
+            { productKey: 'device1', deviceKey: 'pk1', name: 'Device 1', enabled: true },
+            { productKey: 'device2', deviceKey: 'pk2', name: 'Device 2', enabled: true }
+        ];
+
+        const multiDeviceMgr = new MultiDeviceManager(mockAdapter, 'test.0', devices);
+
+        // Device2 looks numerically valid, but its source adapter stopped refreshing it
+        // (e.g. the physical device went offline) - simulates issue #15 (HolgerBF).
+        const staleTs = Date.now() - (4 * 60 * 1000);
+        mockStates.set('test.0.device2.pk2.packPower', { val: -50, ack: true, ts: staleTs });
+
+        const aggregated = await multiDeviceMgr.aggregateDeviceStates();
+
+        const dev1 = aggregated.devices.find(d => d.id === 'pk1');
+        const dev2 = aggregated.devices.find(d => d.id === 'pk2');
+
+        assertEqual(dev1.available, true, 'Device1 with a fresh reading stays available');
+        assertEqual(dev2.available, false, 'Device2 with a frozen packPower reading is excluded, not trusted');
     });
 
     await runTest('[2.3] Multi-Device safety limiters block discharge at low voltage', async () => {
@@ -306,16 +349,17 @@ async function testModules() {
         
         const aggregated = await multiDeviceMgr.aggregateDeviceStates();
         
-        // Create emergency managers (will detect lowVoltageBlock)
+        // Create emergency managers (will detect lowVoltageBlock), keyed by the deviceKey-derived
+        // id (#23) - same as multiDeviceMgr.devices[i].id for these fixtures.
         const emergencyManagers = new Map();
         const safetyLimiters = new Map();
-        emergencyManagers.set('device1', new EmergencyManager(mockAdapter, 'test.0.device1.pk1'));
-        emergencyManagers.set('device2', new EmergencyManager(mockAdapter, 'test.0.device2.pk2'));
-        safetyLimiters.set('device1', new SafetyLimiter(mockAdapter, 'test.0.device1.pk1'));
-        safetyLimiters.set('device2', new SafetyLimiter(mockAdapter, 'test.0.device2.pk2'));
-        
+        emergencyManagers.set('pk1', new EmergencyManager(mockAdapter, 'test.0.device1.pk1'));
+        emergencyManagers.set('pk2', new EmergencyManager(mockAdapter, 'test.0.device2.pk2'));
+        safetyLimiters.set('pk1', new SafetyLimiter(mockAdapter, 'test.0.device1.pk1'));
+        safetyLimiters.set('pk2', new SafetyLimiter(mockAdapter, 'test.0.device2.pk2'));
+
         // Check emergency state first
-        await emergencyManagers.get('device1').checkEmergencyConditions(mockConfig, 15, 2.9);
+        await emergencyManagers.get('pk1').checkEmergencyConditions(mockConfig, 15, 2.9);
         
         // Try to discharge 1000W - device1 should be excluded due to emergency recovery
         const voltageConfig = { ...mockConfig, dischargeProtectionMode: 'voltage', minBatteryVoltageV: 3.0 };
@@ -327,8 +371,8 @@ async function testModules() {
             safetyLimiters
         );
         
-        const dev1Dist = distribution.find(d => d.deviceId === 'device1');
-        const dev2Dist = distribution.find(d => d.deviceId === 'device2');
+        const dev1Dist = distribution.find(d => d.deviceId === 'pk1');
+        const dev2Dist = distribution.find(d => d.deviceId === 'pk2');
         
         // Device1 should be excluded (emergency recovery from low voltage)
         assert(dev1Dist, 'Device1 in distribution result');
@@ -339,7 +383,7 @@ async function testModules() {
         assertEqual(totalDistributed, 1000, 'Total power correctly distributed');
         
         // Emergency state was checked (even if not excluding in this test scenario)
-        assert(emergencyManagers.get('device1').inEmergencyRecovery !== undefined, 'Emergency state tracked');
+        assert(emergencyManagers.get('pk1').inEmergencyRecovery !== undefined, 'Emergency state tracked');
     });
 
     await runTest('[2.4] Emergency charge power is capped to each device\'s own charge limit', async () => {
@@ -585,6 +629,39 @@ async function testModules() {
         );
         
         assert(distribution.every(d => d.excluded || d.powerW === 0), 'All devices excluded from charging at max SOC');
+    });
+
+    await runTest('[3.4b] Excluded devices bypass zero-avoidance and always get a literal 0W (issue #28)', async () => {
+        initializeMockStates();
+
+        const devices = [
+            { productKey: 'device1', deviceKey: 'pk1', name: 'Device 1', enabled: true },
+            { productKey: 'device2', deviceKey: 'pk2', name: 'Device 2', enabled: true }
+        ];
+        const multiDeviceMgr = new MultiDeviceManager(mockAdapter, 'test.0', devices);
+        const validationService = new ValidationService(mockAdapter);
+        const [device1, device2] = multiDeviceMgr.devices;
+
+        // Device 2 is discharging normally; Device 1 is structurally excluded (e.g. Waterfill
+        // Sticky-Device's resting side) and should be told 0W outright.
+        const distribution = [
+            { deviceId: device1.id, deviceName: device1.name, powerW: 0, reason: 'Waterfill: device not eligible', excluded: true },
+            { deviceId: device2.id, deviceName: device2.name, powerW: 300, reason: 'Waterfill active device', excluded: false }
+        ];
+
+        const avoidZeroConfig = { ...mockConfig, avoidZeroSetpoint: true, standbyKeepAliveW: 10, smartModeIdleTimeoutSec: 300, zeroHoldOffSec: 8 };
+
+        await multiDeviceMgr.writePowerSetpoints(distribution, {}, validationService, avoidZeroConfig);
+
+        const excludedLimit = getMockState(`${device1.basePath}.control.setDeviceAutomationInOutLimit`).val;
+        assertEqual(excludedLimit, 0, 'Excluded device gets literal 0W even with avoidZeroSetpoint enabled, not a keep-alive value');
+
+        // Repeated cycles (device stays excluded) must never wake it back up with a keep-alive.
+        for (let i = 0; i < 5; i++) {
+            await multiDeviceMgr.writePowerSetpoints(distribution, {}, validationService, avoidZeroConfig);
+        }
+        const stillExcludedLimit = getMockState(`${device1.basePath}.control.setDeviceAutomationInOutLimit`).val;
+        assertEqual(stillExcludedLimit, 0, 'Sustained exclusion never re-arms the device with a keep-alive setpoint');
     });
 
     await runTest('[3.5] RelayProtection prevents rapid mode switching', async () => {
@@ -887,8 +964,8 @@ async function testModules() {
 
         const activeDistribution = distribution.filter(d => !d.excluded);
         assertEqual(activeDistribution.reduce((sum, d) => sum + d.powerW, 0), 2500, 'Waterfill target reaches manager output');
-        assertEqual(activeDistribution.find(d => d.deviceId === 'device1').powerW, 500, 'Manager applies device one limit');
-        assertEqual(activeDistribution.find(d => d.deviceId === 'device2').powerW, 2000, 'Manager applies device two limit');
+        assertEqual(activeDistribution.find(d => d.deviceId === 'pk1').powerW, 500, 'Manager applies device one limit');
+        assertEqual(activeDistribution.find(d => d.deviceId === 'pk2').powerW, 2000, 'Manager applies device two limit');
     });
 
     await runTest('[4.9] Waterfill handles changing loads and direction changes', async () => {
@@ -1157,8 +1234,8 @@ async function testModules() {
             safetyLimiters
         );
 
-        const device1 = distribution.find(d => d.deviceId === 'device1');
-        const device2 = distribution.find(d => d.deviceId === 'device2');
+        const device1 = distribution.find(d => d.deviceId === 'pk1');
+        const device2 = distribution.find(d => d.deviceId === 'pk2');
         assertEqual(device1.excluded, true, 'Charge-disabled device is excluded even in equalSplit mode');
         assertEqual(device1.powerW, 0, 'Charge-disabled device receives no power in equalSplit mode');
         assertEqual(device2.excluded, false, 'Other device still participates normally');
@@ -1378,6 +1455,147 @@ async function testModules() {
             assertEqual(total, targetW, `Spread mode answers ${targetW}W immediately with the full target`);
             assert(result.every(item => item.reason === 'Waterfill spread'), `No blend reason appears while spread stays spread at ${targetW}W`);
         }
+    });
+
+    // ------------------------------------------------------------------
+    // Issue #21: sustained heavy feed-in never reached charge mode because
+    // RelayProtection's deliberate relay-safety setpoints (0W, or exactly
+    // ±operatingDeadbandW) were smaller than hysteresisW, so
+    // PowerRegulator's hysteresis kept reverting them to the old setpoint -
+    // deadlocking the mode switch forever. Fix: RelayProtection reports
+    // `relayModified` whenever it enforces such a setpoint, and both
+    // controllers forward that as `bypassHysteresis` so only that one
+    // regulation step is skipped - ramping, absolute limits and rounding
+    // (and, upstream, the RelayProtection telemetry wait for the battery
+    // to actually reach ~0W) still apply exactly as before.
+    // ------------------------------------------------------------------
+
+    await runTest('[4.21] RelayProtection + PowerRegulator: relay-safety setpoints bypass hysteresis, not the whole regulator (issue #21, single-device shape)', async () => {
+        const relayProtection = new RelayProtection(mockAdapter);
+        const powerRegulator = new PowerRegulator(mockAdapter);
+
+        // Single-device config: operatingDeadbandW is used as-is (no per-device
+        // scaling), matching lib/SingleDeviceController.js.
+        const config = {
+            ...mockConfig,
+            hysteresisW: 30,
+            operatingDeadbandW: 10,
+            deadbandHoldTicks: 1,
+            feedInThresholdW: -150,
+            feedInDelayTicks: 5
+        };
+
+        // Sustained feed-in already confirmed (counter past feedInDelayTicks),
+        // as it would be after minutes of heavy PV export.
+        relayProtection.feedInCounter = 5;
+
+        const gridPowerW = -300; // well below feedInThresholdW
+        const currentBatteryPowerW = 25; // still discharging, not yet ~0W
+        const rawTargetW = -500; // I-Regulator wants a hard charge transition
+
+        // Cycle A: deadband takes over for the first time this transition -
+        // holds at exactly +operatingDeadbandW (10W), same as before the fix.
+        let relayResult = relayProtection.applyProtection({
+            config, gridPowerW, currentBatteryPowerW,
+            lastSetPowerW: 10, newBatteryPowerW: rawTargetW
+        });
+        assertEqual(relayResult.powerW, 10, 'Cycle A: deadband holds at +operatingDeadbandW');
+        assert(relayResult.relayModified, 'Cycle A: RelayProtection reports it overrode the setpoint');
+
+        let regResult = powerRegulator.applyRegulation({
+            config, powerW: relayResult.powerW, lastSetPowerW: 10,
+            safetyActive: false, bypassHysteresis: relayResult.relayModified
+        });
+        assertEqual(regResult.powerW, 10, 'Cycle A: regulator output unchanged (no relay switch needed yet)');
+
+        // Cycle B: deadband hold has now lasted deadbandHoldTicks - RelayProtection
+        // releases to the safety-critical 0W setpoint. Delta to lastSetPowerW (10W)
+        // is only 10W, well under hysteresisW (30W): pre-fix this got silently
+        // reverted to 10W and the relay could never switch.
+        relayResult = relayProtection.applyProtection({
+            config, gridPowerW, currentBatteryPowerW,
+            lastSetPowerW: 10, newBatteryPowerW: rawTargetW
+        });
+        assertEqual(relayResult.powerW, 0, 'Cycle B: deadband released, RelayProtection targets exactly 0W');
+        assert(relayResult.relayModified, 'Cycle B: RelayProtection reports it overrode the setpoint');
+
+        regResult = powerRegulator.applyRegulation({
+            config, powerW: relayResult.powerW, lastSetPowerW: 10,
+            safetyActive: false, bypassHysteresis: relayResult.relayModified
+        });
+        assertEqual(regResult.powerW, 0, 'Cycle B: 0W setpoint reaches the device instead of being reverted by hysteresis');
+
+        // Control: without the bypass flag, the exact same 0W setpoint gets
+        // reverted by hysteresis - this is the bug as reported in issue #21.
+        const unfixedResult = powerRegulator.applyRegulation({
+            config, powerW: 0, lastSetPowerW: 10, safetyActive: false
+            // bypassHysteresis omitted, as pre-fix call sites did
+        });
+        assertEqual(unfixedResult.powerW, 10, 'Control: omitting bypassHysteresis reproduces the reported deadlock');
+    });
+
+    await runTest('[4.22] MultiDeviceController.calculateTargetPower: sustained heavy feed-in reaches 0W instead of oscillating at hysteresis (issue #21, reporter\'s exact config)', async () => {
+        const MultiDeviceController = require('./lib/MultiDeviceController');
+
+        // Config values as attached to issue #21 (2x AC2400+ multi-device setup).
+        const config = {
+            hysteresisW: 30,
+            operatingDeadbandW: 10, // scaled to 20W by the controller for 2 devices
+            deadbandHoldTicks: 1,
+            feedInThresholdW: -150,
+            feedInDelayTicks: 5,
+            dischargeThresholdW: 100,
+            dischargeDelayTicks: 3,
+            maxChargePowerW: 2400,
+            maxDischargePowerW: 2400,
+            rampChargeWPerCycle: 100,
+            rampDischargeWPerCycle: 250
+        };
+
+        const controller = new MultiDeviceController(mockAdapter, {
+            multiDeviceMgr: { devices: [{ id: 'device1' }, { id: 'device2' }] },
+            relayProtection: new RelayProtection(mockAdapter),
+            powerRegulator: new PowerRegulator(mockAdapter)
+        });
+
+        // Reproduces the reported log: stuck discharging at 20W total while the
+        // grid is feeding in ~3200W - way past feedInDelayTicks already.
+        controller.lastTotalWrittenPowerW = 20;
+        controller.relayProtection.feedInCounter = 90;
+
+        const filteredGridPowerW = -3200;
+        const targetGridPowerW = -100;
+        const normalDevices = [{ id: 'device1', powerW: 20 }, { id: 'device2', powerW: 20 }];
+        const aggregatedState = { totalPowerW: 40, avgSoc: 18, availableDevicesCount: 2 };
+
+        const cycleA = await controller.calculateTargetPower(config, filteredGridPowerW, targetGridPowerW, normalDevices, aggregatedState);
+        assertEqual(cycleA, 20, 'Cycle A: deadband holds at scaled operatingDeadbandW (20W for 2 devices)');
+
+        controller.lastTotalWrittenPowerW = cycleA;
+        const cycleB = await controller.calculateTargetPower(config, filteredGridPowerW, targetGridPowerW, normalDevices, aggregatedState);
+        assertEqual(cycleB, 0, 'Cycle B: deadband release reaches 0W - relay is finally allowed to switch to charge');
+    });
+
+    await runTest('[4.23] PowerRegulator hysteresis still suppresses ordinary I-Regulator jitter (regression guard for issue #21 fix)', async () => {
+        const relayProtection = new RelayProtection(mockAdapter);
+        const powerRegulator = new PowerRegulator(mockAdapter);
+
+        const config = { ...mockConfig, hysteresisW: 30, operatingDeadbandW: 10, deadbandHoldTicks: 1 };
+
+        // Steady discharge, small I-Regulator fluctuation - no transition, no
+        // deadband involvement, RelayProtection has nothing to enforce here.
+        const relayResult = relayProtection.applyProtection({
+            config, gridPowerW: 300, currentBatteryPowerW: 500,
+            lastSetPowerW: 500, newBatteryPowerW: 520
+        });
+        assertEqual(relayResult.powerW, 520, 'RelayProtection passes ordinary regulation through untouched');
+        assert(!relayResult.relayModified, 'RelayProtection reports no override for ordinary regulation');
+
+        const regResult = powerRegulator.applyRegulation({
+            config, powerW: relayResult.powerW, lastSetPowerW: 500,
+            safetyActive: false, bypassHysteresis: relayResult.relayModified
+        });
+        assertEqual(regResult.powerW, 500, 'Hysteresis still suppresses a 20W jitter below the 30W threshold');
     });
 
     console.log('\n' + '='.repeat(70));

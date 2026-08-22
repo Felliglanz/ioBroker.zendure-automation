@@ -35,6 +35,7 @@ Steuert deine Zendure Solarflow Batterie vollautomatisch für **Null-Einspeisung
 - **Recovery Mode** – verhindert Entlade-Schleifen nach Notladung
 - **Relay Protection** – minimiert Schaltvorgänge, verlängert Hardware-Lebensdauer
 - **Power Validation** – prüft ob Gerät Setpoints annimmt (mit Auto-Retry)
+- **Zero-Setpoint-Vermeidung** *(experimentell, standardmäßig aus)* – schützt vor unnötigen Flash-Writes bei der Geräteansteuerung
 
 ### ⚙️ Mode-Switching Protection
 - **Bidirektionaler Schutz** – verzögert beide Richtungen (Charge↔Discharge)
@@ -304,6 +305,21 @@ Schützt Hardware vor übermäßigem Schalten, speziell bei wechselhaftem Wetter
 - Verhindert Relais-Flattern bei Oszillation um Zielwert
 - Arbeitet mit 10W Safe-Switch zusammen (Schaltet nur bei ~0.04A)
 - Verfügbar als Runtime-Override: `control.operatingDeadbandW`
+
+### 🔌 Zero-Setpoint-Vermeidung (Flash-Schutz, experimentell)
+
+**Hintergrund:** Wird das Automatisierungslimit exakt auf `0` gesetzt, löst das in der zugrunde liegenden Solarflow-Integration eine verzögerte Abfolge aus, die `acMode`/`smartMode` einige Sekunden später abschaltet. Trifft in der Zeit ein neuer Sollwert ein, kann das Flash-Writes duplizieren oder mit dem neuen Befehl kollidieren ([Forum-Thread](https://forum.iobroker.net/post/1352076)). Jeder Wert **ungleich** 0 läuft dagegen über einen sofortigen Pfad ohne verzögerte Abfolge – daher genügt es, eine reine `0` möglichst zu vermeiden.
+
+**⚠️ Standardmäßig deaktiviert.** Ist die Option aus, verhält sich der Adapter exakt wie zuvor (reine `0` wird direkt geschrieben) – kein zusätzliches Risiko gegenüber dem bisherigen Verhalten, nur eben ohne den zusätzlichen Schutz. Muss also bewusst im Adapter-Setup aktiviert werden.
+
+| Parameter | Default | Beschreibung |
+|-----------|---------|--------------|
+| **Avoid Zero Setpoint** | aus | Master-Schalter für den gesamten Mechanismus |
+| **Standby Keep-Alive (W)** | 10W | Wird bei kurzem Standby statt 0 gesendet, in der zuletzt aktiven Richtung |
+| **smartMode Idle Timeout** | 300s | Wie lange Standby anhalten muss, bevor doch eine echte 0 gesendet wird (damit der Wechselrichter entkoppelt und Standby-Strom spart) |
+| **Post-Zero Grace Window** | 8s (Minimum 6s) | Nach einer echten 0 wird für diese Zeit nichts anderes geschrieben, damit die verzögerte Abschalt-Abfolge der zugrunde liegenden Integration ungestört durchläuft |
+
+Notladen umgeht das Grace Window immer – Hardware-Schutz hat Vorrang vor Flash-Schonung.
 
 ### 🎚️ Regelparameter
 

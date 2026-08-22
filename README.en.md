@@ -35,6 +35,7 @@ Automatically controls your Zendure Solarflow battery for **zero feed-in** and *
 - **Recovery Mode** – prevents discharge loops after emergency charging
 - **Relay Protection** – minimizes switching operations, extends hardware lifespan
 - **Power Validation** – checks if device accepts setpoints (with auto-retry)
+- **Zero-Setpoint Avoidance** *(experimental, off by default)* – protects against unnecessary flash writes during device control
 
 ### How it Works
 
@@ -235,6 +236,21 @@ Protects hardware from excessive switching, especially in variable weather:
 - Prevents relay chattering during oscillation around target
 - Works together with 10W safe-switch (switches only at ~0.04A)
 - Available as runtime override: `control.operatingDeadbandW`
+
+### 🔌 Zero-Setpoint Avoidance (Flash Protection, Experimental)
+
+**Background:** Setting the automation limit to exactly `0` triggers a delayed sequence in the underlying Solarflow integration that switches `acMode`/`smartMode` off a few seconds later. If a new setpoint arrives in that window, this can duplicate flash writes or collide with the new command ([forum thread](https://forum.iobroker.net/post/1352076)). Any value **other than** 0 takes an immediate code path with no delayed sequence at all – so simply avoiding a literal 0 sidesteps the whole issue.
+
+**⚠️ Disabled by default.** With the option off, the adapter behaves exactly as before (a literal 0 is written directly) – no additional risk compared to prior behavior, just without the extra protection. Must be explicitly enabled in the adapter setup.
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| **Avoid Zero Setpoint** | off | Master switch for the whole mechanism |
+| **Standby Keep-Alive (W)** | 10W | Sent instead of 0 during short standby, in the last active direction |
+| **smartMode Idle Timeout** | 300s | How long standby must be sustained before a real 0 is sent after all (so the inverter can decouple and save standby power) |
+| **Post-Zero Grace Window** | 8s (floor 6s) | After a real 0, nothing else is written for this long, so the underlying integration's delayed shutdown sequence finishes undisturbed |
+
+Emergency charging always bypasses the grace window – hardware protection takes priority over flash-write avoidance.
 
 ### 🎚️ Control Parameters
 

@@ -2,6 +2,60 @@
 
 All notable changes to this project are documented in this file.
 
+## v1.0.4 (2026-08-22)
+
+### English
+- Dashboard: added a daily Telemetry panel, opened via a new hamburger menu (top right of the header) so it stays out of the way until needed. Shows today's grid import/export energy, battery charge/discharge energy, real relay mode switches, and emergency-mode activations - PV energy is included too when the optional PV datapoint is configured.
+- New `lib/Telemetry.js` module accumulates these daily totals in new `telemetry.*` states, resetting automatically at local midnight and surviving adapter restarts (hydrated from the persisted states) - no history/statistics adapter dependency, everything is self-contained.
+- Mode-switch counting is based on the actually measured battery power direction flipping, not the raw setpoint or relay-protection debounce counters, so it reflects real relay switches only - not the debounce noise around them.
+- Fixed: dashboard responses (HTML/JS/CSS/icons and the `/api/*` endpoints) now send `Cache-Control: no-store`. Previously no caching headers were set at all, which could leave a browser serving a stale `app.js`/`style.css` after an update while the freshly-loaded `index.html` already expected the new markup.
+
+### Deutsch
+- Dashboard: neues Telemetrie-Panel hinzugefügt, aufrufbar über ein neues Hamburger-Menü (oben rechts im Header), damit es nicht dauerhaft im Weg ist. Zeigt die heutige Netzbezugs-/Einspeise-Energie, Batterie-Lade-/Entlade-Energie, echte Relais-Moduswechsel und Notfallmodus-Aktivierungen - PV-Energie wird ebenfalls einbezogen, sofern der optionale PV-Datenpunkt konfiguriert ist.
+- Neues Modul `lib/Telemetry.js` sammelt diese Tageswerte in neuen `telemetry.*`-States, die automatisch um Mitternacht (lokale Zeit) zurückgesetzt werden und Adapter-Neustarts überstehen (werden aus den persistierten States wiederhergestellt) - ganz ohne History-/Statistics-Adapter, komplett eigenständig.
+- Moduswechsel werden anhand der tatsächlich gemessenen Batterieleistungsrichtung gezählt, nicht anhand des rohen Sollwerts oder der Entprellzähler der Relaisschutzlogik, damit nur echte Relaisschaltungen gezählt werden - nicht das Rauschen drumherum.
+- Fix: Dashboard-Antworten (HTML/JS/CSS/Icons sowie die `/api/*`-Endpunkte) senden jetzt `Cache-Control: no-store`. Bisher wurden gar keine Caching-Header gesetzt, wodurch ein Browser nach einem Update weiterhin ein veraltetes `app.js`/`style.css` ausliefern konnte, während das frisch geladene `index.html` schon das neue Markup erwartete.
+
+## v1.0.3 (2026-08-22)
+
+### English
+- Fixed #27: in Multi-Device Mode, the single-device-only `status.currentPowerW`/`status.batterySoc` states are no longer created (and are removed if left over from a previous single-device run). They were never written to in multi-device mode, so they stayed permanently frozen at whatever they last showed - the live equivalents there are `status.totalPowerW`/`status.avgSoc`, plus the per-device `status.devices.<id>.powerW`/`soc` states. Single-device installs are unaffected; these two states are now created dynamically on startup instead of being fixed `instanceObjects`, and are removed if a previous multi-device run left `status.totalPowerW`/`status.avgSoc` behind.
+
+### Deutsch
+- Fix #27: Im Multi-Device-Modus werden die nur für den Single-Device-Modus gedachten States `status.currentPowerW`/`status.batterySoc` nicht mehr angelegt (und beim Umstieg von Single- auf Multi-Device entfernt, falls noch vorhanden). Sie wurden im Multi-Device-Modus nie beschrieben und blieben deshalb dauerhaft bei ihrem letzten Wert eingefroren - die live aktuellen Entsprechungen dort sind `status.totalPowerW`/`status.avgSoc` sowie die Pro-Geräte-States `status.devices.<id>.powerW`/`soc`. Single-Device-Installationen sind nicht betroffen; die beiden States werden jetzt dynamisch beim Start angelegt statt als feste `instanceObjects`, und werden entfernt, falls ein vorheriger Multi-Device-Lauf `status.totalPowerW`/`status.avgSoc` hinterlassen hat.
+
+## v1.0.2 (2026-08-20)
+
+### English
+- Added a standalone web dashboard, served directly by the adapter - no `vis`/`vis-2` setup required. Shows a live flow diagram (Grid/PV/House/Battery around a central hub) with a real battery-cell visualization for state of charge, works in both single- and multi-device mode, and includes control buttons wired directly to the `control.*` states.
+- New admin tab to configure the dashboard: enable/disable, port (default 3005, free to change on conflicts), and optional real house-consumption and PV-production datapoints.
+- When a house-consumption datapoint is configured, you can optionally subtract each device's own AC charging draw (`gridInputPower`) from it, so a whole-house meter's reading isn't inflated by the battery's own AC charging - PV-direct charging is intentionally excluded from that correction since it never touches the house meter.
+- Clicking the battery (or a device card in multi-device mode) opens a detail view with live per-pack data (cell voltages, temperature, etc.) - dynamically discovered from whatever the connected Zendure device actually reports, not a hardcoded field list.
+- The dashboard is installable as a home screen app (PWA) on iOS and Android.
+- Automatic dark/light theme based on the browser/OS setting.
+- Fixed: the Max Charge/Discharge override modes now keep `status.currentPowerW` (and the related grid/SOC/voltage status fields) live-updated every cycle while active, instead of freezing at whatever they showed right before the override was activated.
+- Multi-Device dashboard: the two global Max Charge/Discharge power sliders are now hidden (with an explanatory note) when the Waterfill distribution strategy is active, since they're only a fallback there - the per-device limits configured in the admin devices table are what's actually effective. A gear icon on each device card shows those effective limits.
+- The "House" node on the dashboard no longer shows a misleading placeholder value when no house-consumption datapoint is configured; it now shows the flow direction only (derived from Grid + Battery + PV, never a fabricated wattage) so it's still visually clear that energy is flowing toward the house.
+- Fixed an Admin warning ("invalid jsonConfig") caused by two header items on the Dashboard config tab missing a required `size` property.
+- **Breaking (Multi-Device):** `status.devices.<id>.*` state IDs are now derived from each device's own `deviceKey` (stable per physical unit) instead of its position in the admin devices table (`device1`, `device2`, ...). This prevents a state tree from silently relabeling a different physical device when the table is reordered or a device is removed. Old positional-id state trees are automatically cleaned up on the first start after upgrading; any external reference to the old `device1`/`device2` IDs (vis, scripts, Grafana, etc.) needs to be updated to the new deviceKey-based IDs. Single-device mode is unaffected.
+- New: writable per-device control overrides under `control.devices.<id>.*` (`maxChargePowerW`, `maxDischargePowerW`, `chargeAllowed`, `dischargeAllowed`), overlaid on top of the admin-config values for the running session - the same pattern already used for the existing global `control.*` states. The dashboard's per-device gear icon is now a live editor for these instead of a read-only view.
+- Fixed a pre-existing bug where the dashboard's per-pack battery detail view never worked in multi-device mode (device lookup compared against a config field that never existed).
+
+### Deutsch
+- Ein eigenständiges Web-Dashboard hinzugefügt, das der Adapter selbst ausliefert - kein `vis`/`vis-2`-Setup nötig. Zeigt ein Live-Flussdiagramm (Netz/PV/Haus/Batterie um einen zentralen Knotenpunkt) mit echter Batteriezellen-Visualisierung für den Ladezustand, funktioniert im Single- wie im Multi-Device-Modus, inklusive Steuerbuttons direkt verbunden mit den `control.*`-States.
+- Neuer Admin-Tab zur Dashboard-Konfiguration: Aktivieren/Deaktivieren, Port (Standard 3005, bei Kollisionen frei änderbar) sowie optionale Datenpunkte für echten Hausverbrauch und PV-Produktion.
+- Ist ein Hausverbrauchs-Datenpunkt konfiguriert, kann optional die eigene AC-Ladeleistung jedes Geräts (`gridInputPower`) davon abgezogen werden, damit ein Gesamthauszähler durch die AC-Ladung der Batterie nicht überhöht anzeigt - PV-Direktladung bleibt bei dieser Korrektur bewusst außen vor, da sie nie über den Hauszähler läuft.
+- Klick auf die Batterie (bzw. im Multi-Device-Modus auf eine Gerätekarte) öffnet eine Detailansicht mit Live-Pro-Pack-Daten (Zellspannungen, Temperatur usw.) - dynamisch ermittelt aus dem, was das angeschlossene Zendure-Gerät tatsächlich liefert, keine fest verdrahtete Feldliste.
+- Das Dashboard ist als App auf dem Homescreen installierbar (PWA) unter iOS und Android.
+- Automatischer Hell-/Dunkelmodus passend zur Browser-/Systemeinstellung.
+- Fix: Die Max Charge/Discharge-Override-Modi halten `status.currentPowerW` (und die zugehörigen Netz-/SOC-/Spannungs-Status-Felder) jetzt in jedem Zyklus live aktuell, statt beim zuletzt vor der Aktivierung angezeigten Wert einzufrieren.
+- Multi-Device-Dashboard: die beiden globalen Max-Lade-/Entladeleistungs-Regler werden jetzt (mit Hinweistext) ausgeblendet, wenn die Waterfill-Verteilstrategie aktiv ist, da sie dort nur ein Fallback sind - wirksam sind die pro Gerät in der Admin-Geräte-Tabelle konfigurierten Limits. Ein Zahnrad-Icon an jeder Gerätekarte zeigt diese tatsächlich wirksamen Limits an.
+- Der "Haus"-Knoten im Dashboard zeigt ohne konfigurierten Hausverbrauchs-Datenpunkt keinen irreführenden Platzhalterwert mehr; stattdessen wird nur noch die Flussrichtung angezeigt (abgeleitet aus Netz + Batterie + PV, nie eine erfundene Wattzahl), sodass weiterhin sichtbar bleibt, dass Energie Richtung Haus fließt.
+- Eine Admin-Warnung ("invalid jsonConfig") behoben, die durch zwei Header-Elemente im Dashboard-Konfigurationstab ohne die erforderliche `size`-Eigenschaft verursacht wurde.
+- **Breaking Change (Multi-Device):** `status.devices.<id>.*`-State-IDs werden jetzt aus dem `deviceKey` des jeweiligen Geräts abgeleitet (eindeutig pro physischem Gerät) statt aus der Position in der Admin-Geräte-Tabelle (`device1`, `device2`, ...). Das verhindert, dass ein State-Baum beim Umsortieren der Tabelle oder Entfernen eines Geräts stillschweigend einem anderen physischen Gerät zugeordnet wird. Alte, positionsbasierte State-Bäume werden beim ersten Start nach dem Update automatisch aufgeräumt; externe Referenzen auf die alten `device1`/`device2`-IDs (vis, Skripte, Grafana usw.) müssen manuell auf die neuen deviceKey-basierten IDs angepasst werden. Der Single-Device-Modus ist davon nicht betroffen.
+- Neu: schreibbare Pro-Gerät-Steuerungs-Overrides unter `control.devices.<id>.*` (`maxChargePowerW`, `maxDischargePowerW`, `chargeAllowed`, `dischargeAllowed`), die für die laufende Session über die Admin-Config-Werte gelegt werden - dasselbe Muster wie bei den bestehenden globalen `control.*`-States. Das Zahnrad-Icon an der Gerätekarte im Dashboard ist jetzt ein Live-Editor dafür statt einer reinen Anzeige.
+- Einen bereits bestehenden Fehler behoben, durch den die Pro-Pack-Batteriedetailansicht im Dashboard im Multi-Device-Modus nie funktioniert hat (Geräte-Zuordnung verglich gegen ein Config-Feld, das nie existierte).
+
 ## v1.0.1 (2026-08-19)
 
 ### English
