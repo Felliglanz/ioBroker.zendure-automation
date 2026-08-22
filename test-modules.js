@@ -1598,6 +1598,127 @@ async function testModules() {
         assertEqual(regResult.powerW, 500, 'Hysteresis still suppresses a 20W jitter below the 30W threshold');
     });
 
+    // ------------------------------------------------------------------
+    // Issue #26 (PV headroom): a PV-equipped device's own solar production
+    // occupies part of its charge capacity, but the waterfall previously had
+    // no awareness of this - it could ask the device for more AC-side charge
+    // power than it could actually accept, and the shortfall was never
+    // redistributed to the other device within the same cycle, causing
+    // persistent setpoint-validation retries/errors.
+    // ------------------------------------------------------------------
+
+    await runTest('[4.24] computeEffectiveChargeLimitW: non-PV unaffected, PV subtracts live solar, AC-only cap and unset-AC-limit fallback both honored', async () => {
+        const { computeEffectiveChargeLimitW } = require('./lib/pvChargeLimit');
+
+        assertEqual(
+            computeEffectiveChargeLimitW({ maxChargePowerW: 1600 }),
+            1600,
+            'Non-PV device: raw maxChargePowerW passes through unchanged'
+        );
+
+        assertEqual(
+            computeEffectiveChargeLimitW({ hasPv: true, maxChargePowerW: 2000, maxAcChargePowerW: 2000, solarInputPowerW: 1200 }),
+            800,
+            'PV device: combined limit minus live solar production'
+        );
+
+        assertEqual(
+            computeEffectiveChargeLimitW({ hasPv: true, maxChargePowerW: 1500, maxAcChargePowerW: 1500, solarInputPowerW: 1600 }),
+            0,
+            'PV device: solar exceeding the combined limit floors at 0, never negative'
+        );
+
+        assertEqual(
+            computeEffectiveChargeLimitW({ hasPv: true, maxChargePowerW: 2000, maxAcChargePowerW: 600, solarInputPowerW: 200 }),
+            600,
+            'PV device: a tighter separate AC-only cap binds even when combined-minus-solar is higher'
+        );
+
+        assertEqual(
+            computeEffectiveChargeLimitW({ hasPv: true, maxChargePowerW: 2000, solarInputPowerW: 500 }),
+            1500,
+            'PV device: unset maxAcChargePowerW degrades gracefully to the combined-only formula'
+        );
+    });
+
+    await runTest('[4.25] PV headroom: waterfill caps a PV device to its live effective AC limit and redistributes the rest in the same cycle', async () => {
+        const distributor = new WaterfillDistributor();
+        const devices = [
+            {
+                id: 'pro', name: 'Pro (PV)', soc: 50,
+                hasPv: true, maxChargePowerW: 2400, maxAcChargePowerW: 2400, solarInputPowerW: 1500,
+                maxDischargePowerW: 1600, chargeAllowed: true, dischargeAllowed: true
+            },
+            {
+                id: 'acplus', name: 'AC+', soc: 60,
+                maxChargePowerW: 1600, maxDischargePowerW: 1600,
+                chargeAllowed: true, dischargeAllowed: true
+            }
+        ];
+        const waterfillConfig = {
+            minBatterySoc: 10,
+            maxBatterySoc: 100,
+            updateIntervalSec: 5,
+            waterfillConcentrateHoldMinutes: 0,
+            waterfillChargeConcentrateBelowW: 600,
+            waterfillChargeSpreadAboveW: 1200,
+            waterfillSocMargin: 10
+        };
+
+        // Pro's raw maxChargePowerW (2400) minus its live 1500W solar leaves only 900W of AC
+        // headroom - reproduces the cliffsolar scenario (a PV-unaware waterfall would have
+        // handed Pro the full 2400W share; AC+ must pick up the rest in the SAME cycle).
+        const result = distributor.distribute(-2500, devices, waterfillConfig);
+
+        assertEqual(result.find(d => d.deviceId === 'pro').powerW, -900, "PV device is capped to its live effective AC limit (2400 - 1500 solar), not the raw 2400W");
+        assertEqual(result.find(d => d.deviceId === 'acplus').powerW, -1600, 'Non-PV device absorbs the remainder in the same cycle - no leftover, no separate priority pass needed');
+        assertEqual(result.reduce((sum, d) => sum + d.powerW, 0), -2500, 'Full requested charge power is delivered');
+    });
+
+    await runTest('[4.26] Multi-Device reads live solarInputPower for PV devices, degrading to 0 (not exclusion) when stale/missing', async () => {
+        initializeMockStates();
+        const devices = [
+            { productKey: 'device1', deviceKey: 'pk1', name: 'PV Device', enabled: true, hasPv: true, maxChargePowerW: 2000, maxAcChargePowerW: 2000 },
+            { productKey: 'device2', deviceKey: 'pk2', name: 'Non-PV Device', enabled: true }
+        ];
+        const multiDeviceMgr = new MultiDeviceManager(mockAdapter, 'test.0', devices);
+
+        // Fresh solar reading for the PV device
+        setMockState('test.0.device1.pk1.solarInputPower', 1234);
+
+        const aggregated = await multiDeviceMgr.aggregateDeviceStates();
+        const pv = aggregated.devices.find(d => d.id === 'pk1');
+        const nonPv = aggregated.devices.find(d => d.id === 'pk2');
+
+        assertEqual(pv.solarInputPowerW, 1234, 'PV device reports live solar production');
+        assertEqual(pv.available, true, 'Fresh solar reading does not affect availability');
+        assertEqual(nonPv.solarInputPowerW, 0, 'Non-PV device is never read/never affected');
+
+        // Now go stale
+        const staleTs = Date.now() - (4 * 60 * 1000);
+        mockStates.set('test.0.device1.pk1.solarInputPower', { val: 1234, ack: true, ts: staleTs });
+
+        const aggregatedStale = await multiDeviceMgr.aggregateDeviceStates();
+        const pvStale = aggregatedStale.devices.find(d => d.id === 'pk1');
+
+        assertEqual(pvStale.solarInputPowerW, 0, 'Stale solar reading degrades to 0 (no PV credit), not the frozen value');
+        assertEqual(pvStale.available, true, 'Stale solar reading does NOT exclude the device (unlike packPower/SOC staleness)');
+    });
+
+    await runTest('[4.27] hasPv forces validationSource to gridInputPower, overriding any configured value', async () => {
+        const devices = [
+            { productKey: 'device1', deviceKey: 'pk1', name: 'PV Device', enabled: true, hasPv: true, validationSource: 'packPower' },
+            { productKey: 'device2', deviceKey: 'pk2', name: 'Non-PV Device', enabled: true, validationSource: 'packPower' }
+        ];
+        const multiDeviceMgr = new MultiDeviceManager(mockAdapter, 'test.0', devices);
+
+        const pv = multiDeviceMgr.devices.find(d => d.id === 'pk1');
+        const nonPv = multiDeviceMgr.devices.find(d => d.id === 'pk2');
+
+        assertEqual(pv.validationSource, 'gridInputPower', 'PV device validation source is forced to gridInputPower even though packPower was configured');
+        assertEqual(nonPv.validationSource, 'packPower', 'Non-PV device keeps its configured validation source unchanged');
+    });
+
     console.log('\n' + '='.repeat(70));
     console.log('SECTION 5: PACKAGE & CONFIG CONSISTENCY');
     console.log('='.repeat(70));
