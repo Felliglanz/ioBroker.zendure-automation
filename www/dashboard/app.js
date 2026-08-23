@@ -14,7 +14,8 @@
     { key: 'maxDischargePowerW', label: 'Max. Entladeleistung', type: 'number', unit: 'W' },
     { key: 'maxBatterySoc', label: 'Max. Batterie-SOC', type: 'number', unit: '%' },
     { key: 'minBatterySoc', label: 'Min. Batterie-SOC', type: 'number', unit: '%' },
-    { key: 'operatingDeadbandW', label: 'Deadband', type: 'number', unit: 'W' }
+    { key: 'operatingDeadbandW', label: 'Deadband', type: 'number', unit: 'W' },
+    { key: 'regulatorGain', label: 'Regler-Gain', type: 'number', step: 0.05 }
   ];
 
   const modeBadge = document.getElementById('modeBadge');
@@ -90,6 +91,7 @@
         input = document.createElement('input');
         input.type = 'number';
         input.id = `ctrl-${def.key}`;
+        if (def.step) input.step = def.step;
         input.addEventListener('change', () => sendControl(def.key, Number(input.value)));
         row.appendChild(label);
         row.appendChild(input);
