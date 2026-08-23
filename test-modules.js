@@ -928,6 +928,50 @@ async function testModules() {
         assertEqual(needsResend, false, 'Validation succeeded (no resend needed)');
     });
 
+    await runTest('[4.6b] ValidationService sends the real 0W only once per standby spell, not every idleTimeoutSec', async () => {
+        // Without this, a sustained standby (regulator wants 0W cycle after cycle -
+        // e.g. grid perfectly balanced, or discharge blocked for a long recovery)
+        // used to re-run the whole keep-alive-then-real-0 dance every
+        // smartModeIdleTimeoutSec forever: a fresh real 0W (full acMode/smartMode-off
+        // flash sequence) every ~5 minutes, indefinitely - defeating the point of
+        // avoiding zero writes in the first place.
+        initializeMockStates();
+        const validationService = new ValidationService(mockAdapter);
+        const avoidZeroConfig = { ...mockConfig, avoidZeroSetpoint: true, standbyKeepAliveW: 10, smartModeIdleTimeoutSec: 300, zeroHoldOffSec: 8 };
+        const deviceId = 'dev1';
+        const basePath = 'test.0.device1';
+        const dp = `${basePath}.control.setDeviceAutomationInOutLimit`;
+
+        // Fresh standby: holds at the keep-alive floor first.
+        await validationService.writePowerSetpoint(deviceId, basePath, 0, avoidZeroConfig);
+        assertEqual(getMockState(dp).val, 10, 'Fresh standby holds at the keep-alive floor first');
+
+        // Fast-forward past the idle timeout without waiting for real time.
+        const state = validationService.getDeviceState(deviceId);
+        state.standbySince = Date.now() - 301 * 1000;
+        await validationService.writePowerSetpoint(deviceId, basePath, 0, avoidZeroConfig);
+        assertEqual(getMockState(dp).val, 0, 'Real 0W committed once the idle timeout elapses');
+
+        // Clear the post-zero grace window and simulate standby continuing for
+        // several more idle-timeout periods, spying on actual device writes.
+        state.holdOffUntil = 0;
+        let writeCount = 0;
+        const originalSetForeignStateAsync = mockAdapter.setForeignStateAsync;
+        mockAdapter.setForeignStateAsync = async (...args) => {
+            writeCount++;
+            return originalSetForeignStateAsync(...args);
+        };
+        try {
+            for (let i = 0; i < 5; i++) {
+                await validationService.writePowerSetpoint(deviceId, basePath, 0, avoidZeroConfig);
+            }
+        } finally {
+            mockAdapter.setForeignStateAsync = originalSetForeignStateAsync;
+        }
+        assertEqual(writeCount, 0, 'No further device writes while standby continues after the real 0W already landed');
+        assertEqual(getMockState(dp).val, 0, 'Setpoint stays at literal 0W, no keep-alive pulses re-appear');
+    });
+
     await runTest('[4.7] Waterfill uses sticky device and redistributes capped power', async () => {
         const distributor = new WaterfillDistributor();
         const devices = [
