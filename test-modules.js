@@ -718,6 +718,43 @@ async function testModules() {
         assertEqual(released.powerW, 10, 'First cycle after unblock holds at the deadband floor, not a stale full-power value');
     });
 
+    await runTest('[3.5c] RelayProtection freezes deadband state while charge is safety-blocked (mirror of 3.5b)', async () => {
+        initializeMockStates();
+        const relayProtection = new RelayProtection(mockAdapter);
+
+        // Mirror scenario: battery at maxBatterySoc (or enableCharge=false) so charging
+        // stays vetoed downstream, while PV surplus keeps the I-Regulator wanting to
+        // charge. Same churn risk as the discharge case, just on the CHG<->STBY leg.
+        for (let i = 0; i < 6; i++) {
+            const result = relayProtection.applyProtection({
+                config: mockConfig,
+                gridPowerW: -500,
+                currentBatteryPowerW: 0,
+                lastSetPowerW: 0,
+                newBatteryPowerW: -300,
+                chargeBlocked: true
+            });
+            assertEqual(result.powerW, 0, `Cycle ${i}: stays at 0W while charge is blocked, no flicker`);
+            assertEqual(result.deadbandCounter, 0, `Cycle ${i}: deadband counter does not churn while blocked`);
+        }
+
+        // Unlike discharge, a fresh charge transition also has to clear the
+        // pre-existing feedInDelayTicks sustained-feed-in gate (mockConfig: 5) before
+        // the deadband even runs - unrelated to this fix, so drive that gate first.
+        let released;
+        for (let i = 0; i < mockConfig.feedInDelayTicks; i++) {
+            released = relayProtection.applyProtection({
+                config: mockConfig,
+                gridPowerW: -500,
+                currentBatteryPowerW: 0,
+                lastSetPowerW: 0,
+                newBatteryPowerW: -300,
+                chargeBlocked: false
+            });
+        }
+        assertEqual(released.powerW, -10, 'Once released, holds at the deadband floor (charge direction), not a stale value');
+    });
+
     await runTest('[3.6] PowerRegulator applies ramping limits', async () => {
         initializeMockStates();
         const powerRegulator = new PowerRegulator(mockAdapter);
@@ -1619,6 +1656,10 @@ async function testModules() {
         const MultiDeviceController = require('./lib/MultiDeviceController');
 
         // Config values as attached to issue #21 (2x AC2400+ multi-device setup).
+        // enableCharge/enableDischarge are always present in real runtime config
+        // (io-package.json defaults both to true) - set explicitly here too, since
+        // RelayProtection's charge/discharge-blocked freeze treats an unset flag the
+        // same way SafetyLimiter always has: as disabled.
         const config = {
             hysteresisW: 30,
             operatingDeadbandW: 10, // scaled to 20W by the controller for 2 devices
@@ -1630,7 +1671,9 @@ async function testModules() {
             maxChargePowerW: 2400,
             maxDischargePowerW: 2400,
             rampChargeWPerCycle: 100,
-            rampDischargeWPerCycle: 250
+            rampDischargeWPerCycle: 250,
+            enableCharge: true,
+            enableDischarge: true
         };
 
         const controller = new MultiDeviceController(mockAdapter, {
