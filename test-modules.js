@@ -1895,6 +1895,49 @@ async function testModules() {
         assertEqual(restingLimit, 0, 'Resting device stays at literal 0W, never rearmed with a keep-alive pulse');
     });
 
+    await runTest('[4.25] MultiDeviceController.calculateTargetPower: regulatorGain dampens the I-Regulator error, off by default (issue #30)', async () => {
+        const MultiDeviceController = require('./lib/MultiDeviceController');
+
+        const baseConfig = {
+            hysteresisW: 10,
+            operatingDeadbandW: 10,
+            feedInThresholdW: -150,
+            feedInDelayTicks: 5,
+            dischargeThresholdW: 100,
+            dischargeDelayTicks: 3,
+            maxChargePowerW: 2000,
+            maxDischargePowerW: 2000,
+            rampChargeWPerCycle: 1000,
+            rampDischargeWPerCycle: 1000,
+            enableCharge: true,
+            enableDischarge: true
+        };
+
+        const normalDevices = [{ id: 'device1', powerW: 500 }];
+        const aggregatedState = { totalPowerW: 500, avgSoc: 50, availableDevicesCount: 1 };
+
+        // Default (regulatorGainEnabled unset): full error applied, matches pre-#30 behavior.
+        const defaultController = new MultiDeviceController(mockAdapter, {
+            multiDeviceMgr: { devices: [{ id: 'device1' }] },
+            relayProtection: new RelayProtection(mockAdapter),
+            powerRegulator: new PowerRegulator(mockAdapter)
+        });
+        defaultController.lastTotalWrittenPowerW = 500;
+        const defaultResult = await defaultController.calculateTargetPower(baseConfig, 300, 0, normalDevices, aggregatedState);
+        assertEqual(defaultResult, 800, 'Gain disabled: full error (500 + 1.0*300 = 800W)');
+
+        // Enabled with a reduced gain: only half the error should be applied.
+        const dampedController = new MultiDeviceController(mockAdapter, {
+            multiDeviceMgr: { devices: [{ id: 'device1' }] },
+            relayProtection: new RelayProtection(mockAdapter),
+            powerRegulator: new PowerRegulator(mockAdapter)
+        });
+        dampedController.lastTotalWrittenPowerW = 500;
+        const dampedConfig = { ...baseConfig, regulatorGainEnabled: true, regulatorGain: 0.5 };
+        const dampedResult = await dampedController.calculateTargetPower(dampedConfig, 300, 0, normalDevices, aggregatedState);
+        assertEqual(dampedResult, 650, 'Gain 0.5 enabled: half the error applied (500 + 0.5*300 = 650W)');
+    });
+
     console.log('\n' + '='.repeat(70));
     console.log('SECTION 5: PACKAGE & CONFIG CONSISTENCY');
     console.log('='.repeat(70));

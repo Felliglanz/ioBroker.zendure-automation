@@ -159,6 +159,7 @@ class ZendureAutomation extends utils.Adapter {
                 await this.setStateAsync('control.maxChargePowerW', this.config.maxChargePowerW ?? 1600, true);
                 await this.setStateAsync('control.maxDischargePowerW', this.config.maxDischargePowerW ?? 1600, true);
                 await this.setStateAsync('control.operatingDeadbandW', this.config.operatingDeadbandW ?? 10, true);
+                await this.setStateAsync('control.regulatorGain', this.config.regulatorGain ?? 1, true);
                 await this.setStateAsync('status.mode', 'idle', true);
                 await this.setStateAsync('info.connection', true, true);
 
@@ -423,7 +424,8 @@ class ZendureAutomation extends utils.Adapter {
             ['control.enableDischarge', 'enableDischarge'],
             ['control.maxChargePowerW', 'maxChargePowerW'],
             ['control.maxDischargePowerW', 'maxDischargePowerW'],
-            ['control.operatingDeadbandW', 'operatingDeadbandW']
+            ['control.operatingDeadbandW', 'operatingDeadbandW'],
+            ['control.regulatorGain', 'regulatorGain']
         ];
 
         for (const [stateId, configKey] of overrides) {
@@ -1155,6 +1157,13 @@ class ZendureAutomation extends utils.Adapter {
 
         if (id.endsWith('.control.operatingDeadbandW')) {
             this.log.info(`Operating deadband changed to ${state.val}W per device`);
+            this.runAutomationCycle().catch(err => {
+                this.log.error(`Automation cycle failed: ${err.message}`);
+            });
+        }
+
+        if (id.endsWith('.control.regulatorGain')) {
+            this.log.info(`I-Regulator gain changed to ${state.val} (only applied while enabled in settings)`);
             this.runAutomationCycle().catch(err => {
                 this.log.error(`Automation cycle failed: ${err.message}`);
             });

@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented in this file.
 
+## v1.0.6 (2026-08-23)
+
+### English
+- Added an optional I-Regulator gain (Settings > Zero Grid Control > Regulation Parameters, opt-in checkbox, default off/unchanged behavior). While investigating issue #30, a user's `Grid_filtered - target` error was found to be added to the previous setpoint at full weight (gain=1) every cycle, matching the original design. With a loop delay (grid meter reporting + device response time) close to or exceeding the cycle interval, this can build into a growing oscillation instead of settling - each cycle overcorrects before the previous correction is even reflected in the next grid reading. Lowering the gain (e.g. 0.3-0.5) trades regulation speed for stability margin directly, without needing a longer update interval (which slows reaction to genuine load changes too). Exposed as `control.regulatorGain` for live tuning once enabled in settings, including in the dashboard's control panel.
+
+### Deutsch
+- Optionalen I-Regler-Gain hinzugefügt (Einstellungen > Nulleinspeisung > Regelparameter, Opt-in-Checkbox, standardmäßig aus/unverändertes Verhalten). Bei der Untersuchung von Issue #30 stellte sich heraus, dass die Abweichung `Grid_filtered - Ziel` bei einem Nutzer mit vollem Gewicht (Gain=1) pro Zyklus auf den vorherigen Sollwert aufaddiert wird - genau wie im ursprünglichen Design vorgesehen. Liegt die Regelstrecken-Verzögerung (Zähler-Meldung + Geräte-Reaktionszeit) nahe am oder über dem Zyklus-Intervall, kann sich das statt einzupendeln zu einer wachsenden Schwingung aufschaukeln - jeder Zyklus korrigiert nach, bevor die vorherige Korrektur überhaupt in der nächsten Netzmessung sichtbar ist. Ein niedrigerer Gain (z.B. 0.3-0.5) tauscht Regelgeschwindigkeit direkt gegen Stabilitätsreserve, ohne ein längeres Update-Intervall zu benötigen (das auch die Reaktion auf echte Laständerungen verlangsamt). Verfügbar als `control.regulatorGain` für Live-Tuning, sobald in den Einstellungen aktiviert - inklusive im Dashboard-Kontrollpanel.
+
 ## v1.0.5 (2026-08-22)
 
 ### English
