@@ -681,6 +681,43 @@ async function testModules() {
         assert(result.powerW < 300, 'Power limited by relay protection on mode switch');
     });
 
+    await runTest('[3.5b] RelayProtection freezes deadband state while discharge is safety-blocked, instead of flickering', async () => {
+        initializeMockStates();
+        const relayProtection = new RelayProtection(mockAdapter);
+
+        // Simulate an extended recovery: SafetyLimiter forces 0W every cycle (so
+        // lastSetPowerW never leaves 0), while the I-Regulator keeps wanting to
+        // discharge to serve grid import. Without dischargeBlocked, this used to make
+        // RelayProtection re-detect a fresh Standby->Active transition every single
+        // cycle, alternating its deadband counter between "hold at 10W" and "release
+        // to full power" forever - and whichever of those the state happened to be on
+        // would leak to the device the moment safety briefly cleared.
+        for (let i = 0; i < 6; i++) {
+            const result = relayProtection.applyProtection({
+                config: mockConfig,
+                gridPowerW: 180,
+                currentBatteryPowerW: 0,
+                lastSetPowerW: 0,
+                newBatteryPowerW: 180,
+                dischargeBlocked: true
+            });
+            assertEqual(result.powerW, 0, `Cycle ${i}: stays at 0W while discharge is blocked, no flicker`);
+            assertEqual(result.deadbandCounter, 0, `Cycle ${i}: deadband counter does not churn while blocked`);
+        }
+
+        // Once the block lifts, a real (single, clean) deadband hold starts - not a
+        // leftover mid-oscillation value from the frozen period.
+        const released = relayProtection.applyProtection({
+            config: mockConfig,
+            gridPowerW: 180,
+            currentBatteryPowerW: 0,
+            lastSetPowerW: 0,
+            newBatteryPowerW: 180,
+            dischargeBlocked: false
+        });
+        assertEqual(released.powerW, 10, 'First cycle after unblock holds at the deadband floor, not a stale full-power value');
+    });
+
     await runTest('[3.6] PowerRegulator applies ramping limits', async () => {
         initializeMockStates();
         const powerRegulator = new PowerRegulator(mockAdapter);
