@@ -681,6 +681,80 @@ async function testModules() {
         assert(result.powerW < 300, 'Power limited by relay protection on mode switch');
     });
 
+    await runTest('[3.5b] RelayProtection freezes deadband state while discharge is safety-blocked, instead of flickering', async () => {
+        initializeMockStates();
+        const relayProtection = new RelayProtection(mockAdapter);
+
+        // Simulate an extended recovery: SafetyLimiter forces 0W every cycle (so
+        // lastSetPowerW never leaves 0), while the I-Regulator keeps wanting to
+        // discharge to serve grid import. Without dischargeBlocked, this used to make
+        // RelayProtection re-detect a fresh Standby->Active transition every single
+        // cycle, alternating its deadband counter between "hold at 10W" and "release
+        // to full power" forever - and whichever of those the state happened to be on
+        // would leak to the device the moment safety briefly cleared.
+        for (let i = 0; i < 6; i++) {
+            const result = relayProtection.applyProtection({
+                config: mockConfig,
+                gridPowerW: 180,
+                currentBatteryPowerW: 0,
+                lastSetPowerW: 0,
+                newBatteryPowerW: 180,
+                dischargeBlocked: true
+            });
+            assertEqual(result.powerW, 0, `Cycle ${i}: stays at 0W while discharge is blocked, no flicker`);
+            assertEqual(result.deadbandCounter, 0, `Cycle ${i}: deadband counter does not churn while blocked`);
+        }
+
+        // Once the block lifts, a real (single, clean) deadband hold starts - not a
+        // leftover mid-oscillation value from the frozen period.
+        const released = relayProtection.applyProtection({
+            config: mockConfig,
+            gridPowerW: 180,
+            currentBatteryPowerW: 0,
+            lastSetPowerW: 0,
+            newBatteryPowerW: 180,
+            dischargeBlocked: false
+        });
+        assertEqual(released.powerW, 10, 'First cycle after unblock holds at the deadband floor, not a stale full-power value');
+    });
+
+    await runTest('[3.5c] RelayProtection freezes deadband state while charge is safety-blocked (mirror of 3.5b)', async () => {
+        initializeMockStates();
+        const relayProtection = new RelayProtection(mockAdapter);
+
+        // Mirror scenario: battery at maxBatterySoc (or enableCharge=false) so charging
+        // stays vetoed downstream, while PV surplus keeps the I-Regulator wanting to
+        // charge. Same churn risk as the discharge case, just on the CHG<->STBY leg.
+        for (let i = 0; i < 6; i++) {
+            const result = relayProtection.applyProtection({
+                config: mockConfig,
+                gridPowerW: -500,
+                currentBatteryPowerW: 0,
+                lastSetPowerW: 0,
+                newBatteryPowerW: -300,
+                chargeBlocked: true
+            });
+            assertEqual(result.powerW, 0, `Cycle ${i}: stays at 0W while charge is blocked, no flicker`);
+            assertEqual(result.deadbandCounter, 0, `Cycle ${i}: deadband counter does not churn while blocked`);
+        }
+
+        // Unlike discharge, a fresh charge transition also has to clear the
+        // pre-existing feedInDelayTicks sustained-feed-in gate (mockConfig: 5) before
+        // the deadband even runs - unrelated to this fix, so drive that gate first.
+        let released;
+        for (let i = 0; i < mockConfig.feedInDelayTicks; i++) {
+            released = relayProtection.applyProtection({
+                config: mockConfig,
+                gridPowerW: -500,
+                currentBatteryPowerW: 0,
+                lastSetPowerW: 0,
+                newBatteryPowerW: -300,
+                chargeBlocked: false
+            });
+        }
+        assertEqual(released.powerW, -10, 'Once released, holds at the deadband floor (charge direction), not a stale value');
+    });
+
     await runTest('[3.6] PowerRegulator applies ramping limits', async () => {
         initializeMockStates();
         const powerRegulator = new PowerRegulator(mockAdapter);
@@ -889,6 +963,50 @@ async function testModules() {
         const needsResend = await validationService.validateSetpoint('dev1', mockConfig, -800);
         
         assertEqual(needsResend, false, 'Validation succeeded (no resend needed)');
+    });
+
+    await runTest('[4.6b] ValidationService sends the real 0W only once per standby spell, not every idleTimeoutSec', async () => {
+        // Without this, a sustained standby (regulator wants 0W cycle after cycle -
+        // e.g. grid perfectly balanced, or discharge blocked for a long recovery)
+        // used to re-run the whole keep-alive-then-real-0 dance every
+        // smartModeIdleTimeoutSec forever: a fresh real 0W (full acMode/smartMode-off
+        // flash sequence) every ~5 minutes, indefinitely - defeating the point of
+        // avoiding zero writes in the first place.
+        initializeMockStates();
+        const validationService = new ValidationService(mockAdapter);
+        const avoidZeroConfig = { ...mockConfig, avoidZeroSetpoint: true, standbyKeepAliveW: 10, smartModeIdleTimeoutSec: 300, zeroHoldOffSec: 8 };
+        const deviceId = 'dev1';
+        const basePath = 'test.0.device1';
+        const dp = `${basePath}.control.setDeviceAutomationInOutLimit`;
+
+        // Fresh standby: holds at the keep-alive floor first.
+        await validationService.writePowerSetpoint(deviceId, basePath, 0, avoidZeroConfig);
+        assertEqual(getMockState(dp).val, 10, 'Fresh standby holds at the keep-alive floor first');
+
+        // Fast-forward past the idle timeout without waiting for real time.
+        const state = validationService.getDeviceState(deviceId);
+        state.standbySince = Date.now() - 301 * 1000;
+        await validationService.writePowerSetpoint(deviceId, basePath, 0, avoidZeroConfig);
+        assertEqual(getMockState(dp).val, 0, 'Real 0W committed once the idle timeout elapses');
+
+        // Clear the post-zero grace window and simulate standby continuing for
+        // several more idle-timeout periods, spying on actual device writes.
+        state.holdOffUntil = 0;
+        let writeCount = 0;
+        const originalSetForeignStateAsync = mockAdapter.setForeignStateAsync;
+        mockAdapter.setForeignStateAsync = async (...args) => {
+            writeCount++;
+            return originalSetForeignStateAsync(...args);
+        };
+        try {
+            for (let i = 0; i < 5; i++) {
+                await validationService.writePowerSetpoint(deviceId, basePath, 0, avoidZeroConfig);
+            }
+        } finally {
+            mockAdapter.setForeignStateAsync = originalSetForeignStateAsync;
+        }
+        assertEqual(writeCount, 0, 'No further device writes while standby continues after the real 0W already landed');
+        assertEqual(getMockState(dp).val, 0, 'Setpoint stays at literal 0W, no keep-alive pulses re-appear');
     });
 
     await runTest('[4.7] Waterfill uses sticky device and redistributes capped power', async () => {
@@ -1538,6 +1656,10 @@ async function testModules() {
         const MultiDeviceController = require('./lib/MultiDeviceController');
 
         // Config values as attached to issue #21 (2x AC2400+ multi-device setup).
+        // enableCharge/enableDischarge are always present in real runtime config
+        // (io-package.json defaults both to true) - set explicitly here too, since
+        // RelayProtection's charge/discharge-blocked freeze treats an unset flag the
+        // same way SafetyLimiter always has: as disabled.
         const config = {
             hysteresisW: 30,
             operatingDeadbandW: 10, // scaled to 20W by the controller for 2 devices
@@ -1549,7 +1671,9 @@ async function testModules() {
             maxChargePowerW: 2400,
             maxDischargePowerW: 2400,
             rampChargeWPerCycle: 100,
-            rampDischargeWPerCycle: 250
+            rampDischargeWPerCycle: 250,
+            enableCharge: true,
+            enableDischarge: true
         };
 
         const controller = new MultiDeviceController(mockAdapter, {
@@ -1596,6 +1720,101 @@ async function testModules() {
             safetyActive: false, bypassHysteresis: relayResult.relayModified
         });
         assertEqual(regResult.powerW, 500, 'Hysteresis still suppresses a 20W jitter below the 30W threshold');
+    });
+
+    await runTest('[4.24] Waterfill sticky single-device mode marks the resting (but still eligible) device excluded, not just 0W', async () => {
+        // Regression guard for the SF2400 Pro relay-chatter report: the #28 fix only
+        // taught MultiDeviceManager to bypass zero-avoidance for items the *distributor*
+        // already flagged excluded:true (SOC/emergency-excluded devices). But Waterfill's
+        // own sticky single-device mode left its non-active candidate at excluded:false
+        // (it's still "eligible", just not currently allocated), so that device kept
+        // going through the full avoidZeroSetpoint state machine every cycle - rearmed
+        // with a keep-alive and disarmed again every smartModeIdleTimeoutSec, exactly
+        // like the original #28 bug, just for a different flavor of "excluded".
+        const distributor = new WaterfillDistributor();
+        const devices = [
+            { id: 'pro', name: 'SF2400 Pro', soc: 80, minSoc: 10, maxSoc: 100, maxChargePowerW: 1600, maxDischargePowerW: 800, chargeAllowed: true, dischargeAllowed: true },
+            { id: 'acplus', name: 'AC+', soc: 40, minSoc: 10, maxSoc: 100, maxChargePowerW: 1600, maxDischargePowerW: 1600, chargeAllowed: true, dischargeAllowed: true }
+        ];
+        const config = {
+            minBatterySoc: 10, maxBatterySoc: 100, updateIntervalSec: 5,
+            waterfillConcentrateHoldMinutes: 0,
+            waterfillDischargeConcentrateBelowW: 600,
+            waterfillDischargeSpreadAboveW: 1200,
+            waterfillSocMargin: 10
+        };
+
+        const settled = distributor.distribute(400, devices, config); // single-device mode, 'pro' is sticky (higher SOC)
+        const active = settled.find(item => item.powerW > 0);
+        const resting = settled.find(item => item.powerW === 0);
+        assertEqual(active.deviceId, 'pro', 'Higher-SOC device is the sticky active device');
+        assertEqual(active.excluded, false, 'Active device is not excluded');
+        assertEqual(resting.deviceId, 'acplus', 'Non-active candidate is the resting device');
+        assertEqual(resting.excluded, true, 'Resting-but-eligible candidate must be flagged excluded so it bypasses zero-avoidance too');
+
+        // End-to-end: with avoidZeroSetpoint enabled, the resting device must get a
+        // literal 0W and never a keep-alive pulse, across repeated cycles.
+        initializeMockStates();
+        const multiDeviceMgr = new MultiDeviceManager(mockAdapter, 'test.0', [
+            { productKey: 'pro', deviceKey: 'pro', name: 'SF2400 Pro', enabled: true },
+            { productKey: 'acplus', deviceKey: 'acplus', name: 'AC+', enabled: true }
+        ]);
+        const validationService = new ValidationService(mockAdapter);
+        const [proDevice, acplusDevice] = multiDeviceMgr.devices;
+        const distribution = settled.map(item => ({
+            ...item,
+            deviceId: item.deviceId === 'pro' ? proDevice.id : acplusDevice.id
+        }));
+        const avoidZeroConfig = { ...mockConfig, avoidZeroSetpoint: true, standbyKeepAliveW: 10, smartModeIdleTimeoutSec: 300, zeroHoldOffSec: 8 };
+
+        for (let i = 0; i < 5; i++) {
+            await multiDeviceMgr.writePowerSetpoints(distribution, {}, validationService, avoidZeroConfig);
+        }
+        const restingLimit = getMockState(`${acplusDevice.basePath}.control.setDeviceAutomationInOutLimit`).val;
+        assertEqual(restingLimit, 0, 'Resting device stays at literal 0W, never rearmed with a keep-alive pulse');
+    });
+
+    await runTest('[4.25] MultiDeviceController.calculateTargetPower: regulatorGain dampens the I-Regulator error, off by default (issue #30)', async () => {
+        const MultiDeviceController = require('./lib/MultiDeviceController');
+
+        const baseConfig = {
+            hysteresisW: 10,
+            operatingDeadbandW: 10,
+            feedInThresholdW: -150,
+            feedInDelayTicks: 5,
+            dischargeThresholdW: 100,
+            dischargeDelayTicks: 3,
+            maxChargePowerW: 2000,
+            maxDischargePowerW: 2000,
+            rampChargeWPerCycle: 1000,
+            rampDischargeWPerCycle: 1000,
+            enableCharge: true,
+            enableDischarge: true
+        };
+
+        const normalDevices = [{ id: 'device1', powerW: 500 }];
+        const aggregatedState = { totalPowerW: 500, avgSoc: 50, availableDevicesCount: 1 };
+
+        // Default (regulatorGainEnabled unset): full error applied, matches pre-#30 behavior.
+        const defaultController = new MultiDeviceController(mockAdapter, {
+            multiDeviceMgr: { devices: [{ id: 'device1' }] },
+            relayProtection: new RelayProtection(mockAdapter),
+            powerRegulator: new PowerRegulator(mockAdapter)
+        });
+        defaultController.lastTotalWrittenPowerW = 500;
+        const defaultResult = await defaultController.calculateTargetPower(baseConfig, 300, 0, normalDevices, aggregatedState);
+        assertEqual(defaultResult, 800, 'Gain disabled: full error (500 + 1.0*300 = 800W)');
+
+        // Enabled with a reduced gain: only half the error should be applied.
+        const dampedController = new MultiDeviceController(mockAdapter, {
+            multiDeviceMgr: { devices: [{ id: 'device1' }] },
+            relayProtection: new RelayProtection(mockAdapter),
+            powerRegulator: new PowerRegulator(mockAdapter)
+        });
+        dampedController.lastTotalWrittenPowerW = 500;
+        const dampedConfig = { ...baseConfig, regulatorGainEnabled: true, regulatorGain: 0.5 };
+        const dampedResult = await dampedController.calculateTargetPower(dampedConfig, 300, 0, normalDevices, aggregatedState);
+        assertEqual(dampedResult, 650, 'Gain 0.5 enabled: half the error applied (500 + 0.5*300 = 650W)');
     });
 
     console.log('\n' + '='.repeat(70));

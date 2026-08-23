@@ -2,6 +2,42 @@
 
 All notable changes to this project are documented in this file.
 
+## v1.1.0 (2026-08-23)
+
+### English
+- **Relay-flicker fix (charge + discharge):** `RelayProtection` tracked its hold/release deadband state off the actually-written setpoint, which never changes while an active discharge or charge block (voltage/SOC/minSoc recovery, `maxBatterySoc`, `enableCharge`) forces every write to 0. Every cycle looked like a fresh Standby↔Active transition, so the deadband counter kept alternating internally the whole time the block was active - invisible until the block briefly lifted, at which point whatever the churn was outputting got written for real: an observable 0W/10W/full-power flicker on the physical relay. Both Single- and Multi-Device now tell `RelayProtection` in advance when charge/discharge is already vetoed downstream, so it freezes its counters instead of churning them.
+- Fixed a related bug where sustained standby kept re-sending a "real 0W" every ~5 minutes indefinitely instead of staying silent once committed - a new `committedZero` flag now remembers the commit.
+- Fixed a Waterfill sticky-single-device bug: the resting (non-active) device wasn't marked `excluded`, so it kept re-arming/disarming a keep-alive and chattered its relay every `smartModeIdleTimeoutSec` - reported live by a tester running a two-device Waterfill setup.
+- `control.regulatorGain` (added in 1.0.6) now also re-syncs correctly to the admin-configured value on adapter restart in Single-Device mode, not just Multi-Device.
+- Dashboard: added two new live bubbles to the flow diagram - Autarkie (self-sufficiency) and PV-Quote (self-consumption) - computed client-side from existing status values, no new datapoints required. Fixed a broken dashboard link in the admin tile and a header/hamburger overlap on narrow mobile screens.
+
+### Deutsch
+- **Relais-Flicker-Fix (Laden + Entladen):** `RelayProtection` führte ihren Halten/Freigeben-Zustand anhand des tatsächlich geschriebenen Sollwerts, der sich nicht ändert, solange eine aktive Entlade- oder Ladesperre (Spannungs-/SOC-/minSoc-Recovery, `maxBatterySoc`, `enableCharge`) jeden Schreibvorgang auf 0 zwingt. Dadurch sah jeder Zyklus wie ein frischer Standby↔Active-Übergang aus, und der Deadband-Zähler alternierte die ganze Zeit intern weiter - unsichtbar, bis die Sperre kurz aufgehoben wurde: dann wurde geschrieben, was die Schwingung gerade lieferte - ein sichtbares 0W/10W/Volllast-Flackern am echten Relais. Single- und Multi-Device teilen `RelayProtection` jetzt vorab mit, wenn Laden/Entladen ohnehin downstream blockiert ist, sodass die Zähler eingefroren statt weiterlaufen.
+- Einen verwandten Fehler behoben, bei dem im Dauerstandby alle ~5 Minuten erneut ein "echtes 0W" gesendet wurde, statt nach dem ersten Commit stillzuhalten - ein neues `committedZero`-Flag merkt sich jetzt den bereits erfolgten Commit.
+- Einen Waterfill-Fehler im Sticky-Single-Device-Modus behoben: Das ruhende (nicht aktive) Gerät war nicht als `excluded` markiert und hat dadurch bei jedem `smartModeIdleTimeoutSec` erneut einen Keep-Alive scharf-/entschärft und sein Relais geklackert - live gemeldet von einem Tester mit Zwei-Geräte-Waterfill-Setup.
+- `control.regulatorGain` (eingeführt in 1.0.6) wird jetzt auch im Single-Device-Modus beim Adapter-Neustart korrekt mit dem Admin-Konfigurationswert synchronisiert, nicht mehr nur im Multi-Device-Modus.
+- Dashboard: zwei neue Live-Blasen im Flussdiagramm hinzugefügt - Autarkie und PV-Quote (Eigenverbrauch) - rein clientseitig aus vorhandenen Status-Werten berechnet, keine neuen Datenpunkte nötig. Defekten Dashboard-Link im Admin-Tab sowie eine Kopfzeilen-/Hamburger-Überlappung auf schmalen Mobilbildschirmen behoben.
+
+## v1.0.6 (2026-08-23)
+
+### English
+- Added an optional I-Regulator gain (Settings > Zero Grid Control > Regulation Parameters, opt-in checkbox, default off/unchanged behavior). While investigating issue #30, a user's `Grid_filtered - target` error was found to be added to the previous setpoint at full weight (gain=1) every cycle, matching the original design. With a loop delay (grid meter reporting + device response time) close to or exceeding the cycle interval, this can build into a growing oscillation instead of settling - each cycle overcorrects before the previous correction is even reflected in the next grid reading. Lowering the gain (e.g. 0.3-0.5) trades regulation speed for stability margin directly, without needing a longer update interval (which slows reaction to genuine load changes too). Exposed as `control.regulatorGain` for live tuning once enabled in settings, including in the dashboard's control panel.
+
+### Deutsch
+- Optionalen I-Regler-Gain hinzugefügt (Einstellungen > Nulleinspeisung > Regelparameter, Opt-in-Checkbox, standardmäßig aus/unverändertes Verhalten). Bei der Untersuchung von Issue #30 stellte sich heraus, dass die Abweichung `Grid_filtered - Ziel` bei einem Nutzer mit vollem Gewicht (Gain=1) pro Zyklus auf den vorherigen Sollwert aufaddiert wird - genau wie im ursprünglichen Design vorgesehen. Liegt die Regelstrecken-Verzögerung (Zähler-Meldung + Geräte-Reaktionszeit) nahe am oder über dem Zyklus-Intervall, kann sich das statt einzupendeln zu einer wachsenden Schwingung aufschaukeln - jeder Zyklus korrigiert nach, bevor die vorherige Korrektur überhaupt in der nächsten Netzmessung sichtbar ist. Ein niedrigerer Gain (z.B. 0.3-0.5) tauscht Regelgeschwindigkeit direkt gegen Stabilitätsreserve, ohne ein längeres Update-Intervall zu benötigen (das auch die Reaktion auf echte Laständerungen verlangsamt). Verfügbar als `control.regulatorGain` für Live-Tuning, sobald in den Einstellungen aktiviert - inklusive im Dashboard-Kontrollpanel.
+
+## v1.0.5 (2026-08-22)
+
+### English
+- Fixed: Multi-Device Mode with the Equal-Split strategy failed to start (`undefined is not a valid state value`) if a device's optional per-device Charge W/Discharge W override was left blank. These overrides are only required when using the Waterfill strategy; Equal-Split now falls back to the global charge/discharge limits instead of crashing.
+- Multi-Device now logs each pack's minimum voltage at `debug` level (issue #21). Previously only Single-Device logged this, making it impossible to tell a stuck voltage-recovery state apart from a genuinely low or frozen reading in Multi-Device installs.
+- Grid power and `gridInputPower` readings in Multi-Device now also detect stale/frozen source values and log a warning instead of silently reusing them, matching the protection Single-Device already had since #27.
+
+### Deutsch
+- Fix: Multi-Device-Modus mit Equal-Split-Strategie startete nicht (`undefined is not a valid state value`), wenn die optionalen Pro-Geräte-Felder Charge W/Discharge W leer gelassen wurden. Diese Overrides sind nur bei der Waterfill-Strategie erforderlich; Equal-Split greift jetzt auf die globalen Lade-/Entladelimits zurück statt abzustürzen.
+- Multi-Device loggt jetzt pro Pack die minimale Spannung auf `debug`-Level (Issue #21). Bisher tat das nur Single-Device, wodurch sich in Multi-Device-Installationen ein feststeckender Voltage-Recovery-Zustand nicht von einem echten niedrigen oder eingefrorenen Messwert unterscheiden ließ.
+- Netzleistung und `gridInputPower` werden in Multi-Device jetzt ebenfalls auf eingefrorene Quellwerte geprüft und loggen eine Warnung statt sie unbemerkt weiterzuverwenden, analog zum bestehenden Schutz bei Single-Device seit #27.
+
 ## v1.0.4 (2026-08-22)
 
 ### English

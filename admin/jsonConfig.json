@@ -707,6 +707,36 @@
                 "de": "EMA-Filter für Netzleistung (0.1 = sehr glatt/langsam, 1.0 = kein Filter/sofort). Höher = schnellere Reaktion auf Laständerungen."
               }
             },
+            "regulatorGainEnabled": {
+              "type": "checkbox",
+              "label": {
+                "en": "Enable I-Regulator gain (advanced)",
+                "de": "I-Regler-Gain aktivieren (fortgeschritten)"
+              },
+              "sm": 6,
+              "default": false,
+              "help": {
+                "en": "Only needed if you see persistent oscillation despite normal Ramp/Hysteresis/EMA tuning - usually caused by a slow-responding meter/device setup. Off by default, no behavior change unless enabled.",
+                "de": "Nur nötig, wenn trotz normaler Ramp/Hysterese/EMA-Einstellungen dauerhaftes Schwingen auftritt - meist verursacht durch ein träge reagierendes Zähler-/Geräte-Setup. Standardmäßig aus, keine Verhaltensänderung ohne Aktivierung."
+              }
+            },
+            "regulatorGain": {
+              "type": "number",
+              "label": {
+                "en": "I-Regulator gain",
+                "de": "I-Regler-Gain"
+              },
+              "sm": 6,
+              "min": 0.1,
+              "max": 1.0,
+              "step": 0.05,
+              "default": 1,
+              "hidden": "!data.regulatorGainEnabled",
+              "help": {
+                "en": "1.0 = full error applied each cycle (original behavior). Lower values (e.g. 0.3-0.5) dampen oscillation caused by loop delay, at the cost of slower regulation. Live-tunable at runtime via control.regulatorGain / the dashboard once enabled here.",
+                "de": "1.0 = voller Fehler wird pro Zyklus angewendet (ursprüngliches Verhalten). Niedrigere Werte (z.B. 0.3-0.5) dämpfen durch Regelstrecken-Verzögerung verursachtes Schwingen, auf Kosten langsamerer Regelung. Zur Laufzeit live einstellbar über control.regulatorGain / das Dashboard, sobald hier aktiviert."
+              }
+            },
             "_regulationHint": {
               "type": "staticText",
               "text": {
