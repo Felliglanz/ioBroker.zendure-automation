@@ -39,6 +39,10 @@
   const nodePv = document.getElementById('nodePv');
   const nodeGrid = document.getElementById('nodeGrid');
   const nodeHaus = document.getElementById('nodeHaus');
+  const autarkyValue = document.getElementById('autarkyValue');
+  const autarkyRing = document.getElementById('autarkyRing');
+  const selfConsumptionValue = document.getElementById('selfConsumptionValue');
+  const selfConsumptionRing = document.getElementById('selfConsumptionRing');
   const hub = document.getElementById('hub');
   const detailsOverlay = document.getElementById('detailsOverlay');
   const detailsTitle = document.getElementById('detailsTitle');
@@ -57,7 +61,7 @@
   const WATERFILL_AMBIGUOUS_KEYS = ['maxChargePowerW', 'maxDischargePowerW'];
 
   // Battery cell interior, matches #batteryClip in index.html
-  const BATTERY_TOP = 200;
+  const BATTERY_TOP = 260;
   const BATTERY_HEIGHT = 120;
 
   const controlInputs = {};
@@ -131,6 +135,28 @@
   function fmtWh(val) {
     if (val === null || val === undefined || Number.isNaN(val)) return '–';
     return val >= 1000 ? `${(val / 1000).toFixed(2)} kWh` : `${Math.round(val)} Wh`;
+  }
+
+  const RING_COLOR_STOPS = [
+    [0, [239, 68, 68]], // --accent-error
+    [50, [245, 158, 11]], // --accent-discharge
+    [100, [16, 185, 129]] // --accent-charge
+  ];
+
+  /** Continuous red -> amber -> green ring color for a 0-100 percentage. */
+  function pctToRingColor(pct) {
+    const p = Math.max(0, Math.min(100, pct));
+    let [loStop, hiStop] = [RING_COLOR_STOPS[0], RING_COLOR_STOPS[1]];
+    for (let i = 0; i < RING_COLOR_STOPS.length - 1; i++) {
+      if (p >= RING_COLOR_STOPS[i][0] && p <= RING_COLOR_STOPS[i + 1][0]) {
+        [loStop, hiStop] = [RING_COLOR_STOPS[i], RING_COLOR_STOPS[i + 1]];
+        break;
+      }
+    }
+    const span = hiStop[0] - loStop[0];
+    const t = span > 0 ? (p - loStop[0]) / span : 0;
+    const rgb = loStop[1].map((c, i) => Math.round(c + (hiStop[1][i] - c) * t));
+    return `rgb(${rgb.join(',')})`;
   }
 
   /**
@@ -407,6 +433,20 @@
     pvPowerValue.textContent = fmtW(pvW);
     batteryPowerValue.textContent = fmtW(batteryW);
     batterySocValue.textContent = soc !== null && soc !== undefined ? `${Math.round(soc)}%` : '–%';
+
+    // Live-only metrics, not backed by their own datapoint - derived from the same power values
+    // already on screen. Without a house meter, house consumption falls back to the hub's own
+    // balance (grid + battery + PV), same as houseDir below (#22): always computable, no hiding.
+    const houseConsumptionW = houseEnabled ? houseW : (gridW || 0) + (batteryW || 0) + (pvW || 0);
+    const gridImportW = Math.max(gridW || 0, 0);
+    const gridExportW = Math.max(-(gridW || 0), 0);
+    const autarkyPct = houseConsumptionW > 0 ? Math.max(0, Math.min(100, (1 - gridImportW / houseConsumptionW) * 100)) : 100;
+    const selfConsumptionPct = pvW > 0 ? Math.max(0, Math.min(100, (1 - gridExportW / pvW) * 100)) : 0;
+
+    autarkyValue.textContent = `${Math.round(autarkyPct)}%`;
+    autarkyRing.style.stroke = pctToRingColor(autarkyPct);
+    selfConsumptionValue.textContent = `${Math.round(selfConsumptionPct)}%`;
+    selfConsumptionRing.style.stroke = pctToRingColor(selfConsumptionPct);
 
     // SVGElement doesn't reliably reflect the .hidden IDL property to the attribute
     // (unlike HTMLElement), so toggle the attribute directly.

@@ -2,6 +2,22 @@
 
 All notable changes to this project are documented in this file.
 
+## v1.1.0 (2026-08-23)
+
+### English
+- **Relay-flicker fix (charge + discharge):** `RelayProtection` tracked its hold/release deadband state off the actually-written setpoint, which never changes while an active discharge or charge block (voltage/SOC/minSoc recovery, `maxBatterySoc`, `enableCharge`) forces every write to 0. Every cycle looked like a fresh Standby↔Active transition, so the deadband counter kept alternating internally the whole time the block was active - invisible until the block briefly lifted, at which point whatever the churn was outputting got written for real: an observable 0W/10W/full-power flicker on the physical relay. Both Single- and Multi-Device now tell `RelayProtection` in advance when charge/discharge is already vetoed downstream, so it freezes its counters instead of churning them.
+- Fixed a related bug where sustained standby kept re-sending a "real 0W" every ~5 minutes indefinitely instead of staying silent once committed - a new `committedZero` flag now remembers the commit.
+- Fixed a Waterfill sticky-single-device bug: the resting (non-active) device wasn't marked `excluded`, so it kept re-arming/disarming a keep-alive and chattered its relay every `smartModeIdleTimeoutSec` - reported live by a tester running a two-device Waterfill setup.
+- `control.regulatorGain` (added in 1.0.6) now also re-syncs correctly to the admin-configured value on adapter restart in Single-Device mode, not just Multi-Device.
+- Dashboard: added two new live bubbles to the flow diagram - Autarkie (self-sufficiency) and PV-Quote (self-consumption) - computed client-side from existing status values, no new datapoints required. Fixed a broken dashboard link in the admin tile and a header/hamburger overlap on narrow mobile screens.
+
+### Deutsch
+- **Relais-Flicker-Fix (Laden + Entladen):** `RelayProtection` führte ihren Halten/Freigeben-Zustand anhand des tatsächlich geschriebenen Sollwerts, der sich nicht ändert, solange eine aktive Entlade- oder Ladesperre (Spannungs-/SOC-/minSoc-Recovery, `maxBatterySoc`, `enableCharge`) jeden Schreibvorgang auf 0 zwingt. Dadurch sah jeder Zyklus wie ein frischer Standby↔Active-Übergang aus, und der Deadband-Zähler alternierte die ganze Zeit intern weiter - unsichtbar, bis die Sperre kurz aufgehoben wurde: dann wurde geschrieben, was die Schwingung gerade lieferte - ein sichtbares 0W/10W/Volllast-Flackern am echten Relais. Single- und Multi-Device teilen `RelayProtection` jetzt vorab mit, wenn Laden/Entladen ohnehin downstream blockiert ist, sodass die Zähler eingefroren statt weiterlaufen.
+- Einen verwandten Fehler behoben, bei dem im Dauerstandby alle ~5 Minuten erneut ein "echtes 0W" gesendet wurde, statt nach dem ersten Commit stillzuhalten - ein neues `committedZero`-Flag merkt sich jetzt den bereits erfolgten Commit.
+- Einen Waterfill-Fehler im Sticky-Single-Device-Modus behoben: Das ruhende (nicht aktive) Gerät war nicht als `excluded` markiert und hat dadurch bei jedem `smartModeIdleTimeoutSec` erneut einen Keep-Alive scharf-/entschärft und sein Relais geklackert - live gemeldet von einem Tester mit Zwei-Geräte-Waterfill-Setup.
+- `control.regulatorGain` (eingeführt in 1.0.6) wird jetzt auch im Single-Device-Modus beim Adapter-Neustart korrekt mit dem Admin-Konfigurationswert synchronisiert, nicht mehr nur im Multi-Device-Modus.
+- Dashboard: zwei neue Live-Blasen im Flussdiagramm hinzugefügt - Autarkie und PV-Quote (Eigenverbrauch) - rein clientseitig aus vorhandenen Status-Werten berechnet, keine neuen Datenpunkte nötig. Defekten Dashboard-Link im Admin-Tab sowie eine Kopfzeilen-/Hamburger-Überlappung auf schmalen Mobilbildschirmen behoben.
+
 ## v1.0.6 (2026-08-23)
 
 ### English
