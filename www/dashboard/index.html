@@ -57,6 +57,22 @@
             </g>
           </g>
 
+          <!-- Free-floating live metrics, not wired into the flow - purely derived client-side, no dedicated datapoints -->
+          <g class="node node-metric" id="nodeAutarky">
+            <circle cx="95" cy="95" r="56" id="autarkyRing"></circle>
+            <text x="95" y="65" class="node-label">Autarkie</text>
+            <path class="node-icon" transform="translate(83,84) scale(1.05)" d="M12 2 20 5.5 V11 C20 16 16.5 20 12 22 C7.5 20 4 16 4 11 V5.5 Z M8.5 12l2.5 2.5 4.5-5" fill="none" stroke="var(--text-muted)" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"></path>
+            <text x="95" y="129" class="node-value" id="autarkyValue">–%</text>
+          </g>
+
+          <g class="node node-metric" id="nodeSelfConsumption">
+            <circle cx="425" cy="95" r="56" id="selfConsumptionRing"></circle>
+            <text x="425" y="65" class="node-label">Eigenverbrauch</text>
+            <path class="node-icon" transform="translate(413,84) scale(1.05)" d="M12 3v3 M12 18v3 M4.6 4.6l2.1 2.1 M17.3 17.3l2.1 2.1 M3 12h3 M18 12h3 M4.6 19.4l2.1-2.1 M17.3 6.7l2.1-2.1" fill="none" stroke="var(--text-muted)" stroke-width="1.6" stroke-linecap="round"></path>
+            <circle class="node-icon" cx="12" cy="12" r="4" transform="translate(413,84) scale(1.05)" fill="none" stroke="var(--text-muted)" stroke-width="1.6"></circle>
+            <text x="425" y="129" class="node-value" id="selfConsumptionValue">–%</text>
+          </g>
+
           <line id="flowLineGridHub" x1="151" y1="260" x2="235" y2="260" class="flow-line"></line>
           <line id="flowLineHausHub" x1="260" y1="369" x2="260" y2="285" class="flow-line"></line>
           <line id="flowLineBatteryHub" x1="285" y1="260" x2="385" y2="260" class="flow-line"></line>
