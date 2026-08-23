@@ -43,7 +43,7 @@
               <stop offset="100%" stop-color="var(--node-fill)"></stop>
             </radialGradient>
             <clipPath id="batteryClip">
-              <rect x="389" y="200" width="72" height="120" rx="8"></rect>
+              <rect x="389" y="260" width="72" height="120" rx="8"></rect>
             </clipPath>
           </defs>
 
@@ -73,15 +73,15 @@
             <text x="425" y="129" class="node-value" id="selfConsumptionValue">–%</text>
           </g>
 
-          <line id="flowLineGridHub" x1="151" y1="260" x2="235" y2="260" class="flow-line"></line>
+          <line id="flowLineGridHub" x1="146.5" y1="297.9" x2="235" y2="260" class="flow-line"></line>
           <line id="flowLineHausHub" x1="260" y1="369" x2="260" y2="285" class="flow-line"></line>
-          <line id="flowLineBatteryHub" x1="285" y1="260" x2="385" y2="260" class="flow-line"></line>
+          <line id="flowLineBatteryHub" x1="285" y1="260" x2="385" y2="302.9" class="flow-line"></line>
 
           <g class="node node-grid" id="nodeGrid">
-            <circle cx="95" cy="260" r="56"></circle>
-            <text x="95" y="230" class="node-label">Netz</text>
-            <path class="node-icon" transform="translate(83,250) scale(0.95)" d="M13 2 3 14h9l-1 8 10-12h-9l1-8z" fill="var(--text-muted)" stroke="none"></path>
-            <text x="95" y="294" class="node-value" id="gridPowerValue">– W</text>
+            <circle cx="95" cy="320" r="56"></circle>
+            <text x="95" y="290" class="node-label">Netz</text>
+            <path class="node-icon" transform="translate(83,310) scale(0.95)" d="M13 2 3 14h9l-1 8 10-12h-9l1-8z" fill="var(--text-muted)" stroke="none"></path>
+            <text x="95" y="354" class="node-value" id="gridPowerValue">– W</text>
           </g>
 
           <g class="node node-house" id="nodeHaus">
@@ -92,14 +92,14 @@
           </g>
 
           <g class="node node-battery" id="batteryHero">
-            <text x="425" y="176" class="node-label">Batterie</text>
-            <rect x="411" y="183" width="28" height="12" rx="4" class="battery-cap"></rect>
-            <rect x="385" y="196" width="80" height="128" rx="12" class="battery-body"></rect>
+            <text x="425" y="236" class="node-label">Batterie</text>
+            <rect x="411" y="243" width="28" height="12" rx="4" class="battery-cap"></rect>
+            <rect x="385" y="256" width="80" height="128" rx="12" class="battery-body"></rect>
             <g clip-path="url(#batteryClip)">
-              <rect x="389" y="260" width="72" height="0" class="battery-fill" id="batteryFillRect"></rect>
+              <rect x="389" y="320" width="72" height="0" class="battery-fill" id="batteryFillRect"></rect>
             </g>
-            <text x="425" y="342" class="node-value" id="batteryPowerValue">– W</text>
-            <text x="425" y="358" class="node-soc" id="batterySocValue">–%</text>
+            <text x="425" y="402" class="node-value" id="batteryPowerValue">– W</text>
+            <text x="425" y="418" class="node-soc" id="batterySocValue">–%</text>
           </g>
 
           <g class="hub" id="hub">

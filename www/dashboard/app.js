@@ -61,7 +61,7 @@
   const WATERFILL_AMBIGUOUS_KEYS = ['maxChargePowerW', 'maxDischargePowerW'];
 
   // Battery cell interior, matches #batteryClip in index.html
-  const BATTERY_TOP = 200;
+  const BATTERY_TOP = 260;
   const BATTERY_HEIGHT = 120;
 
   const controlInputs = {};
