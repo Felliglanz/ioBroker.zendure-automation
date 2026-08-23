@@ -285,6 +285,7 @@ class ZendureAutomation extends utils.Adapter {
             await this.setStateAsync('control.maxChargePowerW', this.config.maxChargePowerW ?? 1600, true);
             await this.setStateAsync('control.maxDischargePowerW', this.config.maxDischargePowerW ?? 1600, true);
             await this.setStateAsync('control.operatingDeadbandW', this.config.operatingDeadbandW ?? 10, true);
+            await this.setStateAsync('control.regulatorGain', this.config.regulatorGain ?? 1, true);
             await this.setStateAsync('status.mode', 'idle', true);
             await this.setStateAsync('info.connection', true, true);
 
