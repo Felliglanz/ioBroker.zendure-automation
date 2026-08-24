@@ -692,6 +692,11 @@ async function testModules() {
         // cycle, alternating its deadband counter between "hold at 10W" and "release
         // to full power" forever - and whichever of those the state happened to be on
         // would leak to the device the moment safety briefly cleared.
+        //
+        // The frozen powerW must come back UNCHANGED (180, not 0) - SafetyLimiter is
+        // the one that actually clamps to 0, and it only does that (and sets
+        // safetyActive=true, which is what makes the caller send a real 0 immediately
+        // instead of holding a keep-alive) if it still sees a non-zero request here.
         for (let i = 0; i < 6; i++) {
             const result = relayProtection.applyProtection({
                 config: mockConfig,
@@ -701,7 +706,7 @@ async function testModules() {
                 newBatteryPowerW: 180,
                 dischargeBlocked: true
             });
-            assertEqual(result.powerW, 0, `Cycle ${i}: stays at 0W while discharge is blocked, no flicker`);
+            assertEqual(result.powerW, 180, `Cycle ${i}: passes the real request through unchanged for SafetyLimiter to see`);
             assertEqual(result.deadbandCounter, 0, `Cycle ${i}: deadband counter does not churn while blocked`);
         }
 
@@ -725,6 +730,7 @@ async function testModules() {
         // Mirror scenario: battery at maxBatterySoc (or enableCharge=false) so charging
         // stays vetoed downstream, while PV surplus keeps the I-Regulator wanting to
         // charge. Same churn risk as the discharge case, just on the CHG<->STBY leg.
+        // Frozen powerW must stay -300 (unchanged), same reasoning as 3.5b.
         for (let i = 0; i < 6; i++) {
             const result = relayProtection.applyProtection({
                 config: mockConfig,
@@ -734,7 +740,7 @@ async function testModules() {
                 newBatteryPowerW: -300,
                 chargeBlocked: true
             });
-            assertEqual(result.powerW, 0, `Cycle ${i}: stays at 0W while charge is blocked, no flicker`);
+            assertEqual(result.powerW, -300, `Cycle ${i}: passes the real request through unchanged for SafetyLimiter to see`);
             assertEqual(result.deadbandCounter, 0, `Cycle ${i}: deadband counter does not churn while blocked`);
         }
 
@@ -753,6 +759,42 @@ async function testModules() {
             });
         }
         assertEqual(released.powerW, -10, 'Once released, holds at the deadband floor (charge direction), not a stale value');
+    });
+
+    await runTest('[3.5d] RelayProtection freeze must not blind SafetyLimiter to an active block (regression guard, 2026-08-24)', async () => {
+        // Found via a real overnight recovery: RelayProtection used to return powerW:0
+        // when frozen, so by the time SafetyLimiter ran, it saw "0W requested" and
+        // never engaged its own block - safetyActive stayed false, and the caller
+        // (safetyActive ? undefined : config) wrongly took the normal zero-avoidance
+        // path: hold a 10W keep-alive for the full smartModeIdleTimeoutSec instead of
+        // sending the real 0 immediately, even with 350-400W of baseline load and an
+        // active voltage recovery the whole time. RelayProtection must hand SafetyLimiter
+        // the real, unmodified request so it can correctly detect and clamp the block.
+        initializeMockStates();
+        const relayProtection = new RelayProtection(mockAdapter);
+        const safetyLimiter = new SafetyLimiter(mockAdapter, deviceBasePath);
+        const emergencyMgr = new EmergencyManager(mockAdapter, deviceBasePath);
+        emergencyMgr.inVoltageRecovery = true;
+
+        const relayResult = relayProtection.applyProtection({
+            config: mockConfig,
+            gridPowerW: 400,
+            currentBatteryPowerW: 0,
+            lastSetPowerW: 0,
+            newBatteryPowerW: 400,
+            dischargeBlocked: true
+        });
+        assertEqual(relayResult.powerW, 400, 'RelayProtection hands the real 400W request onward, not a pre-zeroed value');
+
+        const safetyResult = await safetyLimiter.applySafetyLimits({
+            config: { ...mockConfig, dischargeProtectionMode: 'voltage' },
+            emergencyManager: emergencyMgr,
+            batterySoc: 7,
+            minPackVoltageV: 3.11,
+            powerW: relayResult.powerW
+        });
+        assertEqual(safetyResult.safetyActive, true, 'SafetyLimiter correctly detects the block and reports safetyActive');
+        assertEqual(safetyResult.powerW, 0, 'SafetyLimiter itself clamps to 0 - RelayProtection does not need to pre-zero it');
     });
 
     await runTest('[3.6] PowerRegulator applies ramping limits', async () => {
