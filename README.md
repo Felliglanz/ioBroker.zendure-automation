@@ -45,10 +45,9 @@ Steuert deine Zendure Solarflow Batterie vollautomatisch für **Null-Einspeisung
 - **Operating Deadband (neu)** – hält bei ±5W für 1 Tick vor Nulldurchgang
 
 ### 🏗️ Moderne Architektur
-- **Modulare Struktur** – 9 spezialisierte Module (v0.7.0 Controller Extraction)
-- **47% Code-Reduktion** – von 1052 auf 554 Zeilen in main.js
+- **Modulare Struktur** – main.js orchestriert nur noch, die eigentliche Logik lebt in fokussierten, einzeln testbaren `lib/`-Modulen (Regelung, Sicherheit, Validierung, Multi-Device-Verteilung, Dashboard)
 - **Controller-basiert** – SingleDeviceController & MultiDeviceController
-- **Testbar & Wartbar** – klare Trennung der Verantwortlichkeiten
+- **Testbar & Wartbar** – klare Trennung der Verantwortlichkeiten, breite automatisierte Testsuite
 - **Vollständig dokumentiert** – JSDoc, inline comments, deutsch/englisch
 
 ---
@@ -179,6 +178,7 @@ Multi-Device erstellt zusätzliche States:
 - `status.devices.device1.voltageRecoveryActive` – Spannungs-Recovery aktiv (Entladung blockiert)
 - `status.devices.device1.socRecoveryActive` – SOC-Recovery aktiv (Entladung blockiert)
 - `status.devices.device1.minSocRecoveryActive` – Zendure Hardware-MinSoc-Recovery aktiv
+- `status.devices.device1.maxSocRecoveryActive` – Max-SOC Recovery aktiv (Ladung blockiert, siehe Hysterese oben)
 - `status.devices.device1.excluded` – Aus Distribution ausgeschlossen?
 
 ### Emergency Handling
@@ -202,7 +202,7 @@ Ein Gerät wird automatisch aus der Distribution ausgeschlossen wenn:
 - ✅ **Voltage Recovery aktiv** (darf nur laden)
 - ✅ **SOC Recovery aktiv** (darf nur laden)
 - ✅ **MinSoc Recovery aktiv** (Zendure Hardware-Schutz, darf nur laden)
-- ✅ **Max SOC erreicht** (kein Laden mehr)
+- ✅ **Max SOC erreicht** (kein Laden mehr, bleibt gesperrt bis SOC um die Recovery-Hysterese gefallen ist – siehe oben)
 - ✅ **Min SOC erreicht** (kein Entladen mehr)
 
 **Ausgeschlossene Geräte** werden auf **0W** gesetzt, die anderen regeln normal weiter.
@@ -286,6 +286,26 @@ Verhindert Hardware-Block durch Zendure's internen 5% SOC-Schutz:
 
 **Beispiel:** Device minSoc=5%, Margin=1%, Hysteresis=2%
 - Stopp bei 6% → Batterie lädt → Freigabe bei 8% → Kein Flipping! ✅
+
+**🔝 Max-SOC Recovery Hysterese (NEU in v1.1.1)**
+
+Verhindert eine Ladefreigabe-Endlosschleife bei vollem Akku:
+
+- **Problem:** Nach Erreichen von `maxBatterySoc` lehnt das Zendure-Gerät einen neuen Lade-Sollwert noch eine Weile hart ab – auch wenn der SOC durch Rundung/Reporting-Jitter kurz um nur 1% zurückfällt. Ohne Hysterese fordert der Adapter bei diesem Rücksprung sofort wieder Ladung an, das Gerät lehnt ab, die Sollwert-Validierung retried jeden Zyklus erneut bis zum Abbruch – eine Dauerschleife mit unnötiger Schreiblast, solange der SOC um die Obergrenze pendelt (Issue #32).
+- **Lösung:** Analog zur Min-SOC-Entladeschutz-Hysterese: Nach Erreichen von `maxBatterySoc` bleibt Laden gesperrt, bis der SOC auf `maxBatterySoc - Hysterese` gefallen ist.
+- **Transparenz:** State `status.maxSocRecoveryActive` (Single-Device) bzw. `status.devices.device1.maxSocRecoveryActive` (Multi-Device) zeigt, ob die Sperre gerade aktiv ist.
+
+**Konfiguration** (unter Akkuschutz):
+- **Max-SOC Recovery-Hysterese:** in % (Standard: **4%**, Minimum: **2%**)
+
+**Beispiel:** Max SOC=100%, Hysterese=4%
+- Laden gesperrt bei 100% → SOC fällt → Freigabe erst wieder bei 96% → Kein Flipping! ✅
+
+**🌡️ Ladekurven-Tapering nahe Vollladung (NEU in v1.1.1)**
+
+Unabhängig von der Hysterese oben drosselt die Zendure-BMS selbst die tatsächliche Ladeleistung in den letzten Prozentpunkten vor `maxBatterySoc` (CV-artige Ladekurve) – unabhängig vom angeforderten Sollwert. Das ist kein Kommunikationsfehler, sah für die Sollwert-Validierung aber wie einer aus (die Abweichung vom unveränderten Ziel wächst statt zu schrumpfen) und führte zu wiederholten Fehler-Logs über die gesamte letzte Ladephase, teils stundenlang an sonnigen Tagen.
+
+Der Adapter pausiert die Sollwert-Validierung deshalb automatisch, sobald der SOC bis auf 5 Prozentpunkte an `maxBatterySoc` heran ist (fest codiert, kein UI-Setting) – der Sollwert selbst wird davon unberührt normal weitergeschrieben, es wird nur einmalig geloggt statt gespammt, und die Validierung läuft automatisch wieder an, sobald der SOC diese Marge wieder unterschreitet.
 
 ### ⚡ Relay Protection (Anti-Verschleiß)
 
@@ -427,6 +447,7 @@ neueBatterieLeistung = letzteBatterieLeistung + (aktuelleNetzleistung - ZielNetz
 - `status.minPackVoltageV` – Minimale Pack-Spannung
 - `status.feedInCounter` / `dischargeCounter` – Delay-Counter (Debug)
 - `status.emergencyReason` – Grund für Emergency-Modus
+- `status.emergencyRecoveryActive` / `voltageRecoveryActive` / `socRecoveryActive` / `minSocRecoveryActive` / `maxSocRecoveryActive` – Recovery-Sperren aktiv (siehe "🚨 Emergency & Recovery" und "🔋 Batterieschutz-Modi im Detail")
 
 ---
 
