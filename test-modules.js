@@ -561,6 +561,39 @@ async function testModules() {
         assertEqual(emergency.isEmergency, false, 'minSoc recovery does not trigger emergency charging');
     });
 
+    await runTest('[3.9] SafetyLimiter maxSoc recovery blocks charge until SOC drops by the full hysteresis', async () => {
+        initializeMockStates();
+        const safetyLimiter = new SafetyLimiter(mockAdapter, deviceBasePath);
+        const emergencyMgr = new EmergencyManager(mockAdapter, deviceBasePath);
+        const config = { ...mockConfig, maxBatterySoc: 100, maxSocRecoveryHysteresis: 4 };
+
+        // Battery hits max SOC - charge blocked, recovery armed
+        let result = await safetyLimiter.applySafetyLimits({
+            config, emergencyManager: emergencyMgr, batterySoc: 100, minPackVoltageV: 3.2, powerW: -500
+        });
+        assertEqual(result.powerW, 0, 'Charge blocked at max SOC');
+        assertEqual(emergencyMgr.inMaxSocRecovery, true, 'maxSoc recovery armed');
+
+        // SOC ticks down by 1% (rounding/reporting jitter) - device would still hard-reject a
+        // new setpoint, so this must stay blocked instead of immediately retrying (the bug this
+        // fix addresses: without hysteresis this re-opens charging and ValidationService loops
+        // retrying a setpoint the device rejects).
+        result = await safetyLimiter.applySafetyLimits({
+            config, emergencyManager: emergencyMgr, batterySoc: 99, minPackVoltageV: 3.2, powerW: -500
+        });
+        assertEqual(result.powerW, 0, 'Charge stays blocked on a 1% dip, still inside the hysteresis band');
+        assertEqual(emergencyMgr.inMaxSocRecovery, true, 'maxSoc recovery still active');
+
+        // SOC drops the full hysteresis (100 - 4 = 96) - recovery clears, charge allowed again
+        await emergencyMgr.updateMaxSocRecovery(config, 96);
+        assertEqual(emergencyMgr.inMaxSocRecovery, false, 'maxSoc recovery clears once SOC falls to max-hysteresis');
+
+        result = await safetyLimiter.applySafetyLimits({
+            config, emergencyManager: emergencyMgr, batterySoc: 96, minPackVoltageV: 3.2, powerW: -500
+        });
+        assertEqual(result.powerW, -500, 'Charge allowed again once recovery cleared');
+    });
+
     await runTest('[3.8] Voltage recovery does not trigger emergency charging', async () => {
         initializeMockStates();
         const MultiDeviceController = require('./lib/MultiDeviceController');
@@ -614,11 +647,11 @@ async function testModules() {
         
         const emergencyManagers = new Map();
         const safetyLimiters = new Map();
-        emergencyManagers.set('device1', new EmergencyManager(mockAdapter, 'test.0.device1.pk1'));
-        emergencyManagers.set('device2', new EmergencyManager(mockAdapter, 'test.0.device2.pk2'));
-        safetyLimiters.set('device1', new SafetyLimiter(mockAdapter, 'test.0.device1.pk1'));
-        safetyLimiters.set('device2', new SafetyLimiter(mockAdapter, 'test.0.device2.pk2'));
-        
+        multiDeviceMgr.devices.forEach(dev => {
+            emergencyManagers.set(dev.id, new EmergencyManager(mockAdapter, dev.basePath));
+            safetyLimiters.set(dev.id, new SafetyLimiter(mockAdapter, dev.basePath));
+        });
+
         // Try to charge (should exclude both due to max SOC)
         const distribution = await multiDeviceMgr.distributePower(
             -1000,  // Charge
@@ -960,6 +993,43 @@ async function testModules() {
         assert(activeDevice, 'One device remains active');
         assertEqual(activeDevice.powerW, -1600, 'Remaining device keeps its own charge limit');
         assertEqual(excludedDevice.powerW, 0, 'Max-SOC device receives no power');
+    });
+
+    await runTest('[4.4b] Multi-device max-SOC recovery hysteresis survives a 1% SOC dip (mirrors 3.9)', async () => {
+        initializeMockStates();
+        setMockState('test.0.device1.pk1.electricLevel', 100);
+
+        const devices = [
+            { productKey: 'device1', deviceKey: 'pk1', name: 'Device 1', enabled: true },
+            { productKey: 'device2', deviceKey: 'pk2', name: 'Device 2', enabled: true }
+        ];
+        const multiDeviceMgr = new MultiDeviceManager(mockAdapter, 'test.0', devices);
+        const emergencyManagers = new Map();
+        const safetyLimiters = new Map();
+        multiDeviceMgr.devices.forEach(dev => {
+            emergencyManagers.set(dev.id, new EmergencyManager(mockAdapter, dev.basePath));
+            safetyLimiters.set(dev.id, new SafetyLimiter(mockAdapter, dev.basePath));
+        });
+        const config = { ...mockConfig, maxBatterySoc: 100, maxSocRecoveryHysteresis: 4 };
+
+        // First cycle at 100%: charge blocked, recovery armed for device1.
+        let distribution = await multiDeviceMgr.distributePower(
+            -3200, await multiDeviceMgr.aggregateDeviceStates(), config, emergencyManagers, safetyLimiters
+        );
+        let device1 = distribution.find(d => d.deviceId === multiDeviceMgr.devices[0].id);
+        assertEqual(device1.powerW, 0, 'Device1 blocked at 100%');
+        assertEqual(emergencyManagers.get(multiDeviceMgr.devices[0].id).inMaxSocRecovery, true, 'Recovery armed');
+
+        // SOC ticks down to 99% - must stay excluded (the bug: without hysteresis this would
+        // become eligible again, the device would hard-reject the setpoint, and
+        // ValidationService would retry every cycle).
+        setMockState('test.0.device1.pk1.electricLevel', 99);
+        distribution = await multiDeviceMgr.distributePower(
+            -3200, await multiDeviceMgr.aggregateDeviceStates(), config, emergencyManagers, safetyLimiters
+        );
+        device1 = distribution.find(d => d.deviceId === multiDeviceMgr.devices[0].id);
+        assertEqual(device1.powerW, 0, 'Device1 stays blocked on a 1% dip, still inside the hysteresis band');
+        assertEqual(device1.excluded, true, 'Device1 still reported excluded');
     });
 
     await runTest('[4.5] Multi-device distribution respects per-device discharge limit', async () => {

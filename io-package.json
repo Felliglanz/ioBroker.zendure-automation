@@ -519,6 +519,19 @@
       "native": {}
     },
     {
+      "_id": "status.maxSocRecoveryActive",
+      "type": "state",
+      "common": {
+        "name": "MaxSoc recovery mode active (full-battery charge hysteresis)",
+        "type": "boolean",
+        "role": "indicator",
+        "read": true,
+        "write": false,
+        "def": false
+      },
+      "native": {}
+    },
+    {
       "_id": "status.effectiveMinSoc",
       "type": "state",
       "common": {

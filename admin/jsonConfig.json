@@ -1193,8 +1193,8 @@
             "socRecoveryHysteresis": {
               "type": "number",
               "label": {
-                "en": "SOC recovery hysteresis (%)",
-                "de": "SOC Recovery-Hysterese (%)"
+                "en": "Min-SOC recovery hysteresis (%)",
+                "de": "Min-SOC Recovery-Hysterese (%)"
               },
               "sm": 6,
               "min": 0,
@@ -1206,11 +1206,34 @@
                 "de": "SOC muss min+Hysterese überschreiten vor erneuter Entladung (verhindert Oszillation)"
               }
             },
+            "maxSocRecoveryHysteresis": {
+              "type": "number",
+              "label": {
+                "en": "Max-SOC recovery hysteresis (%)",
+                "de": "Max-SOC Recovery-Hysterese (%)"
+              },
+              "sm": 6,
+              "min": 2,
+              "max": 20,
+              "step": 1,
+              "default": 4,
+              "help": {
+                "en": "SOC must fall max-hysteresis before charging is allowed again. The Zendure device keeps hard-rejecting a new charge setpoint for a while after hitting max SOC, even if SOC ticks back down by just 1% - too small a value causes repeated failed setpoints and needless writes",
+                "de": "SOC muss max-Hysterese unterschreiten vor erneutem Laden. Das Zendure-Gerät lehnt einen neuen Lade-Sollwert nach Erreichen des Max-SOC noch eine Weile hart ab, auch wenn der SOC nur um 1% zurückgeht - ein zu kleiner Wert erzeugt wiederholt fehlschlagende Sollwerte und unnötige Schreibvorgänge"
+              }
+            },
             "_socHint": {
               "type": "staticText",
               "text": {
                 "en": "Example: min=20%, hysteresis=5% → discharge blocked until SOC reaches 25%",
                 "de": "Beispiel: min=20%, Hysterese=5% → Entladung blockiert bis SOC 25% erreicht"
+              }
+            },
+            "_maxSocHint": {
+              "type": "staticText",
+              "text": {
+                "en": "Example: max=100%, hysteresis=4% → charge blocked until SOC falls to 96%",
+                "de": "Beispiel: max=100%, Hysterese=4% → Laden blockiert bis SOC auf 96% fällt"
               }
             }
           }
