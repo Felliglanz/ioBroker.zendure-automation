@@ -110,6 +110,7 @@ Multi-Device creates additional states:
 - `status.devices.device1.voltageRecoveryActive` – Voltage recovery active (discharge blocked)
 - `status.devices.device1.socRecoveryActive` – SOC recovery active (discharge blocked)
 - `status.devices.device1.minSocRecoveryActive` – Zendure hardware minSoc recovery active
+- `status.devices.device1.maxSocRecoveryActive` – Max-SOC recovery active (charging blocked, see hysteresis above)
 - `status.devices.device1.excluded` – Excluded from distribution?
 
 ### Emergency Handling
@@ -133,7 +134,7 @@ A device is automatically excluded from distribution when:
 - ✅ **Voltage Recovery active** (may only charge)
 - ✅ **SOC Recovery active** (may only charge)
 - ✅ **MinSoc Recovery active** (Zendure hardware protection, may only charge)
-- ✅ **Max SOC reached** (no more charging)
+- ✅ **Max SOC reached** (no more charging, stays blocked until SOC falls by the recovery hysteresis - see above)
 - ✅ **Min SOC reached** (no more discharging)
 
 **Excluded devices** are set to **0W**, others continue regulating normally.
@@ -217,6 +218,26 @@ Prevents hardware block from Zendure's internal 5% SOC protection:
 
 **Example:** Device minSoc=5%, Margin=1%, Hysteresis=2%
 - Stop at 6% → Battery charges → Release at 8% → No flipping! ✅
+
+**🔝 Max-SOC Recovery Hysteresis (NEW in v1.1.1)**
+
+Prevents a full-battery charge retry loop:
+
+- **Problem:** After reaching `maxBatterySoc`, the Zendure device keeps hard-rejecting a new charge setpoint for a while - even if SOC ticks back down by just 1% (rounding/reporting jitter). Without hysteresis, the adapter immediately re-requested charging on that dip, the device rejected it, and setpoint validation retried every cycle until giving up - a permanent loop with needless flash writes for as long as SOC hovered at the top (issue #32).
+- **Solution:** Mirrors the min-SOC discharge recovery hysteresis: once `maxBatterySoc` is hit, charging stays blocked until SOC falls to `maxBatterySoc - hysteresis`.
+- **Transparency:** State `status.maxSocRecoveryActive` (Single-Device) resp. `status.devices.device1.maxSocRecoveryActive` (Multi-Device) shows whether the block is currently active.
+
+**Configuration** (under Battery Protection):
+- **Max-SOC Recovery Hysteresis:** in % (default: **4%**, minimum: **2%**)
+
+**Example:** Max SOC=100%, Hysteresis=4%
+- Charging blocked at 100% → SOC falls → Released again only at 96% → No flipping! ✅
+
+**🌡️ Charge-Curve Tapering Near Full Charge (NEW in v1.1.1)**
+
+Independent of the hysteresis above, the Zendure BMS itself tapers actual charge current down in the last stretch before `maxBatterySoc` (a CV-style charge curve) - regardless of the requested setpoint. That's not a communication failure, but it looked like one to setpoint validation (the deviation from an unchanged target grows instead of shrinking) and caused repeated error logs for the entire final charge phase, sometimes for hours on a sunny day.
+
+The adapter now automatically suspends setpoint validation once SOC is within 5 percentage points of `maxBatterySoc` (hardcoded, not a UI setting) - the setpoint write itself is unaffected and still resent normally, it's logged once instead of spammed, and validation resumes automatically once SOC drops back below that margin.
 
 ### ⚡ Relay Protection (Anti-Wear)
 
@@ -358,6 +379,7 @@ newBatteryPower = lastBatteryPower + (currentGridPower - targetGridPower)
 - `status.minPackVoltageV` – Minimum pack voltage
 - `status.feedInCounter` / `dischargeCounter` – Delay counters (debug)
 - `status.emergencyReason` – Reason for emergency mode
+- `status.emergencyRecoveryActive` / `voltageRecoveryActive` / `socRecoveryActive` / `minSocRecoveryActive` / `maxSocRecoveryActive` – Recovery blocks active (see "🚨 Emergency & Recovery" and "🔋 Battery Protection Modes in Detail")
 
 ---
 
