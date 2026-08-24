@@ -1077,6 +1077,42 @@ async function testModules() {
         assertEqual(needsResend, false, 'Validation succeeded (no resend needed)');
     });
 
+    await runTest('[4.6c] ValidationService suspends validation near max SOC instead of erroring on BMS taper', async () => {
+        // Near max SOC the Zendure BMS tapers actual charge current down on its own
+        // (CV-style curve), independent of the requested setpoint. Target stays
+        // aggressive (-1600W) while actual drifts from -900W towards -100W as SOC climbs
+        // the last few percent - deviation from target *grows*, so the old ramping check
+        // read that as "device not responding" and errored out after 12 retries, hours
+        // of it on a sunny day. Validation must stay suspended (no error, no retry count)
+        // for the whole top-of-charge band, and resume normally once clearly below it.
+        initializeMockStates();
+        const validationService = new ValidationService(mockAdapter);
+        const config = { ...mockConfig, maxBatterySoc: 100, setPowerMaxRetries: 3 };
+
+        await validationService.writePowerSetpoint('dev1', 'test.0.device1', -1600, config);
+
+        // 96% is within the hardcoded 5-point margin below maxBatterySoc=100 - suspended.
+        for (const actualPowerW of [-900, -400, -100, -100, -100]) {
+            const needsResend = await validationService.validateSetpoint('dev1', config, actualPowerW, 96);
+            assertEqual(needsResend, false, `No resend requested while suspended (actual ${actualPowerW}W)`);
+        }
+        const state = validationService.getDeviceState('dev1');
+        assertEqual(state.validationRetryCount, 0, 'Retry counter never incremented while suspended');
+        // pendingValidation deliberately stays frozen (true), not cleared - see the
+        // comment in validateSetpoint: clearing it here would never re-arm on an
+        // unchanged target once SOC drops back below the margin.
+        assertEqual(state.pendingValidation, true, 'Pending validation stays armed (frozen) so it resumes once below the margin');
+
+        // Below the margin (94% < 100 - 5), a real mismatch must still be caught normally -
+        // same pending setpoint as above, no fresh write needed to re-arm it.
+        let needsResend;
+        for (let i = 0; i < config.setPowerMaxRetries; i++) {
+            needsResend = await validationService.validateSetpoint('dev1', config, -50, 94);
+        }
+        assertEqual(needsResend, false, 'Give-up path is reached (not stuck resending forever)');
+        assertEqual(validationService.getDeviceState('dev1').lastWrittenLimit, null, 'Setpoint reset after real failure below the margin');
+    });
+
     await runTest('[4.6b] ValidationService sends the real 0W only once per standby spell, not every idleTimeoutSec', async () => {
         // Without this, a sustained standby (regulator wants 0W cycle after cycle -
         // e.g. grid perfectly balanced, or discharge blocked for a long recovery)
