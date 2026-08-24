@@ -2,8 +2,12 @@
   "common": {
     "name": "zendure-automation",
     "title": "Zendure Automation",
-    "version": "1.1.0",
+    "version": "1.1.1",
     "news": {
+      "1.1.1": {
+        "en": "Fixed a regulatorGain (1.0.6) side effect where hysteresisW silently inflated to hysteresisW/gain, sometimes stalling the regulator for minutes (issue #30). Fixed a RelayProtection regression where a frozen block could go undetected by SafetyLimiter. Fixed a full-battery charge retry loop: charging now stays blocked for a hysteresis margin (default 4%, min. 2%) below maxBatterySoc instead of re-arming on a single-percent SOC dip and getting hard-rejected by the device (issue #32). Also fixed false setpoint-validation failures in the last 5% before maxBatterySoc, where the device's own charge-current tapering was mistaken for a communication failure.",
+        "de": "Einen Nebeneffekt von regulatorGain (1.0.6) behoben, bei dem sich hysteresisW unbemerkt auf hysteresisW/gain aufblähte und den Regler teils minutenlang blockierte (Issue #30). Eine RelayProtection-Regression behoben, bei der eine eingefrorene Sperre von SafetyLimiter unbemerkt bleiben konnte. Eine Ladefreigabe-Endlosschleife bei vollem Akku behoben: Laden bleibt jetzt bis zu einer Hysterese-Marge (Standard 4%, min. 2%) unter maxBatterySoc gesperrt, statt bei einem SOC-Rücksprung um nur 1% erneut freigegeben und vom Gerät hart abgelehnt zu werden (Issue #32). Außerdem fälschliche Validierungsfehler in den letzten 5% vor maxBatterySoc behoben, bei denen die geräteeigene Ladestrom-Drosselung als Kommunikationsfehler fehlinterpretiert wurde."
+      },
       "1.1.0": {
         "en": "Fixed a relay-flicker bug class in RelayProtection (charge and discharge sides): while an active recovery block (voltage/SOC/minSoc, maxBatterySoc, enableCharge) forced every write to 0, its internal hold/release deadband state kept churning every cycle since the actually-written setpoint never moved - invisible until the block briefly lifted, at which point the churn got written for real as a 0W/10W/full-power flicker. Also fixed a related bug where sustained standby kept re-sending a \"real 0W\" every ~5 minutes indefinitely instead of staying silent once committed. Fixed a Waterfill sticky-single-device bug where the resting device wasn't excluded from zero-setpoint avoidance and chattered its relay every idle timeout (reported live by a tester). control.regulatorGain now also re-syncs correctly on restart in Single-Device mode. Dashboard: added live Autarkie/PV-Quote bubbles to the flow diagram, fixed a broken admin-tile link and a mobile header overlap.",
         "de": "Eine Klasse von Relais-Flicker-Bugs in RelayProtection behoben (Lade- und Entladeseite): Während eine aktive Recovery-Sperre (Spannung/SOC/minSoc, maxBatterySoc, enableCharge) jeden Schreibvorgang auf 0 zwang, lief der interne Halten/Freigeben-Zustand jeden Zyklus weiter, da sich der tatsächlich geschriebene Sollwert nie änderte - unsichtbar, bis die Sperre kurz aufgehoben wurde und die Schwingung real geschrieben wurde: ein 0W/10W/Volllast-Flackern. Außerdem einen verwandten Fehler behoben, bei dem im Dauerstandby alle ~5 Minuten erneut ein \"echtes 0W\" gesendet wurde statt nach dem ersten Commit stillzuhalten. Einen Waterfill-Bug im Sticky-Single-Device-Modus behoben, bei dem das ruhende Gerät nicht von der Nullsollwert-Vermeidung ausgeschlossen war und dadurch bei jedem Idle-Timeout sein Relais klackerte (live von einem Tester gemeldet). control.regulatorGain synchronisiert sich jetzt auch im Single-Device-Modus beim Neustart korrekt. Dashboard: Live-Blasen für Autarkie/PV-Quote im Flussdiagramm ergänzt, defekten Admin-Tab-Link und eine mobile Kopfzeilen-Überlappung behoben."
@@ -506,6 +510,19 @@
       "type": "state",
       "common": {
         "name": "MinSoc recovery mode active (Zendure hardware protection)",
+        "type": "boolean",
+        "role": "indicator",
+        "read": true,
+        "write": false,
+        "def": false
+      },
+      "native": {}
+    },
+    {
+      "_id": "status.maxSocRecoveryActive",
+      "type": "state",
+      "common": {
+        "name": "MaxSoc recovery mode active (full-battery charge hysteresis)",
         "type": "boolean",
         "role": "indicator",
         "read": true,

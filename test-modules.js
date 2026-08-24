@@ -561,6 +561,39 @@ async function testModules() {
         assertEqual(emergency.isEmergency, false, 'minSoc recovery does not trigger emergency charging');
     });
 
+    await runTest('[3.9] SafetyLimiter maxSoc recovery blocks charge until SOC drops by the full hysteresis', async () => {
+        initializeMockStates();
+        const safetyLimiter = new SafetyLimiter(mockAdapter, deviceBasePath);
+        const emergencyMgr = new EmergencyManager(mockAdapter, deviceBasePath);
+        const config = { ...mockConfig, maxBatterySoc: 100, maxSocRecoveryHysteresis: 4 };
+
+        // Battery hits max SOC - charge blocked, recovery armed
+        let result = await safetyLimiter.applySafetyLimits({
+            config, emergencyManager: emergencyMgr, batterySoc: 100, minPackVoltageV: 3.2, powerW: -500
+        });
+        assertEqual(result.powerW, 0, 'Charge blocked at max SOC');
+        assertEqual(emergencyMgr.inMaxSocRecovery, true, 'maxSoc recovery armed');
+
+        // SOC ticks down by 1% (rounding/reporting jitter) - device would still hard-reject a
+        // new setpoint, so this must stay blocked instead of immediately retrying (the bug this
+        // fix addresses: without hysteresis this re-opens charging and ValidationService loops
+        // retrying a setpoint the device rejects).
+        result = await safetyLimiter.applySafetyLimits({
+            config, emergencyManager: emergencyMgr, batterySoc: 99, minPackVoltageV: 3.2, powerW: -500
+        });
+        assertEqual(result.powerW, 0, 'Charge stays blocked on a 1% dip, still inside the hysteresis band');
+        assertEqual(emergencyMgr.inMaxSocRecovery, true, 'maxSoc recovery still active');
+
+        // SOC drops the full hysteresis (100 - 4 = 96) - recovery clears, charge allowed again
+        await emergencyMgr.updateMaxSocRecovery(config, 96);
+        assertEqual(emergencyMgr.inMaxSocRecovery, false, 'maxSoc recovery clears once SOC falls to max-hysteresis');
+
+        result = await safetyLimiter.applySafetyLimits({
+            config, emergencyManager: emergencyMgr, batterySoc: 96, minPackVoltageV: 3.2, powerW: -500
+        });
+        assertEqual(result.powerW, -500, 'Charge allowed again once recovery cleared');
+    });
+
     await runTest('[3.8] Voltage recovery does not trigger emergency charging', async () => {
         initializeMockStates();
         const MultiDeviceController = require('./lib/MultiDeviceController');
@@ -614,11 +647,11 @@ async function testModules() {
         
         const emergencyManagers = new Map();
         const safetyLimiters = new Map();
-        emergencyManagers.set('device1', new EmergencyManager(mockAdapter, 'test.0.device1.pk1'));
-        emergencyManagers.set('device2', new EmergencyManager(mockAdapter, 'test.0.device2.pk2'));
-        safetyLimiters.set('device1', new SafetyLimiter(mockAdapter, 'test.0.device1.pk1'));
-        safetyLimiters.set('device2', new SafetyLimiter(mockAdapter, 'test.0.device2.pk2'));
-        
+        multiDeviceMgr.devices.forEach(dev => {
+            emergencyManagers.set(dev.id, new EmergencyManager(mockAdapter, dev.basePath));
+            safetyLimiters.set(dev.id, new SafetyLimiter(mockAdapter, dev.basePath));
+        });
+
         // Try to charge (should exclude both due to max SOC)
         const distribution = await multiDeviceMgr.distributePower(
             -1000,  // Charge
@@ -692,6 +725,11 @@ async function testModules() {
         // cycle, alternating its deadband counter between "hold at 10W" and "release
         // to full power" forever - and whichever of those the state happened to be on
         // would leak to the device the moment safety briefly cleared.
+        //
+        // The frozen powerW must come back UNCHANGED (180, not 0) - SafetyLimiter is
+        // the one that actually clamps to 0, and it only does that (and sets
+        // safetyActive=true, which is what makes the caller send a real 0 immediately
+        // instead of holding a keep-alive) if it still sees a non-zero request here.
         for (let i = 0; i < 6; i++) {
             const result = relayProtection.applyProtection({
                 config: mockConfig,
@@ -701,7 +739,7 @@ async function testModules() {
                 newBatteryPowerW: 180,
                 dischargeBlocked: true
             });
-            assertEqual(result.powerW, 0, `Cycle ${i}: stays at 0W while discharge is blocked, no flicker`);
+            assertEqual(result.powerW, 180, `Cycle ${i}: passes the real request through unchanged for SafetyLimiter to see`);
             assertEqual(result.deadbandCounter, 0, `Cycle ${i}: deadband counter does not churn while blocked`);
         }
 
@@ -725,6 +763,7 @@ async function testModules() {
         // Mirror scenario: battery at maxBatterySoc (or enableCharge=false) so charging
         // stays vetoed downstream, while PV surplus keeps the I-Regulator wanting to
         // charge. Same churn risk as the discharge case, just on the CHG<->STBY leg.
+        // Frozen powerW must stay -300 (unchanged), same reasoning as 3.5b.
         for (let i = 0; i < 6; i++) {
             const result = relayProtection.applyProtection({
                 config: mockConfig,
@@ -734,7 +773,7 @@ async function testModules() {
                 newBatteryPowerW: -300,
                 chargeBlocked: true
             });
-            assertEqual(result.powerW, 0, `Cycle ${i}: stays at 0W while charge is blocked, no flicker`);
+            assertEqual(result.powerW, -300, `Cycle ${i}: passes the real request through unchanged for SafetyLimiter to see`);
             assertEqual(result.deadbandCounter, 0, `Cycle ${i}: deadband counter does not churn while blocked`);
         }
 
@@ -753,6 +792,42 @@ async function testModules() {
             });
         }
         assertEqual(released.powerW, -10, 'Once released, holds at the deadband floor (charge direction), not a stale value');
+    });
+
+    await runTest('[3.5d] RelayProtection freeze must not blind SafetyLimiter to an active block (regression guard, 2026-08-24)', async () => {
+        // Found via a real overnight recovery: RelayProtection used to return powerW:0
+        // when frozen, so by the time SafetyLimiter ran, it saw "0W requested" and
+        // never engaged its own block - safetyActive stayed false, and the caller
+        // (safetyActive ? undefined : config) wrongly took the normal zero-avoidance
+        // path: hold a 10W keep-alive for the full smartModeIdleTimeoutSec instead of
+        // sending the real 0 immediately, even with 350-400W of baseline load and an
+        // active voltage recovery the whole time. RelayProtection must hand SafetyLimiter
+        // the real, unmodified request so it can correctly detect and clamp the block.
+        initializeMockStates();
+        const relayProtection = new RelayProtection(mockAdapter);
+        const safetyLimiter = new SafetyLimiter(mockAdapter, deviceBasePath);
+        const emergencyMgr = new EmergencyManager(mockAdapter, deviceBasePath);
+        emergencyMgr.inVoltageRecovery = true;
+
+        const relayResult = relayProtection.applyProtection({
+            config: mockConfig,
+            gridPowerW: 400,
+            currentBatteryPowerW: 0,
+            lastSetPowerW: 0,
+            newBatteryPowerW: 400,
+            dischargeBlocked: true
+        });
+        assertEqual(relayResult.powerW, 400, 'RelayProtection hands the real 400W request onward, not a pre-zeroed value');
+
+        const safetyResult = await safetyLimiter.applySafetyLimits({
+            config: { ...mockConfig, dischargeProtectionMode: 'voltage' },
+            emergencyManager: emergencyMgr,
+            batterySoc: 7,
+            minPackVoltageV: 3.11,
+            powerW: relayResult.powerW
+        });
+        assertEqual(safetyResult.safetyActive, true, 'SafetyLimiter correctly detects the block and reports safetyActive');
+        assertEqual(safetyResult.powerW, 0, 'SafetyLimiter itself clamps to 0 - RelayProtection does not need to pre-zero it');
     });
 
     await runTest('[3.6] PowerRegulator applies ramping limits', async () => {
@@ -920,6 +995,43 @@ async function testModules() {
         assertEqual(excludedDevice.powerW, 0, 'Max-SOC device receives no power');
     });
 
+    await runTest('[4.4b] Multi-device max-SOC recovery hysteresis survives a 1% SOC dip (mirrors 3.9)', async () => {
+        initializeMockStates();
+        setMockState('test.0.device1.pk1.electricLevel', 100);
+
+        const devices = [
+            { productKey: 'device1', deviceKey: 'pk1', name: 'Device 1', enabled: true },
+            { productKey: 'device2', deviceKey: 'pk2', name: 'Device 2', enabled: true }
+        ];
+        const multiDeviceMgr = new MultiDeviceManager(mockAdapter, 'test.0', devices);
+        const emergencyManagers = new Map();
+        const safetyLimiters = new Map();
+        multiDeviceMgr.devices.forEach(dev => {
+            emergencyManagers.set(dev.id, new EmergencyManager(mockAdapter, dev.basePath));
+            safetyLimiters.set(dev.id, new SafetyLimiter(mockAdapter, dev.basePath));
+        });
+        const config = { ...mockConfig, maxBatterySoc: 100, maxSocRecoveryHysteresis: 4 };
+
+        // First cycle at 100%: charge blocked, recovery armed for device1.
+        let distribution = await multiDeviceMgr.distributePower(
+            -3200, await multiDeviceMgr.aggregateDeviceStates(), config, emergencyManagers, safetyLimiters
+        );
+        let device1 = distribution.find(d => d.deviceId === multiDeviceMgr.devices[0].id);
+        assertEqual(device1.powerW, 0, 'Device1 blocked at 100%');
+        assertEqual(emergencyManagers.get(multiDeviceMgr.devices[0].id).inMaxSocRecovery, true, 'Recovery armed');
+
+        // SOC ticks down to 99% - must stay excluded (the bug: without hysteresis this would
+        // become eligible again, the device would hard-reject the setpoint, and
+        // ValidationService would retry every cycle).
+        setMockState('test.0.device1.pk1.electricLevel', 99);
+        distribution = await multiDeviceMgr.distributePower(
+            -3200, await multiDeviceMgr.aggregateDeviceStates(), config, emergencyManagers, safetyLimiters
+        );
+        device1 = distribution.find(d => d.deviceId === multiDeviceMgr.devices[0].id);
+        assertEqual(device1.powerW, 0, 'Device1 stays blocked on a 1% dip, still inside the hysteresis band');
+        assertEqual(device1.excluded, true, 'Device1 still reported excluded');
+    });
+
     await runTest('[4.5] Multi-device distribution respects per-device discharge limit', async () => {
         initializeMockStates();
 
@@ -963,6 +1075,42 @@ async function testModules() {
         const needsResend = await validationService.validateSetpoint('dev1', mockConfig, -800);
         
         assertEqual(needsResend, false, 'Validation succeeded (no resend needed)');
+    });
+
+    await runTest('[4.6c] ValidationService suspends validation near max SOC instead of erroring on BMS taper', async () => {
+        // Near max SOC the Zendure BMS tapers actual charge current down on its own
+        // (CV-style curve), independent of the requested setpoint. Target stays
+        // aggressive (-1600W) while actual drifts from -900W towards -100W as SOC climbs
+        // the last few percent - deviation from target *grows*, so the old ramping check
+        // read that as "device not responding" and errored out after 12 retries, hours
+        // of it on a sunny day. Validation must stay suspended (no error, no retry count)
+        // for the whole top-of-charge band, and resume normally once clearly below it.
+        initializeMockStates();
+        const validationService = new ValidationService(mockAdapter);
+        const config = { ...mockConfig, maxBatterySoc: 100, setPowerMaxRetries: 3 };
+
+        await validationService.writePowerSetpoint('dev1', 'test.0.device1', -1600, config);
+
+        // 96% is within the hardcoded 5-point margin below maxBatterySoc=100 - suspended.
+        for (const actualPowerW of [-900, -400, -100, -100, -100]) {
+            const needsResend = await validationService.validateSetpoint('dev1', config, actualPowerW, 96);
+            assertEqual(needsResend, false, `No resend requested while suspended (actual ${actualPowerW}W)`);
+        }
+        const state = validationService.getDeviceState('dev1');
+        assertEqual(state.validationRetryCount, 0, 'Retry counter never incremented while suspended');
+        // pendingValidation deliberately stays frozen (true), not cleared - see the
+        // comment in validateSetpoint: clearing it here would never re-arm on an
+        // unchanged target once SOC drops back below the margin.
+        assertEqual(state.pendingValidation, true, 'Pending validation stays armed (frozen) so it resumes once below the margin');
+
+        // Below the margin (94% < 100 - 5), a real mismatch must still be caught normally -
+        // same pending setpoint as above, no fresh write needed to re-arm it.
+        let needsResend;
+        for (let i = 0; i < config.setPowerMaxRetries; i++) {
+            needsResend = await validationService.validateSetpoint('dev1', config, -50, 94);
+        }
+        assertEqual(needsResend, false, 'Give-up path is reached (not stuck resending forever)');
+        assertEqual(validationService.getDeviceState('dev1').lastWrittenLimit, null, 'Setpoint reset after real failure below the margin');
     });
 
     await runTest('[4.6b] ValidationService sends the real 0W only once per standby spell, not every idleTimeoutSec', async () => {
@@ -1815,6 +1963,54 @@ async function testModules() {
         const dampedConfig = { ...baseConfig, regulatorGainEnabled: true, regulatorGain: 0.5 };
         const dampedResult = await dampedController.calculateTargetPower(dampedConfig, 300, 0, normalDevices, aggregatedState);
         assertEqual(dampedResult, 650, 'Gain 0.5 enabled: half the error applied (500 + 0.5*300 = 650W)');
+    });
+
+    await runTest('[4.26] MultiDeviceController.calculateTargetPower: hysteresis is scaled by regulatorGain so its Watt tolerance stays constant (issue #30 follow-up)', async () => {
+        const MultiDeviceController = require('./lib/MultiDeviceController');
+
+        const baseConfig = {
+            hysteresisW: 50,
+            operatingDeadbandW: 10,
+            feedInThresholdW: -150,
+            feedInDelayTicks: 5,
+            dischargeThresholdW: 100,
+            dischargeDelayTicks: 3,
+            maxChargePowerW: 2000,
+            maxDischargePowerW: 2000,
+            rampChargeWPerCycle: 1000,
+            rampDischargeWPerCycle: 1000,
+            enableCharge: true,
+            enableDischarge: true,
+            regulatorGainEnabled: true,
+            regulatorGain: 0.4
+        };
+
+        const normalDevices = [{ id: 'device1', powerW: 500 }];
+        const aggregatedState = { totalPowerW: 500, avgSoc: 50, availableDevicesCount: 1 };
+
+        // Raw grid error of 75W exceeds the configured 50W hysteresis, so this must go through -
+        // pre-fix, the gain-scaled delta (0.4*75=30W) was compared against the raw 50W threshold
+        // and got wrongly suppressed (effective tolerance had inflated to 50/0.4=125W).
+        const aboveController = new MultiDeviceController(mockAdapter, {
+            multiDeviceMgr: { devices: [{ id: 'device1' }] },
+            relayProtection: new RelayProtection(mockAdapter),
+            powerRegulator: new PowerRegulator(mockAdapter)
+        });
+        aboveController.lastTotalWrittenPowerW = 500;
+        const aboveResult = await aboveController.calculateTargetPower(baseConfig, 75, 0, normalDevices, aggregatedState);
+        assertEqual(aboveResult, 530, 'Raw error 75W > 50W hysteresis: correction applied (500 + 0.4*75 = 530W)');
+
+        // Raw grid error of 20W is genuinely inside the configured 50W hysteresis and must still
+        // be suppressed - confirms the fix restores the original meaning instead of just
+        // disabling hysteresis outright.
+        const belowController = new MultiDeviceController(mockAdapter, {
+            multiDeviceMgr: { devices: [{ id: 'device1' }] },
+            relayProtection: new RelayProtection(mockAdapter),
+            powerRegulator: new PowerRegulator(mockAdapter)
+        });
+        belowController.lastTotalWrittenPowerW = 500;
+        const belowResult = await belowController.calculateTargetPower(baseConfig, 20, 0, normalDevices, aggregatedState);
+        assertEqual(belowResult, 500, 'Raw error 20W < 50W hysteresis: still suppressed, holds at 500W');
     });
 
     console.log('\n' + '='.repeat(70));

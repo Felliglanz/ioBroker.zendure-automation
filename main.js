@@ -888,6 +888,19 @@ class ZendureAutomation extends utils.Adapter {
                 native: {}
             });
 
+            await this.setObjectNotExistsAsync(`status.devices.${device.id}.maxSocRecoveryActive`, {
+                type: 'state',
+                common: {
+                    name: 'MaxSoc Recovery Active (full-battery charge hysteresis)',
+                    type: 'boolean',
+                    role: 'indicator',
+                    read: true,
+                    write: false,
+                    def: false
+                },
+                native: {}
+            });
+
             // Clean up the old, pre-1.0.1 state names these replace (renamed to
             // emergencyRecoveryActive/voltageRecoveryActive above) so upgraded
             // installs don't keep dead, frozen-value objects around forever.
