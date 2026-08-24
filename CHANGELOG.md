@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented in this file.
 
+## v1.1.1 (2026-08-24)
+
+### English
+- Fixed a `regulatorGain` (1.0.6) side effect: `hysteresisW` compares against the setpoint delta *after* `regulatorGain` is applied, so a lower gain silently inflated the effective grid-error tolerance to `hysteresisW / gain` instead of the configured `hysteresisW` - e.g. gain 0.4 turned a 50W hysteresis into a 125W dead zone. This caused the regulator to get stuck well away from the target grid power whenever real load stayed inside that inflated zone, sometimes for minutes (issue #30, confirmed via a tester's logs and Grafana charts showing long flat plateaus instead of tracking toward target). `hysteresisW` is now scaled by `regulatorGain` before the comparison, keeping its Watt tolerance constant regardless of the gain value. No effect when `regulatorGain` is disabled (default).
+
+### Deutsch
+- Einen Nebeneffekt von `regulatorGain` (1.0.6) behoben: `hysteresisW` wurde gegen die bereits mit `regulatorGain` skalierte Sollwert-Differenz verglichen, wodurch ein niedrigerer Gain die effektive Grid-Fehler-Toleranz unbemerkt auf `hysteresisW / gain` aufblähte statt den konfigurierten `hysteresisW`-Wert zu nutzen - z.B. wurde aus 50W Hysterese bei Gain 0.4 eine 125W-Totzone. Dadurch blieb der Regler manchmal minutenlang weit vom Ziel-Netzwert entfernt hängen, solange die reale Last innerhalb dieser aufgeblähten Zone lag (Issue #30, bestätigt anhand der Logs und Grafana-Charts eines Testers, die lange flache Plateaus statt einer Annäherung ans Ziel zeigten). `hysteresisW` wird jetzt vor dem Vergleich mit `regulatorGain` skaliert, damit die Watt-Toleranz unabhängig vom Gain-Wert konstant bleibt. Kein Effekt, wenn `regulatorGain` deaktiviert ist (Standard).
+
 ## v1.1.0 (2026-08-23)
 
 ### English

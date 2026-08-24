@@ -1859,6 +1859,54 @@ async function testModules() {
         assertEqual(dampedResult, 650, 'Gain 0.5 enabled: half the error applied (500 + 0.5*300 = 650W)');
     });
 
+    await runTest('[4.26] MultiDeviceController.calculateTargetPower: hysteresis is scaled by regulatorGain so its Watt tolerance stays constant (issue #30 follow-up)', async () => {
+        const MultiDeviceController = require('./lib/MultiDeviceController');
+
+        const baseConfig = {
+            hysteresisW: 50,
+            operatingDeadbandW: 10,
+            feedInThresholdW: -150,
+            feedInDelayTicks: 5,
+            dischargeThresholdW: 100,
+            dischargeDelayTicks: 3,
+            maxChargePowerW: 2000,
+            maxDischargePowerW: 2000,
+            rampChargeWPerCycle: 1000,
+            rampDischargeWPerCycle: 1000,
+            enableCharge: true,
+            enableDischarge: true,
+            regulatorGainEnabled: true,
+            regulatorGain: 0.4
+        };
+
+        const normalDevices = [{ id: 'device1', powerW: 500 }];
+        const aggregatedState = { totalPowerW: 500, avgSoc: 50, availableDevicesCount: 1 };
+
+        // Raw grid error of 75W exceeds the configured 50W hysteresis, so this must go through -
+        // pre-fix, the gain-scaled delta (0.4*75=30W) was compared against the raw 50W threshold
+        // and got wrongly suppressed (effective tolerance had inflated to 50/0.4=125W).
+        const aboveController = new MultiDeviceController(mockAdapter, {
+            multiDeviceMgr: { devices: [{ id: 'device1' }] },
+            relayProtection: new RelayProtection(mockAdapter),
+            powerRegulator: new PowerRegulator(mockAdapter)
+        });
+        aboveController.lastTotalWrittenPowerW = 500;
+        const aboveResult = await aboveController.calculateTargetPower(baseConfig, 75, 0, normalDevices, aggregatedState);
+        assertEqual(aboveResult, 530, 'Raw error 75W > 50W hysteresis: correction applied (500 + 0.4*75 = 530W)');
+
+        // Raw grid error of 20W is genuinely inside the configured 50W hysteresis and must still
+        // be suppressed - confirms the fix restores the original meaning instead of just
+        // disabling hysteresis outright.
+        const belowController = new MultiDeviceController(mockAdapter, {
+            multiDeviceMgr: { devices: [{ id: 'device1' }] },
+            relayProtection: new RelayProtection(mockAdapter),
+            powerRegulator: new PowerRegulator(mockAdapter)
+        });
+        belowController.lastTotalWrittenPowerW = 500;
+        const belowResult = await belowController.calculateTargetPower(baseConfig, 20, 0, normalDevices, aggregatedState);
+        assertEqual(belowResult, 500, 'Raw error 20W < 50W hysteresis: still suppressed, holds at 500W');
+    });
+
     console.log('\n' + '='.repeat(70));
     console.log('SECTION 5: PACKAGE & CONFIG CONSISTENCY');
     console.log('='.repeat(70));
