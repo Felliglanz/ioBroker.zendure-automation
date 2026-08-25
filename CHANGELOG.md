@@ -2,6 +2,22 @@
 
 All notable changes to this project are documented in this file.
 
+## v1.1.2 (2026-08-25)
+
+### English
+- Dashboard: added rolling power-history graphs (**Verlauf**, below the flow diagram) for Hausverbrauch/Netz/PV/Batterie over the last 1h or 2h. Sampled every 5 minutes into a new `telemetry.historyJson` state, cleared nightly at local midnight like the rest of `telemetry.*` - each point is the *average* power over its 5-minute interval (accumulated in memory as it's measured), not just whatever the instantaneous reading happened to be at the sample tick.
+- Netz and Batterie use a symmetric, zero-centered scale (0 always sits on the vertical center) with a direction gradient - feeding power (grid export / battery charge) fades to green, drawing power (grid import / battery discharge) fades to amber, reusing the same colors already used elsewhere in the dashboard. Each card also marks the window's peak value directly on the curve.
+- All power values across the dashboard (flow diagram, device cards, and the new graphs) now consistently switch to kW above 1000W, matching the existing Wh/kWh convention.
+- The flow diagram and the new graph panel each got a fullscreen toggle (works in portrait, no rotation needed), and the control panel is now collapsed by default behind a single "⚙ Steuerung" row.
+- Fixed a contrast issue where the hamburger menu's dropdown blended into whatever panel it floated over.
+
+### Deutsch
+- Dashboard: neue Verlaufs-Graphen ("Verlauf", unterhalb des Flussdiagramms) für Hausverbrauch/Netz/PV/Batterie über die letzte 1h oder 2h. Alle 5 Minuten in einen neuen `telemetry.historyJson`-State geschrieben, nachts um Mitternacht gelöscht wie der Rest von `telemetry.*` - jeder Punkt ist der *Durchschnitt* der Leistung über sein 5-Minuten-Intervall (im Speicher laufend mitgemessen), nicht nur ein Momentanwert zum Zeitpunkt der Aufzeichnung.
+- Netz und Batterie nutzen eine symmetrische, um 0 zentrierte Skala (0 liegt immer exakt in der Mitte) mit Richtungsverlauf - Einspeisung/Laden wird grün, Bezug/Entladen amber, dieselben Farben wie schon anderswo im Dashboard. Jede Karte markiert außerdem den Spitzenwert des gewählten Zeitfensters direkt auf der Kurve.
+- Alle Leistungswerte im Dashboard (Flussdiagramm, Gerätekarten, neue Graphen) schalten jetzt einheitlich ab 1000W auf kW um, analog zur bestehenden Wh/kWh-Konvention.
+- Flussdiagramm und das neue Verlaufs-Panel haben je einen Vollbild-Button (funktioniert auch im Hochformat, kein Drehen nötig), die Steuerung ist jetzt standardmäßig hinter einer Zeile "⚙ Steuerung" eingeklappt.
+- Einen Kontrastfehler behoben, bei dem sich das aufklappende Hamburger-Menü kaum vom dahinterliegenden Panel abhob.
+
 ## v1.1.1 (2026-08-24)
 
 ### English
