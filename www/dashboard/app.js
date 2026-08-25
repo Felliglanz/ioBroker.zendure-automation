@@ -156,6 +156,14 @@
     return `${Math.round(val)} W`;
   }
 
+  // Same kW-switchover convention fmtWh already uses for Wh/kWh - kept as a separate function
+  // (rather than changing fmtW itself) since the flow diagram's live values intentionally stay
+  // in plain Watts; only the history graphs need the two to line up at a glance.
+  function fmtWAuto(val) {
+    if (val === null || val === undefined || Number.isNaN(val)) return '–';
+    return Math.abs(val) >= 1000 ? `${(val / 1000).toFixed(2)} kW` : `${Math.round(val)} W`;
+  }
+
   function fmtWh(val) {
     if (val === null || val === undefined || Number.isNaN(val)) return '–';
     return val >= 1000 ? `${(val / 1000).toFixed(2)} kWh` : `${Math.round(val)} Wh`;
@@ -472,6 +480,9 @@
   // space always equals the rendered pixels 1:1, so a circle is always a circle.
   const GRAPH_PAD_Y = 14;
   const GRAPH_PAD_X = 4;
+  const GRAPH_PLOT_LEFT = 44; // reserved gutter for the y-axis min/max labels (incl. "-1.24 kW"), so they never sit under the curve
+  const GRAPH_TICK_MS = 10 * 60 * 1000; // minor x-axis tick every 10min
+  const GRAPH_MAJOR_TICK_MS = 30 * 60 * 1000; // major (taller) tick every 30min
   const SVG_NS = 'http://www.w3.org/2000/svg';
 
   let graphHistory = { pvEnabled: false, houseEnabled: false, points: [] };
@@ -559,7 +570,7 @@
     labelEl.textContent = metric.label;
     const valueEl = document.createElement('span');
     valueEl.className = 'graph-card-value';
-    valueEl.textContent = series.length ? fmtW(series[series.length - 1].v) : '–';
+    valueEl.textContent = series.length ? fmtWAuto(series[series.length - 1].v) : '–';
     head.appendChild(labelEl);
     head.appendChild(valueEl);
     card.appendChild(head);
@@ -603,7 +614,7 @@
     }
     const range = (max - min) || 1;
     const span = (windowEnd - windowStart) || 1;
-    const xOf = t => GRAPH_PAD_X + ((t - windowStart) / span) * (width - 2 * GRAPH_PAD_X);
+    const xOf = t => GRAPH_PLOT_LEFT + ((t - windowStart) / span) * (width - GRAPH_PLOT_LEFT - GRAPH_PAD_X);
     const yOf = v => GRAPH_PAD_Y + (height - 2 * GRAPH_PAD_Y) * (1 - (v - min) / range);
 
     const coords = series.map(p => [xOf(p.t), yOf(p.v)]);
@@ -654,12 +665,50 @@
     if (metric.signed) {
       const zeroY = yOf(0).toFixed(1);
       const zeroLine = document.createElementNS(SVG_NS, 'line');
-      zeroLine.setAttribute('x1', String(GRAPH_PAD_X));
+      zeroLine.setAttribute('x1', String(GRAPH_PLOT_LEFT));
       zeroLine.setAttribute('x2', String(width - GRAPH_PAD_X));
       zeroLine.setAttribute('y1', zeroY);
       zeroLine.setAttribute('y2', zeroY);
       zeroLine.classList.add('graph-zero-line');
       svg.appendChild(zeroLine);
+    }
+
+    // Y-axis: max always (top-left), min too for signed metrics (0 is already implied by the
+    // baseline for Haus/PV, so skipping it there avoids a redundant "0 W" in a very small card).
+    const maxLabel = document.createElementNS(SVG_NS, 'text');
+    maxLabel.classList.add('graph-axis-label');
+    maxLabel.setAttribute('x', String(GRAPH_PLOT_LEFT - 6));
+    maxLabel.setAttribute('y', String(GRAPH_PAD_Y + 3));
+    maxLabel.setAttribute('text-anchor', 'end');
+    maxLabel.textContent = fmtWAuto(max);
+    svg.appendChild(maxLabel);
+
+    if (metric.signed) {
+      const minLabel = document.createElementNS(SVG_NS, 'text');
+      minLabel.classList.add('graph-axis-label');
+      minLabel.setAttribute('x', String(GRAPH_PLOT_LEFT - 6));
+      minLabel.setAttribute('y', String(height - GRAPH_PAD_Y));
+      minLabel.setAttribute('text-anchor', 'end');
+      minLabel.textContent = fmtWAuto(min);
+      svg.appendChild(minLabel);
+    }
+
+    // X-axis: a short tick every 10min, a taller one every 30min, between the start/end times
+    // already shown as text below - dynamic to whichever window (1h/2h) is selected. Aligned to
+    // real clock time (not just "every N samples"), so a missed sample doesn't shift the rhythm.
+    const tickBaseY = height - GRAPH_PAD_Y;
+    const firstTick = Math.ceil(windowStart / GRAPH_TICK_MS) * GRAPH_TICK_MS;
+    for (let t = firstTick; t < windowEnd; t += GRAPH_TICK_MS) {
+      const isMajor = t % GRAPH_MAJOR_TICK_MS === 0;
+      const tick = document.createElementNS(SVG_NS, 'line');
+      const tx = xOf(t).toFixed(1);
+      tick.setAttribute('x1', tx);
+      tick.setAttribute('x2', tx);
+      tick.setAttribute('y1', String(tickBaseY));
+      tick.setAttribute('y2', String(tickBaseY + (isMajor ? 7 : 3.5)));
+      tick.classList.add('graph-tick');
+      if (isMajor) tick.classList.add('graph-tick-major');
+      svg.appendChild(tick);
     }
 
     const area = document.createElementNS(SVG_NS, 'path');
@@ -696,17 +745,52 @@
     crosshairDot.style.fill = paint;
     svg.appendChild(crosshairDot);
 
+    // Peak annotation: skipped when the peak *is* the current/last point - the end dot and the
+    // card's own header value already mark that one, a second label right next to it would just
+    // repeat it. Flips above/below the point (never both) based on which half of the plot it's
+    // in, and flips its text-anchor near either edge, so it can never run off the card or land on
+    // top of the y-axis labels in the reserved left gutter.
+    const peakIdx = series.indexOf(peakPoint);
+    if (peakIdx !== series.length - 1) {
+      const [px, py] = coords[peakIdx];
+      const labelBelow = py < (GRAPH_PAD_Y + height - GRAPH_PAD_Y) / 2;
+      // Extra clearance on the "below" side specifically: that's also where the y-axis max
+      // label lives, and the peak is very often close to the max (top of the plot).
+      const labelY = labelBelow ? py + 21 : py - 8;
+      let anchor = 'middle';
+      let labelX = px;
+      if (px < GRAPH_PLOT_LEFT + 26) {
+        anchor = 'start';
+        labelX = GRAPH_PLOT_LEFT;
+      } else if (px > width - GRAPH_PAD_X - 26) {
+        anchor = 'end';
+        labelX = width - GRAPH_PAD_X;
+      }
+
+      const peakDot = document.createElementNS(SVG_NS, 'circle');
+      peakDot.setAttribute('cx', px.toFixed(1));
+      peakDot.setAttribute('cy', py.toFixed(1));
+      peakDot.setAttribute('r', '3');
+      peakDot.classList.add('graph-peak-dot');
+      peakDot.style.fill = paint;
+      svg.appendChild(peakDot);
+
+      const peakLabel = document.createElementNS(SVG_NS, 'text');
+      peakLabel.classList.add('graph-peak-label');
+      peakLabel.setAttribute('x', labelX.toFixed(1));
+      peakLabel.setAttribute('y', labelY.toFixed(1));
+      peakLabel.setAttribute('text-anchor', anchor);
+      peakLabel.textContent = `Peak ${fmtWAuto(peakPoint.v)}`;
+      svg.appendChild(peakLabel);
+    }
+
     const rangeEl = document.createElement('div');
     rangeEl.className = 'graph-card-range';
     const startLabel = document.createElement('span');
     startLabel.textContent = fmtClock(windowStart);
-    const peakLabel = document.createElement('span');
-    peakLabel.className = 'graph-card-peak';
-    peakLabel.textContent = `Peak ${fmtW(peakPoint.v)}`;
     const endLabel = document.createElement('span');
     endLabel.textContent = fmtClock(windowEnd);
     rangeEl.appendChild(startLabel);
-    rangeEl.appendChild(peakLabel);
     rangeEl.appendChild(endLabel);
     card.appendChild(rangeEl);
 
@@ -738,7 +822,7 @@
       tooltip.hidden = false;
       tooltip.innerHTML = '';
       const valueEl2 = document.createElement('strong');
-      valueEl2.textContent = fmtW(point.v);
+      valueEl2.textContent = fmtWAuto(point.v);
       const timeEl = document.createElement('span');
       timeEl.textContent = fmtClock(point.t);
       tooltip.appendChild(valueEl2);

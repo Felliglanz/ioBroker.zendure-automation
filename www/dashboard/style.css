@@ -746,16 +746,39 @@ body.fullscreen-active { overflow: hidden; }
 }
 .graph-crosshair-dot.active { opacity: 1; }
 
+.graph-axis-label {
+  font-size: 9px;
+  fill: var(--text-muted);
+}
+
+.graph-tick {
+  stroke: var(--border);
+  stroke-width: 1;
+}
+.graph-tick-major { stroke: var(--text-muted); }
+
+.graph-peak-dot {
+  stroke: var(--input-bg);
+  stroke-width: 1.5;
+}
+.graph-peak-label {
+  font-size: 9px;
+  font-weight: 700;
+  fill: var(--text);
+  /* Halo in the card's own background instead of a <rect>, so it stays legible over the line/area
+     wherever the peak lands without needing to measure text width to size a backing rect. */
+  paint-order: stroke fill;
+  stroke: var(--input-bg);
+  stroke-width: 3px;
+  stroke-linejoin: round;
+}
+
 .graph-card-range {
   display: flex;
   justify-content: space-between;
   font-size: 0.68rem;
   color: var(--text-muted);
   margin-top: 0.2rem;
-}
-.graph-card-peak {
-  font-weight: 600;
-  color: var(--text);
 }
 
 .graph-tooltip {
