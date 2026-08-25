@@ -612,11 +612,12 @@
     const peakPoint = series.reduce((best, p) => (Math.abs(p.v) > Math.abs(best.v) ? p : best), series[0]);
 
     // Direction paint: signed metrics fade from --accent-discharge (top = positive = drawing
-    // power, from grid or from battery) through a neutral gray at the zero-centerline to
-    // --accent-charge (bottom = negative = feeding power, to grid or into battery) - same
-    // charge/discharge colors already used elsewhere in this dashboard, just applied as a
-    // gradient here. userSpaceOnUse ties it to the actual pixel Y, so every mark (line, area,
-    // end dot, crosshair dot) reads the correct color for its own position automatically.
+    // power, from grid or from battery) through --accent-charge at the zero-centerline (near-zero
+    // is the calm/desirable state for a regulated system - most points cluster here, so it gets
+    // the "good" hue, not a dead neutral gray) down to --chart-house (bottom = negative = feeding
+    // power, to grid or into battery). Reuses hues already established elsewhere in this
+    // dashboard/app instead of inventing new ones. userSpaceOnUse ties it to the actual pixel Y,
+    // so every mark (line, area, end dot, crosshair dot) reads the correct color for its position.
     let paint = `var(${metric.varColor})`;
     if (metric.signed) {
       const gradId = `graph-grad-${metric.key}`;
@@ -628,17 +629,15 @@
       gradient.setAttribute('x2', '0');
       gradient.setAttribute('y1', String(GRAPH_PAD_Y));
       gradient.setAttribute('y2', String(height - GRAPH_PAD_Y));
-      // Holds the full-strength hue for most of each half and only blends through the neutral
-      // tone in a narrow band around zero - a stop at 50% alone faded the whole line toward gray
-      // well before it got there, reading as washed out rather than "neutral right at zero".
-      // --text-muted (not --border) for that stop: --border is a near-invisible divider color
-      // by design, illegible as a line color exactly where the line crosses it.
+      // Each hue holds solid across its own band and only blends in the gaps between, so real
+      // data (which often clusters near zero) reads as a clear green band, not a fade-through.
       for (const [offset, color] of [
         [0, 'var(--accent-discharge)'],
-        [42, 'var(--accent-discharge)'],
-        [50, 'var(--text-muted)'],
-        [58, 'var(--accent-charge)'],
-        [100, 'var(--accent-charge)']
+        [30, 'var(--accent-discharge)'],
+        [45, 'var(--accent-charge)'],
+        [55, 'var(--accent-charge)'],
+        [70, 'var(--chart-house)'],
+        [100, 'var(--chart-house)']
       ]) {
         const stop = document.createElementNS(SVG_NS, 'stop');
         stop.setAttribute('offset', `${offset}%`);
