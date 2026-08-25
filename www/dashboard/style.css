@@ -16,9 +16,7 @@
   --node-stroke: #d7dbe2;
   --hub-fill: #eef0f3;
   --chart-house: #2a78d6;
-  --chart-grid: #e87ba4;
   --chart-pv: #eda100;
-  --chart-battery: #008300;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -36,9 +34,7 @@
     --node-stroke: #313846;
     --hub-fill: #12151b;
     --chart-house: #3987e5;
-    --chart-grid: #d55181;
     --chart-pv: #c98500;
-    --chart-battery: #008300;
   }
 }
 
@@ -756,6 +752,10 @@ body.fullscreen-active { overflow: hidden; }
   font-size: 0.68rem;
   color: var(--text-muted);
   margin-top: 0.2rem;
+}
+.graph-card-peak {
+  font-weight: 600;
+  color: var(--text);
 }
 
 .graph-tooltip {

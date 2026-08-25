@@ -4,11 +4,13 @@
   const POLL_MS = 2000;
   const GRAPH_POLL_MS = 60000;
 
+  // signed metrics (can go positive/negative) get a symmetric zero-centered scale and a
+  // direction gradient instead of a fixed hue - see drawGraphCard.
   const GRAPH_METRICS = [
     { key: 'houseW', label: 'Hausverbrauch', varColor: '--chart-house', houseOnly: true },
-    { key: 'gridW', label: 'Netz', varColor: '--chart-grid' },
+    { key: 'gridW', label: 'Netz', signed: true },
     { key: 'pvW', label: 'PV', varColor: '--chart-pv', pvOnly: true },
-    { key: 'batteryW', label: 'Batterie', varColor: '--chart-battery' }
+    { key: 'batteryW', label: 'Batterie', signed: true }
   ];
 
   const CONTROLS = [
@@ -581,8 +583,19 @@
     svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
 
     const values = series.map(p => p.v);
-    const min = Math.min(...values, 0);
-    const max = Math.max(...values, 0);
+    // Signed metrics (Netz/Batterie) get a symmetric scale so 0 always lands exactly on the
+    // vertical center, regardless of how skewed the actual min/max are - a fixed reference line
+    // instead of one that drifts card to card. Unsigned metrics (Haus/PV) keep 0 pinned to the
+    // bottom edge, which Math.min(values, 0) already gives for free since they never go negative.
+    let min, max;
+    if (metric.signed) {
+      const maxAbs = Math.max(...values.map(v => Math.abs(v)), 1);
+      min = -maxAbs;
+      max = maxAbs;
+    } else {
+      min = Math.min(...values, 0);
+      max = Math.max(...values, 0);
+    }
     const range = (max - min) || 1;
     const span = (windowEnd - windowStart) || 1;
     const xOf = t => GRAPH_PAD_X + ((t - windowStart) / span) * (width - 2 * GRAPH_PAD_X);
@@ -590,11 +603,43 @@
 
     const coords = series.map(p => [xOf(p.t), yOf(p.v)]);
     const linePath = buildSmoothPath(coords);
-    const baseY = (height - GRAPH_PAD_Y).toFixed(1);
+    // Signed metrics fill between the curve and the zero-centerline (a proper diverging/baseline
+    // area), not down to the card's bottom edge - otherwise the fill would cover the "wrong side"
+    // of zero whenever the data stays entirely positive or entirely negative in this window.
+    const baseY = (metric.signed ? yOf(0) : height - GRAPH_PAD_Y).toFixed(1);
     const areaPath = `${linePath} L${coords[coords.length - 1][0].toFixed(1)},${baseY} L${coords[0][0].toFixed(1)},${baseY} Z`;
     const last = coords[coords.length - 1];
+    const peakPoint = series.reduce((best, p) => (Math.abs(p.v) > Math.abs(best.v) ? p : best), series[0]);
 
-    if (min < 0 && max > 0) {
+    // Direction paint: signed metrics fade from --accent-discharge (top = positive = drawing
+    // power, from grid or from battery) through a neutral gray at the zero-centerline to
+    // --accent-charge (bottom = negative = feeding power, to grid or into battery) - same
+    // charge/discharge colors already used elsewhere in this dashboard, just applied as a
+    // gradient here. userSpaceOnUse ties it to the actual pixel Y, so every mark (line, area,
+    // end dot, crosshair dot) reads the correct color for its own position automatically.
+    let paint = `var(${metric.varColor})`;
+    if (metric.signed) {
+      const gradId = `graph-grad-${metric.key}`;
+      const defs = document.createElementNS(SVG_NS, 'defs');
+      const gradient = document.createElementNS(SVG_NS, 'linearGradient');
+      gradient.setAttribute('id', gradId);
+      gradient.setAttribute('gradientUnits', 'userSpaceOnUse');
+      gradient.setAttribute('x1', '0');
+      gradient.setAttribute('x2', '0');
+      gradient.setAttribute('y1', String(GRAPH_PAD_Y));
+      gradient.setAttribute('y2', String(height - GRAPH_PAD_Y));
+      for (const [offset, color] of [[0, 'var(--accent-discharge)'], [50, 'var(--border)'], [100, 'var(--accent-charge)']]) {
+        const stop = document.createElementNS(SVG_NS, 'stop');
+        stop.setAttribute('offset', `${offset}%`);
+        stop.setAttribute('style', `stop-color:${color}`);
+        gradient.appendChild(stop);
+      }
+      defs.appendChild(gradient);
+      svg.appendChild(defs);
+      paint = `url(#${gradId})`;
+    }
+
+    if (metric.signed) {
       const zeroY = yOf(0).toFixed(1);
       const zeroLine = document.createElementNS(SVG_NS, 'line');
       zeroLine.setAttribute('x1', String(GRAPH_PAD_X));
@@ -608,13 +653,13 @@
     const area = document.createElementNS(SVG_NS, 'path');
     area.setAttribute('d', areaPath);
     area.classList.add('graph-area');
-    area.style.fill = `var(${metric.varColor})`;
+    area.style.fill = paint;
     svg.appendChild(area);
 
     const line = document.createElementNS(SVG_NS, 'path');
     line.setAttribute('d', linePath);
     line.classList.add('graph-line');
-    line.style.stroke = `var(${metric.varColor})`;
+    line.style.stroke = paint;
     svg.appendChild(line);
 
     const endDot = document.createElementNS(SVG_NS, 'circle');
@@ -622,7 +667,7 @@
     endDot.setAttribute('cy', last[1].toFixed(1));
     endDot.setAttribute('r', '4');
     endDot.classList.add('graph-end-dot');
-    endDot.style.fill = `var(${metric.varColor})`;
+    endDot.style.fill = paint;
     svg.appendChild(endDot);
 
     const crosshairLine = document.createElementNS(SVG_NS, 'line');
@@ -636,16 +681,20 @@
     const crosshairDot = document.createElementNS(SVG_NS, 'circle');
     crosshairDot.classList.add('graph-crosshair-dot');
     crosshairDot.setAttribute('r', '4');
-    crosshairDot.style.fill = `var(${metric.varColor})`;
+    crosshairDot.style.fill = paint;
     svg.appendChild(crosshairDot);
 
     const rangeEl = document.createElement('div');
     rangeEl.className = 'graph-card-range';
     const startLabel = document.createElement('span');
     startLabel.textContent = fmtClock(windowStart);
+    const peakLabel = document.createElement('span');
+    peakLabel.className = 'graph-card-peak';
+    peakLabel.textContent = `Peak ${fmtW(peakPoint.v)}`;
     const endLabel = document.createElement('span');
     endLabel.textContent = fmtClock(windowEnd);
     rangeEl.appendChild(startLabel);
+    rangeEl.appendChild(peakLabel);
     rangeEl.appendChild(endLabel);
     card.appendChild(rangeEl);
 
