@@ -151,16 +151,11 @@
     }
   }
 
-  function fmtW(val) {
-    if (val === null || val === undefined || Number.isNaN(val)) return '– W';
-    return `${Math.round(val)} W`;
-  }
-
-  // Same kW-switchover convention fmtWh already uses for Wh/kWh - kept as a separate function
-  // (rather than changing fmtW itself) since the flow diagram's live values intentionally stay
-  // in plain Watts; only the history graphs need the two to line up at a glance.
+  // Same kW-switchover convention fmtWh already uses for Wh/kWh, applied everywhere a power
+  // value is displayed (flow diagram, device cards, history graphs) so they stay consistent
+  // with each other. telemetry.historyJson itself keeps recording raw Watts - display-only.
   function fmtWAuto(val) {
-    if (val === null || val === undefined || Number.isNaN(val)) return '–';
+    if (val === null || val === undefined || Number.isNaN(val)) return '– W';
     return Math.abs(val) >= 1000 ? `${(val / 1000).toFixed(2)} kW` : `${Math.round(val)} W`;
   }
 
@@ -235,7 +230,7 @@
           <span class="dot"></span>${escapeHtml(dev.name || dev.id)}
           <button type="button" class="gear-btn" title="Geräte-Limits" aria-label="Geräte-Limits">⚙</button>
         </div>
-        <div class="metrics"><span>${fmtW(dev.powerW)}</span><span>${soc}%</span></div>
+        <div class="metrics"><span>${fmtWAuto(dev.powerW)}</span><span>${soc}%</span></div>
         <div class="bar-track"><div class="bar-fill ${barClass}" style="width:${socPct}%"></div></div>
       `;
       card.addEventListener('click', () => openDetails(dev.id));
@@ -911,12 +906,12 @@
     const houseW = houseEnabled ? data.house.powerW : null;
     const pvW = data.pv && data.pv.enabled ? data.pv.powerW : null;
 
-    gridPowerValue.textContent = fmtW(gridW);
+    gridPowerValue.textContent = fmtWAuto(gridW);
     // No house datapoint configured: show the node without a value instead of a placeholder like
     // "– W", which reads as broken/missing data rather than "not measured" (issue #22).
-    housePowerValue.textContent = houseEnabled ? fmtW(houseW) : '';
-    pvPowerValue.textContent = fmtW(pvW);
-    batteryPowerValue.textContent = fmtW(batteryW);
+    housePowerValue.textContent = houseEnabled ? fmtWAuto(houseW) : '';
+    pvPowerValue.textContent = fmtWAuto(pvW);
+    batteryPowerValue.textContent = fmtWAuto(batteryW);
     batterySocValue.textContent = soc !== null && soc !== undefined ? `${Math.round(soc)}%` : '–%';
 
     // Live-only metrics, not backed by their own datapoint - derived from the same power values
