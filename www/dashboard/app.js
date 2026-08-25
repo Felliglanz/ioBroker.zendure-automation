@@ -477,7 +477,6 @@
     head.className = 'graph-card-head';
     const labelEl = document.createElement('span');
     labelEl.className = 'graph-card-label';
-    labelEl.style.setProperty('--dot-color', `var(${metric.varColor})`);
     labelEl.textContent = metric.label;
     const valueEl = document.createElement('span');
     valueEl.className = 'graph-card-value';

@@ -694,21 +694,9 @@ body.fullscreen-active { overflow: hidden; }
 }
 
 .graph-card-label {
-  display: flex;
-  align-items: center;
   font-size: 0.8rem;
   font-weight: 600;
   color: var(--text);
-}
-.graph-card-label::before {
-  content: "";
-  display: inline-block;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--dot-color);
-  margin-right: 0.4rem;
-  flex-shrink: 0;
 }
 
 .graph-card-value {
@@ -786,6 +774,7 @@ body.fullscreen-active { overflow: hidden; }
   pointer-events: none;
   z-index: 2;
 }
+.graph-tooltip[hidden] { display: none; }
 .graph-tooltip strong {
   font-size: 0.82rem;
   color: var(--text);
