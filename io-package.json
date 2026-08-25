@@ -2,8 +2,12 @@
   "common": {
     "name": "zendure-automation",
     "title": "Zendure Automation",
-    "version": "1.1.1",
+    "version": "1.1.2",
     "news": {
+      "1.1.2": {
+        "en": "Dashboard: added rolling power-history graphs (Verlauf, below the flow diagram) - Hausverbrauch/Netz/PV/Batterie over the last 1h or 2h, sampled every 5min (averaged over each interval, not just a snapshot) and cleared nightly like the rest of telemetry.*. Netz/Batterie use a zero-centered scale with a green/amber gradient (feeding power = green, drawing power = amber) and mark each window's peak. All power values across the dashboard now switch to kW above 1000W for consistency. The flow diagram and the graph panel each got a fullscreen toggle, and the control panel is now collapsed by default behind a single row. Fixed a contrast issue where the hamburger menu blended into the panel behind it.",
+        "de": "Dashboard: neue Verlaufs-Graphen unter dem Flussdiagramm - Hausverbrauch/Netz/PV/Batterie über die letzte 1h oder 2h, alle 5 Minuten erfasst (gemittelt über das Intervall, kein Momentanwert) und nachts wie der Rest von telemetry.* gelöscht. Netz/Batterie nutzen eine um 0 zentrierte Skala mit Grün/Amber-Verlauf (Einspeisung/Laden = Grün, Bezug/Entladen = Amber) und markieren den Spitzenwert im gewählten Fenster. Alle Leistungswerte im Dashboard schalten jetzt einheitlich ab 1000W auf kW um. Flussdiagramm und Verlaufs-Panel haben je einen Vollbild-Button, die Steuerung ist standardmäßig zu einer Zeile eingeklappt. Einen Kontrastfehler behoben, bei dem das Hamburger-Menü kaum vom dahinterliegenden Panel zu unterscheiden war."
+      },
       "1.1.1": {
         "en": "Fixed a regulatorGain (1.0.6) side effect where hysteresisW silently inflated to hysteresisW/gain, sometimes stalling the regulator for minutes (issue #30). Fixed a RelayProtection regression where a frozen block could go undetected by SafetyLimiter. Fixed a full-battery charge retry loop: charging now stays blocked for a hysteresis margin (default 4%, min. 2%) below maxBatterySoc instead of re-arming on a single-percent SOC dip and getting hard-rejected by the device (issue #32). Also fixed false setpoint-validation failures in the last 5% before maxBatterySoc, where the device's own charge-current tapering was mistaken for a communication failure.",
         "de": "Einen Nebeneffekt von regulatorGain (1.0.6) behoben, bei dem sich hysteresisW unbemerkt auf hysteresisW/gain aufblähte und den Regler teils minutenlang blockierte (Issue #30). Eine RelayProtection-Regression behoben, bei der eine eingefrorene Sperre von SafetyLimiter unbemerkt bleiben konnte. Eine Ladefreigabe-Endlosschleife bei vollem Akku behoben: Laden bleibt jetzt bis zu einer Hysterese-Marge (Standard 4%, min. 2%) unter maxBatterySoc gesperrt, statt bei einem SOC-Rücksprung um nur 1% erneut freigegeben und vom Gerät hart abgelehnt zu werden (Issue #32). Außerdem fälschliche Validierungsfehler in den letzten 5% vor maxBatterySoc behoben, bei denen die geräteeigene Ladestrom-Drosselung als Kommunikationsfehler fehlinterpretiert wurde."
@@ -671,6 +675,19 @@
         "read": true,
         "write": false,
         "def": 0
+      },
+      "native": {}
+    },
+    {
+      "_id": "telemetry.historyJson",
+      "type": "state",
+      "common": {
+        "name": "Power history today (JSON, ~5min samples: house/grid/pv/battery)",
+        "type": "string",
+        "role": "json",
+        "read": true,
+        "write": false,
+        "def": "[]"
       },
       "native": {}
     }

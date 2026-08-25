@@ -2,6 +2,21 @@
   'use strict';
 
   const POLL_MS = 2000;
+  const GRAPH_POLL_MS = 60000;
+
+  // Signed metrics (can go positive/negative) get a symmetric zero-centered scale and a
+  // direction gradient instead of a fixed hue - see drawGraphCard. Both reuse the flow diagram's
+  // existing green/amber (--accent-charge/--accent-discharge), but positiveColor/negativeColor
+  // are a deliberate cost framing, not a copy of the flow diagram's own fwd/rev mapping: drawing
+  // power (grid import, battery discharge) is amber, feeding power (grid export, battery charge)
+  // is green - happens to line up with the flow diagram for Batterie, but is the opposite of it
+  // for Netz (there, "into the hub" is import, which the flow diagram colors green).
+  const GRAPH_METRICS = [
+    { key: 'houseW', label: 'Hausverbrauch', varColor: '--chart-house', houseOnly: true },
+    { key: 'gridW', label: 'Netz', signed: true, positiveColor: '--accent-discharge', negativeColor: '--accent-charge' },
+    { key: 'pvW', label: 'PV', varColor: '--chart-pv', pvOnly: true },
+    { key: 'batteryW', label: 'Batterie', signed: true, positiveColor: '--accent-discharge', negativeColor: '--accent-charge' }
+  ];
 
   const CONTROLS = [
     { key: 'enabled', label: 'Automatik aktiv', type: 'boolean' },
@@ -55,6 +70,15 @@
   const telemetryOverlay = document.getElementById('telemetryOverlay');
   const telemetryBody = document.getElementById('telemetryBody');
   const telemetryClose = document.getElementById('telemetryClose');
+  const flowPanel = document.getElementById('flowPanel');
+  const flowFullscreenBtn = document.getElementById('flowFullscreenBtn');
+  const graphPanel = document.getElementById('graphPanel');
+  const graphFullscreenBtn = document.getElementById('graphFullscreenBtn');
+  const graphGrid = document.getElementById('graphGrid');
+  const graphRange60 = document.getElementById('graphRange60');
+  const graphRange120 = document.getElementById('graphRange120');
+  const controlToggle = document.getElementById('controlToggle');
+  const controlBody = document.getElementById('controlBody');
 
   // control.* keys whose global value is only a fallback in multi-device Waterfill mode - the
   // per-device limits from the admin table are what's actually effective there (see issue #22).
@@ -127,9 +151,12 @@
     }
   }
 
-  function fmtW(val) {
+  // Same kW-switchover convention fmtWh already uses for Wh/kWh, applied everywhere a power
+  // value is displayed (flow diagram, device cards, history graphs) so they stay consistent
+  // with each other. telemetry.historyJson itself keeps recording raw Watts - display-only.
+  function fmtWAuto(val) {
     if (val === null || val === undefined || Number.isNaN(val)) return '– W';
-    return `${Math.round(val)} W`;
+    return Math.abs(val) >= 1000 ? `${(val / 1000).toFixed(2)} kW` : `${Math.round(val)} W`;
   }
 
   function fmtWh(val) {
@@ -203,7 +230,7 @@
           <span class="dot"></span>${escapeHtml(dev.name || dev.id)}
           <button type="button" class="gear-btn" title="Geräte-Limits" aria-label="Geräte-Limits">⚙</button>
         </div>
-        <div class="metrics"><span>${fmtW(dev.powerW)}</span><span>${soc}%</span></div>
+        <div class="metrics"><span>${fmtWAuto(dev.powerW)}</span><span>${soc}%</span></div>
         <div class="bar-track"><div class="bar-fill ${barClass}" style="width:${socPct}%"></div></div>
       `;
       card.addEventListener('click', () => openDetails(dev.id));
@@ -400,6 +427,459 @@
     telemetryOverlay.hidden = true;
   }
 
+  function setControlExpanded(expanded) {
+    controlBody.hidden = !expanded;
+    controlToggle.setAttribute('aria-expanded', String(expanded));
+  }
+
+  const FULLSCREEN_PANELS = [
+    { panel: flowPanel, btn: flowFullscreenBtn },
+    { panel: graphPanel, btn: graphFullscreenBtn }
+  ];
+
+  function exitFullscreen(entry) {
+    if (!entry.panel.classList.contains('is-fullscreen')) return;
+    entry.panel.classList.remove('is-fullscreen');
+    entry.btn.textContent = '⛶';
+    entry.btn.setAttribute('aria-label', 'Vollbild');
+  }
+
+  function exitAllFullscreen() {
+    for (const entry of FULLSCREEN_PANELS) exitFullscreen(entry);
+    document.body.classList.remove('fullscreen-active');
+  }
+
+  function toggleFullscreen(entry) {
+    const goingFullscreen = !entry.panel.classList.contains('is-fullscreen');
+    exitAllFullscreen();
+    if (goingFullscreen) {
+      entry.panel.classList.add('is-fullscreen');
+      entry.btn.textContent = '✕';
+      entry.btn.setAttribute('aria-label', 'Vollbild schließen');
+      document.body.classList.add('fullscreen-active');
+    }
+    // Card size changes with fullscreen either way (graph-grid's own column count reflows),
+    // so the charts need to re-measure and redraw regardless of which panel was toggled.
+    renderGraphs();
+  }
+
+  // Small-multiples line/area chart, hand-rolled SVG (no charting library) to match the
+  // existing flow diagram's own approach. windowStart/windowEnd position points by actual
+  // time, not index, so a missed sample doesn't visually compress the gap.
+  //
+  // The SVG's viewBox is set to the card's *actual measured pixel size* (not a fixed virtual
+  // coordinate space stretched via preserveAspectRatio="none") - a non-uniform stretch is what
+  // was distorting the end/crosshair dots into ellipses whenever a card's aspect ratio differed
+  // from the fixed box (mobile vs. desktop vs. fullscreen all size cards differently). Building
+  // the shell first and measuring it once it's laid out avoids that entirely: the coordinate
+  // space always equals the rendered pixels 1:1, so a circle is always a circle.
+  const GRAPH_PAD_Y = 14;
+  const GRAPH_PAD_X = 4;
+  const GRAPH_PLOT_LEFT = 44; // reserved gutter for the y-axis min/max labels (incl. "-1.24 kW"), so they never sit under the curve
+  const GRAPH_TICK_MS = 10 * 60 * 1000; // minor x-axis tick every 10min
+  const GRAPH_MAJOR_TICK_MS = 30 * 60 * 1000; // major (taller) tick every 30min
+  const SVG_NS = 'http://www.w3.org/2000/svg';
+
+  let graphHistory = { pvEnabled: false, houseEnabled: false, points: [] };
+  let graphWindowMinutes = 60;
+
+  function fmtClock(ms) {
+    return new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  }
+
+  /**
+   * Monotone cubic Hermite tangents (Fritsch-Carlson), i.e. the same curve family as D3's
+   * curveMonotoneX: smooth, but - unlike a plain Catmull-Rom spline - never overshoots past a
+   * point's neighbors. That matters here: an overshooting spline would draw a small fake bump
+   * between two real samples, which for a power graph reads as data that didn't happen.
+   */
+  function monotoneTangents(xs, ys) {
+    const n = xs.length;
+    const d = new Array(n - 1);
+    for (let i = 0; i < n - 1; i++) {
+      const dx = xs[i + 1] - xs[i];
+      d[i] = dx !== 0 ? (ys[i + 1] - ys[i]) / dx : 0;
+    }
+
+    const m = new Array(n);
+    m[0] = d[0];
+    m[n - 1] = d[n - 2];
+    for (let i = 1; i < n - 1; i++) {
+      m[i] = (d[i - 1] === 0 || d[i] === 0 || (d[i - 1] < 0) !== (d[i] < 0)) ? 0 : (d[i - 1] + d[i]) / 2;
+    }
+
+    for (let i = 0; i < n - 1; i++) {
+      if (d[i] === 0) {
+        m[i] = 0;
+        m[i + 1] = 0;
+        continue;
+      }
+      const a = m[i] / d[i];
+      const b = m[i + 1] / d[i];
+      const s = a * a + b * b;
+      if (s > 9) {
+        const t = 3 / Math.sqrt(s);
+        m[i] = t * a * d[i];
+        m[i + 1] = t * b * d[i];
+      }
+    }
+    return m;
+  }
+
+  function buildSmoothPath(coords) {
+    const n = coords.length;
+    if (n === 2) {
+      return `M${coords[0][0].toFixed(1)},${coords[0][1].toFixed(1)} L${coords[1][0].toFixed(1)},${coords[1][1].toFixed(1)}`;
+    }
+
+    const xs = coords.map(c => c[0]);
+    const ys = coords.map(c => c[1]);
+    const m = monotoneTangents(xs, ys);
+
+    let d = `M${xs[0].toFixed(1)},${ys[0].toFixed(1)}`;
+    for (let i = 0; i < n - 1; i++) {
+      const dx = xs[i + 1] - xs[i];
+      const cp1x = xs[i] + dx / 3;
+      const cp1y = ys[i] + (m[i] * dx) / 3;
+      const cp2x = xs[i + 1] - dx / 3;
+      const cp2y = ys[i + 1] - (m[i + 1] * dx) / 3;
+      d += ` C${cp1x.toFixed(1)},${cp1y.toFixed(1)} ${cp2x.toFixed(1)},${cp2y.toFixed(1)} ${xs[i + 1].toFixed(1)},${ys[i + 1].toFixed(1)}`;
+    }
+    return d;
+  }
+
+  /** Card shell (label, value, empty svg placeholder sized purely by CSS) - no drawing yet,
+   *  so it can be measured after layout. Returns svg: null for the "collecting data" case. */
+  function buildGraphCardShell(metric, windowStart) {
+    const card = document.createElement('div');
+    card.className = 'graph-card';
+
+    const series = graphHistory.points
+      .filter(p => typeof p[metric.key] === 'number' && Number.isFinite(p[metric.key]) && p.t >= windowStart)
+      .map(p => ({ t: p.t, v: p[metric.key] }));
+
+    const head = document.createElement('div');
+    head.className = 'graph-card-head';
+    const labelEl = document.createElement('span');
+    labelEl.className = 'graph-card-label';
+    labelEl.textContent = metric.label;
+    const valueEl = document.createElement('span');
+    valueEl.className = 'graph-card-value';
+    valueEl.textContent = series.length ? fmtWAuto(series[series.length - 1].v) : '–';
+    head.appendChild(labelEl);
+    head.appendChild(valueEl);
+    card.appendChild(head);
+
+    if (series.length < 2) {
+      const empty = document.createElement('div');
+      empty.className = 'graph-card-empty';
+      empty.textContent = 'Sammle Daten…';
+      card.appendChild(empty);
+      return { card, svg: null, series: null };
+    }
+
+    const svg = document.createElementNS(SVG_NS, 'svg');
+    svg.classList.add('graph-svg');
+    card.appendChild(svg);
+
+    return { card, svg, series };
+  }
+
+  /** Measures the now-laid-out svg and draws into it - see the sizing note above buildSmoothPath. */
+  function drawGraphCard({ card, svg, series, metric, windowStart, windowEnd }) {
+    const width = svg.clientWidth;
+    const height = svg.clientHeight;
+    if (width === 0 || height === 0) return;
+
+    svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+
+    const values = series.map(p => p.v);
+    // Signed metrics (Netz/Batterie) get a symmetric scale so 0 always lands exactly on the
+    // vertical center, regardless of how skewed the actual min/max are - a fixed reference line
+    // instead of one that drifts card to card. Unsigned metrics (Haus/PV) keep 0 pinned to the
+    // bottom edge, which Math.min(values, 0) already gives for free since they never go negative.
+    let min, max;
+    if (metric.signed) {
+      const maxAbs = Math.max(...values.map(v => Math.abs(v)), 1);
+      min = -maxAbs;
+      max = maxAbs;
+    } else {
+      min = Math.min(...values, 0);
+      max = Math.max(...values, 0);
+    }
+    const range = (max - min) || 1;
+    const span = (windowEnd - windowStart) || 1;
+    const xOf = t => GRAPH_PLOT_LEFT + ((t - windowStart) / span) * (width - GRAPH_PLOT_LEFT - GRAPH_PAD_X);
+    const yOf = v => GRAPH_PAD_Y + (height - 2 * GRAPH_PAD_Y) * (1 - (v - min) / range);
+
+    const coords = series.map(p => [xOf(p.t), yOf(p.v)]);
+    const linePath = buildSmoothPath(coords);
+    // Signed metrics fill between the curve and the zero-centerline (a proper diverging/baseline
+    // area), not down to the card's bottom edge - otherwise the fill would cover the "wrong side"
+    // of zero whenever the data stays entirely positive or entirely negative in this window.
+    const baseY = (metric.signed ? yOf(0) : height - GRAPH_PAD_Y).toFixed(1);
+    const areaPath = `${linePath} L${coords[coords.length - 1][0].toFixed(1)},${baseY} L${coords[0][0].toFixed(1)},${baseY} Z`;
+    const last = coords[coords.length - 1];
+    const peakPoint = series.reduce((best, p) => (Math.abs(p.v) > Math.abs(best.v) ? p : best), series[0]);
+
+    // Direction paint: signed metrics fade from metric.positiveColor (top) to metric.negativeColor
+    // (bottom) - see the cost-framing note above GRAPH_METRICS. userSpaceOnUse ties it to the
+    // actual pixel Y, so every mark (line, area, end dot, crosshair dot) reads the correct color
+    // for its own position automatically.
+    let paint = `var(${metric.varColor})`;
+    if (metric.signed) {
+      const gradId = `graph-grad-${metric.key}`;
+      const defs = document.createElementNS(SVG_NS, 'defs');
+      const gradient = document.createElementNS(SVG_NS, 'linearGradient');
+      gradient.setAttribute('id', gradId);
+      gradient.setAttribute('gradientUnits', 'userSpaceOnUse');
+      gradient.setAttribute('x1', '0');
+      gradient.setAttribute('x2', '0');
+      gradient.setAttribute('y1', String(GRAPH_PAD_Y));
+      gradient.setAttribute('y2', String(height - GRAPH_PAD_Y));
+      // Holds each hue solid across its own band and only blends in a narrow strip around zero,
+      // so real data (which often clusters near zero) still reads as a clear color, not a fade.
+      const topColor = `var(${metric.positiveColor})`;
+      const bottomColor = `var(${metric.negativeColor})`;
+      for (const [offset, color] of [
+        [0, topColor],
+        [38, topColor],
+        [62, bottomColor],
+        [100, bottomColor]
+      ]) {
+        const stop = document.createElementNS(SVG_NS, 'stop');
+        stop.setAttribute('offset', `${offset}%`);
+        stop.setAttribute('style', `stop-color:${color}`);
+        gradient.appendChild(stop);
+      }
+      defs.appendChild(gradient);
+      svg.appendChild(defs);
+      paint = `url(#${gradId})`;
+    }
+
+    if (metric.signed) {
+      const zeroY = yOf(0).toFixed(1);
+      const zeroLine = document.createElementNS(SVG_NS, 'line');
+      zeroLine.setAttribute('x1', String(GRAPH_PLOT_LEFT));
+      zeroLine.setAttribute('x2', String(width - GRAPH_PAD_X));
+      zeroLine.setAttribute('y1', zeroY);
+      zeroLine.setAttribute('y2', zeroY);
+      zeroLine.classList.add('graph-zero-line');
+      svg.appendChild(zeroLine);
+    }
+
+    // Y-axis: max always (top-left), min too for signed metrics (0 is already implied by the
+    // baseline for Haus/PV, so skipping it there avoids a redundant "0 W" in a very small card).
+    const maxLabel = document.createElementNS(SVG_NS, 'text');
+    maxLabel.classList.add('graph-axis-label');
+    maxLabel.setAttribute('x', String(GRAPH_PLOT_LEFT - 6));
+    maxLabel.setAttribute('y', String(GRAPH_PAD_Y + 3));
+    maxLabel.setAttribute('text-anchor', 'end');
+    maxLabel.textContent = fmtWAuto(max);
+    svg.appendChild(maxLabel);
+
+    if (metric.signed) {
+      const minLabel = document.createElementNS(SVG_NS, 'text');
+      minLabel.classList.add('graph-axis-label');
+      minLabel.setAttribute('x', String(GRAPH_PLOT_LEFT - 6));
+      minLabel.setAttribute('y', String(height - GRAPH_PAD_Y));
+      minLabel.setAttribute('text-anchor', 'end');
+      minLabel.textContent = fmtWAuto(min);
+      svg.appendChild(minLabel);
+    }
+
+    // X-axis: a short tick every 10min, a taller one every 30min, between the start/end times
+    // already shown as text below - dynamic to whichever window (1h/2h) is selected. Aligned to
+    // real clock time (not just "every N samples"), so a missed sample doesn't shift the rhythm.
+    const tickBaseY = height - GRAPH_PAD_Y;
+    const firstTick = Math.ceil(windowStart / GRAPH_TICK_MS) * GRAPH_TICK_MS;
+    for (let t = firstTick; t < windowEnd; t += GRAPH_TICK_MS) {
+      const isMajor = t % GRAPH_MAJOR_TICK_MS === 0;
+      const tick = document.createElementNS(SVG_NS, 'line');
+      const tx = xOf(t).toFixed(1);
+      tick.setAttribute('x1', tx);
+      tick.setAttribute('x2', tx);
+      tick.setAttribute('y1', String(tickBaseY));
+      tick.setAttribute('y2', String(tickBaseY + (isMajor ? 7 : 3.5)));
+      tick.classList.add('graph-tick');
+      if (isMajor) tick.classList.add('graph-tick-major');
+      svg.appendChild(tick);
+    }
+
+    const area = document.createElementNS(SVG_NS, 'path');
+    area.setAttribute('d', areaPath);
+    area.classList.add('graph-area');
+    area.style.fill = paint;
+    svg.appendChild(area);
+
+    const line = document.createElementNS(SVG_NS, 'path');
+    line.setAttribute('d', linePath);
+    line.classList.add('graph-line');
+    line.style.stroke = paint;
+    svg.appendChild(line);
+
+    const endDot = document.createElementNS(SVG_NS, 'circle');
+    endDot.setAttribute('cx', last[0].toFixed(1));
+    endDot.setAttribute('cy', last[1].toFixed(1));
+    endDot.setAttribute('r', '4');
+    endDot.classList.add('graph-end-dot');
+    endDot.style.fill = paint;
+    svg.appendChild(endDot);
+
+    const crosshairLine = document.createElementNS(SVG_NS, 'line');
+    crosshairLine.classList.add('graph-crosshair');
+    crosshairLine.setAttribute('y1', String(GRAPH_PAD_Y));
+    crosshairLine.setAttribute('y2', String(height - GRAPH_PAD_Y));
+    crosshairLine.setAttribute('x1', last[0].toFixed(1));
+    crosshairLine.setAttribute('x2', last[0].toFixed(1));
+    svg.appendChild(crosshairLine);
+
+    const crosshairDot = document.createElementNS(SVG_NS, 'circle');
+    crosshairDot.classList.add('graph-crosshair-dot');
+    crosshairDot.setAttribute('r', '4');
+    crosshairDot.style.fill = paint;
+    svg.appendChild(crosshairDot);
+
+    // Peak annotation: skipped when the peak *is* the current/last point - the end dot and the
+    // card's own header value already mark that one, a second label right next to it would just
+    // repeat it. Flips above/below the point (never both) based on which half of the plot it's
+    // in, and flips its text-anchor near either edge, so it can never run off the card or land on
+    // top of the y-axis labels in the reserved left gutter.
+    const peakIdx = series.indexOf(peakPoint);
+    if (peakIdx !== series.length - 1) {
+      const [px, py] = coords[peakIdx];
+      const labelBelow = py < (GRAPH_PAD_Y + height - GRAPH_PAD_Y) / 2;
+      // Extra clearance on the "below" side specifically: that's also where the y-axis max
+      // label lives, and the peak is very often close to the max (top of the plot).
+      const labelY = labelBelow ? py + 21 : py - 8;
+      let anchor = 'middle';
+      let labelX = px;
+      if (px < GRAPH_PLOT_LEFT + 26) {
+        anchor = 'start';
+        labelX = GRAPH_PLOT_LEFT;
+      } else if (px > width - GRAPH_PAD_X - 26) {
+        anchor = 'end';
+        labelX = width - GRAPH_PAD_X;
+      }
+
+      const peakDot = document.createElementNS(SVG_NS, 'circle');
+      peakDot.setAttribute('cx', px.toFixed(1));
+      peakDot.setAttribute('cy', py.toFixed(1));
+      peakDot.setAttribute('r', '3');
+      peakDot.classList.add('graph-peak-dot');
+      peakDot.style.fill = paint;
+      svg.appendChild(peakDot);
+
+      const peakLabel = document.createElementNS(SVG_NS, 'text');
+      peakLabel.classList.add('graph-peak-label');
+      peakLabel.setAttribute('x', labelX.toFixed(1));
+      peakLabel.setAttribute('y', labelY.toFixed(1));
+      peakLabel.setAttribute('text-anchor', anchor);
+      peakLabel.textContent = `Peak ${fmtWAuto(peakPoint.v)}`;
+      svg.appendChild(peakLabel);
+    }
+
+    const rangeEl = document.createElement('div');
+    rangeEl.className = 'graph-card-range';
+    const startLabel = document.createElement('span');
+    startLabel.textContent = fmtClock(windowStart);
+    const endLabel = document.createElement('span');
+    endLabel.textContent = fmtClock(windowEnd);
+    rangeEl.appendChild(startLabel);
+    rangeEl.appendChild(endLabel);
+    card.appendChild(rangeEl);
+
+    const tooltip = document.createElement('div');
+    tooltip.className = 'graph-tooltip';
+    tooltip.hidden = true;
+    card.appendChild(tooltip);
+
+    function pointerMove(evt) {
+      const rect = svg.getBoundingClientRect();
+      if (rect.width === 0) return;
+      const px = ((evt.clientX - rect.left) / rect.width) * width;
+      let nearestIdx = 0;
+      let bestDist = Infinity;
+      for (let i = 0; i < coords.length; i++) {
+        const d = Math.abs(coords[i][0] - px);
+        if (d < bestDist) { bestDist = d; nearestIdx = i; }
+      }
+      const [nx, ny] = coords[nearestIdx];
+      const point = series[nearestIdx];
+
+      crosshairLine.setAttribute('x1', nx.toFixed(1));
+      crosshairLine.setAttribute('x2', nx.toFixed(1));
+      crosshairDot.setAttribute('cx', nx.toFixed(1));
+      crosshairDot.setAttribute('cy', ny.toFixed(1));
+      crosshairLine.classList.add('active');
+      crosshairDot.classList.add('active');
+
+      tooltip.hidden = false;
+      tooltip.innerHTML = '';
+      const valueEl2 = document.createElement('strong');
+      valueEl2.textContent = fmtWAuto(point.v);
+      const timeEl = document.createElement('span');
+      timeEl.textContent = fmtClock(point.t);
+      tooltip.appendChild(valueEl2);
+      tooltip.appendChild(timeEl);
+
+      const leftPct = (nx / width) * 100;
+      tooltip.style.left = `${Math.min(80, Math.max(2, leftPct))}%`;
+    }
+
+    function pointerLeave() {
+      crosshairLine.classList.remove('active');
+      crosshairDot.classList.remove('active');
+      tooltip.hidden = true;
+    }
+
+    svg.addEventListener('pointermove', pointerMove);
+    svg.addEventListener('pointerleave', pointerLeave);
+  }
+
+  function renderGraphs() {
+    const metrics = GRAPH_METRICS.filter(
+      m => (!m.pvOnly || graphHistory.pvEnabled) && (!m.houseOnly || graphHistory.houseEnabled)
+    );
+    const windowEnd = Date.now();
+    const windowStart = windowEnd - graphWindowMinutes * 60000;
+
+    graphGrid.innerHTML = '';
+    const shells = metrics.map(metric => ({ metric, ...buildGraphCardShell(metric, windowStart) }));
+    for (const shell of shells) graphGrid.appendChild(shell.card);
+
+    // Drawing needs each svg's real laid-out size, which only exists once the shells above are
+    // in the document - hence the separate pass instead of measuring while still detached.
+    for (const shell of shells) {
+      if (shell.svg) drawGraphCard({ ...shell, windowStart, windowEnd });
+    }
+  }
+
+  let graphResizeTimer = null;
+  function scheduleGraphResize() {
+    clearTimeout(graphResizeTimer);
+    graphResizeTimer = setTimeout(renderGraphs, 150);
+  }
+  window.addEventListener('resize', scheduleGraphResize);
+
+  function setGraphWindow(minutes) {
+    graphWindowMinutes = minutes;
+    graphRange60.setAttribute('aria-pressed', String(minutes === 60));
+    graphRange120.setAttribute('aria-pressed', String(minutes === 120));
+    renderGraphs();
+  }
+
+  async function pollGraphHistory() {
+    try {
+      const res = await fetch('/api/telemetry/history', { cache: 'no-store' });
+      if (!res.ok) return;
+      graphHistory = await res.json();
+      renderGraphs();
+    } catch {
+      // Transient fetch failure: keep showing the last known graphs rather than blanking them.
+    }
+  }
+
   async function poll() {
     try {
       const res = await fetch('/api/status', { cache: 'no-store' });
@@ -426,12 +906,12 @@
     const houseW = houseEnabled ? data.house.powerW : null;
     const pvW = data.pv && data.pv.enabled ? data.pv.powerW : null;
 
-    gridPowerValue.textContent = fmtW(gridW);
+    gridPowerValue.textContent = fmtWAuto(gridW);
     // No house datapoint configured: show the node without a value instead of a placeholder like
     // "– W", which reads as broken/missing data rather than "not measured" (issue #22).
-    housePowerValue.textContent = houseEnabled ? fmtW(houseW) : '';
-    pvPowerValue.textContent = fmtW(pvW);
-    batteryPowerValue.textContent = fmtW(batteryW);
+    housePowerValue.textContent = houseEnabled ? fmtWAuto(houseW) : '';
+    pvPowerValue.textContent = fmtWAuto(pvW);
+    batteryPowerValue.textContent = fmtWAuto(batteryW);
     batterySocValue.textContent = soc !== null && soc !== undefined ? `${Math.round(soc)}%` : '–%';
 
     // Live-only metrics, not backed by their own datapoint - derived from the same power values
@@ -510,11 +990,19 @@
   telemetryClose.addEventListener('click', closeTelemetry);
   telemetryOverlay.addEventListener('click', e => { if (e.target === telemetryOverlay) closeTelemetry(); });
 
+  controlToggle.addEventListener('click', () => setControlExpanded(controlBody.hidden));
+
+  flowFullscreenBtn.addEventListener('click', () => toggleFullscreen(FULLSCREEN_PANELS[0]));
+  graphFullscreenBtn.addEventListener('click', () => toggleFullscreen(FULLSCREEN_PANELS[1]));
+  graphRange60.addEventListener('click', () => setGraphWindow(60));
+  graphRange120.addEventListener('click', () => setGraphWindow(120));
+
   document.addEventListener('keydown', e => {
     if (e.key !== 'Escape') return;
     closeDetails();
     closeMenu();
     closeTelemetry();
+    exitAllFullscreen();
   });
 
   if ('serviceWorker' in navigator) {
@@ -522,5 +1010,8 @@
   }
 
   buildControlPanel();
+  setControlExpanded(false);
   poll();
+  pollGraphHistory();
+  setInterval(pollGraphHistory, GRAPH_POLL_MS);
 })();

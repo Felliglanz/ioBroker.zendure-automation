@@ -14,6 +14,7 @@ const SingleDeviceController = require('./lib/SingleDeviceController');
 const MultiDeviceController = require('./lib/MultiDeviceController');
 const DashboardServer = require('./lib/DashboardServer');
 const Telemetry = require('./lib/Telemetry');
+const HousePower = require('./lib/HousePower');
 
 /**
  * Battery Automation Engine
@@ -507,10 +508,13 @@ class ZendureAutomation extends utils.Adapter {
                 pvPowerW = pvState ? Number(pvState.val) : null;
             }
 
+            const houseW = await HousePower.readHousePowerW(this);
+
             await this.telemetry.recordCycle({
                 gridPowerW: gridPowerState ? Number(gridPowerState.val) : null,
                 batteryPowerW: batteryPowerState ? Number(batteryPowerState.val) : null,
                 pvPowerW,
+                houseW,
                 emergencyActive: !!(emergencyReasonState && emergencyReasonState.val)
             });
         } catch (err) {
