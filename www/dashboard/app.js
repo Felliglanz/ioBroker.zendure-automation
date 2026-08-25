@@ -4,13 +4,18 @@
   const POLL_MS = 2000;
   const GRAPH_POLL_MS = 60000;
 
-  // signed metrics (can go positive/negative) get a symmetric zero-centered scale and a
-  // direction gradient instead of a fixed hue - see drawGraphCard.
+  // Signed metrics (can go positive/negative) get a symmetric zero-centered scale and a
+  // direction gradient instead of a fixed hue - see drawGraphCard. Both reuse the flow diagram's
+  // existing green/amber (--accent-charge/--accent-discharge), but positiveColor/negativeColor
+  // are a deliberate cost framing, not a copy of the flow diagram's own fwd/rev mapping: drawing
+  // power (grid import, battery discharge) is amber, feeding power (grid export, battery charge)
+  // is green - happens to line up with the flow diagram for Batterie, but is the opposite of it
+  // for Netz (there, "into the hub" is import, which the flow diagram colors green).
   const GRAPH_METRICS = [
     { key: 'houseW', label: 'Hausverbrauch', varColor: '--chart-house', houseOnly: true },
-    { key: 'gridW', label: 'Netz', signed: true },
+    { key: 'gridW', label: 'Netz', signed: true, positiveColor: '--accent-discharge', negativeColor: '--accent-charge' },
     { key: 'pvW', label: 'PV', varColor: '--chart-pv', pvOnly: true },
-    { key: 'batteryW', label: 'Batterie', signed: true }
+    { key: 'batteryW', label: 'Batterie', signed: true, positiveColor: '--accent-discharge', negativeColor: '--accent-charge' }
   ];
 
   const CONTROLS = [
@@ -611,13 +616,10 @@
     const last = coords[coords.length - 1];
     const peakPoint = series.reduce((best, p) => (Math.abs(p.v) > Math.abs(best.v) ? p : best), series[0]);
 
-    // Direction paint: signed metrics fade from --accent-discharge (top = positive = drawing
-    // power, from grid or from battery) through --accent-charge at the zero-centerline (near-zero
-    // is the calm/desirable state for a regulated system - most points cluster here, so it gets
-    // the "good" hue, not a dead neutral gray) down to --chart-house (bottom = negative = feeding
-    // power, to grid or into battery). Reuses hues already established elsewhere in this
-    // dashboard/app instead of inventing new ones. userSpaceOnUse ties it to the actual pixel Y,
-    // so every mark (line, area, end dot, crosshair dot) reads the correct color for its position.
+    // Direction paint: signed metrics fade from metric.positiveColor (top) to metric.negativeColor
+    // (bottom) - see the cost-framing note above GRAPH_METRICS. userSpaceOnUse ties it to the
+    // actual pixel Y, so every mark (line, area, end dot, crosshair dot) reads the correct color
+    // for its own position automatically.
     let paint = `var(${metric.varColor})`;
     if (metric.signed) {
       const gradId = `graph-grad-${metric.key}`;
@@ -629,15 +631,15 @@
       gradient.setAttribute('x2', '0');
       gradient.setAttribute('y1', String(GRAPH_PAD_Y));
       gradient.setAttribute('y2', String(height - GRAPH_PAD_Y));
-      // Each hue holds solid across its own band and only blends in the gaps between, so real
-      // data (which often clusters near zero) reads as a clear green band, not a fade-through.
+      // Holds each hue solid across its own band and only blends in a narrow strip around zero,
+      // so real data (which often clusters near zero) still reads as a clear color, not a fade.
+      const topColor = `var(${metric.positiveColor})`;
+      const bottomColor = `var(${metric.negativeColor})`;
       for (const [offset, color] of [
-        [0, 'var(--accent-discharge)'],
-        [30, 'var(--accent-discharge)'],
-        [45, 'var(--accent-charge)'],
-        [55, 'var(--accent-charge)'],
-        [70, 'var(--chart-house)'],
-        [100, 'var(--chart-house)']
+        [0, topColor],
+        [38, topColor],
+        [62, bottomColor],
+        [100, bottomColor]
       ]) {
         const stop = document.createElementNS(SVG_NS, 'stop');
         stop.setAttribute('offset', `${offset}%`);
