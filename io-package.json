@@ -673,6 +673,19 @@
         "def": 0
       },
       "native": {}
+    },
+    {
+      "_id": "telemetry.historyJson",
+      "type": "state",
+      "common": {
+        "name": "Power history today (JSON, ~5min samples: house/grid/pv/battery)",
+        "type": "string",
+        "role": "json",
+        "read": true,
+        "write": false,
+        "def": "[]"
+      },
+      "native": {}
     }
   ]
 }

@@ -2,6 +2,14 @@
   'use strict';
 
   const POLL_MS = 2000;
+  const GRAPH_POLL_MS = 60000;
+
+  const GRAPH_METRICS = [
+    { key: 'houseW', label: 'Hausverbrauch', varColor: '--chart-house', houseOnly: true },
+    { key: 'gridW', label: 'Netz', varColor: '--chart-grid' },
+    { key: 'pvW', label: 'PV', varColor: '--chart-pv', pvOnly: true },
+    { key: 'batteryW', label: 'Batterie', varColor: '--chart-battery' }
+  ];
 
   const CONTROLS = [
     { key: 'enabled', label: 'Automatik aktiv', type: 'boolean' },
@@ -55,6 +63,15 @@
   const telemetryOverlay = document.getElementById('telemetryOverlay');
   const telemetryBody = document.getElementById('telemetryBody');
   const telemetryClose = document.getElementById('telemetryClose');
+  const flowPanel = document.getElementById('flowPanel');
+  const flowFullscreenBtn = document.getElementById('flowFullscreenBtn');
+  const graphPanel = document.getElementById('graphPanel');
+  const graphFullscreenBtn = document.getElementById('graphFullscreenBtn');
+  const graphGrid = document.getElementById('graphGrid');
+  const graphRange60 = document.getElementById('graphRange60');
+  const graphRange120 = document.getElementById('graphRange120');
+  const controlToggle = document.getElementById('controlToggle');
+  const controlBody = document.getElementById('controlBody');
 
   // control.* keys whose global value is only a fallback in multi-device Waterfill mode - the
   // per-device limits from the admin table are what's actually effective there (see issue #22).
@@ -400,6 +417,240 @@
     telemetryOverlay.hidden = true;
   }
 
+  function setControlExpanded(expanded) {
+    controlBody.hidden = !expanded;
+    controlToggle.setAttribute('aria-expanded', String(expanded));
+  }
+
+  const FULLSCREEN_PANELS = [
+    { panel: flowPanel, btn: flowFullscreenBtn },
+    { panel: graphPanel, btn: graphFullscreenBtn }
+  ];
+
+  function exitFullscreen(entry) {
+    if (!entry.panel.classList.contains('is-fullscreen')) return;
+    entry.panel.classList.remove('is-fullscreen');
+    entry.btn.textContent = '⛶';
+    entry.btn.setAttribute('aria-label', 'Vollbild');
+  }
+
+  function exitAllFullscreen() {
+    for (const entry of FULLSCREEN_PANELS) exitFullscreen(entry);
+    document.body.classList.remove('fullscreen-active');
+  }
+
+  function toggleFullscreen(entry) {
+    const goingFullscreen = !entry.panel.classList.contains('is-fullscreen');
+    exitAllFullscreen();
+    if (!goingFullscreen) return;
+    entry.panel.classList.add('is-fullscreen');
+    entry.btn.textContent = '✕';
+    entry.btn.setAttribute('aria-label', 'Vollbild schließen');
+    document.body.classList.add('fullscreen-active');
+  }
+
+  // Small-multiples line/area chart, hand-rolled SVG (no charting library) to match the
+  // existing flow diagram's own approach. windowStart/windowEnd position points by actual
+  // time, not index, so a missed sample doesn't visually compress the gap.
+  const GRAPH_WIDTH = 300;
+  const GRAPH_HEIGHT = 120;
+  const GRAPH_PAD_Y = 14;
+  const GRAPH_PAD_X = 4;
+  const SVG_NS = 'http://www.w3.org/2000/svg';
+
+  let graphHistory = { pvEnabled: false, houseEnabled: false, points: [] };
+  let graphWindowMinutes = 60;
+
+  function fmtClock(ms) {
+    return new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  }
+
+  function buildGraphCard(metric, windowStart, windowEnd) {
+    const card = document.createElement('div');
+    card.className = 'graph-card';
+
+    const series = graphHistory.points
+      .filter(p => typeof p[metric.key] === 'number' && Number.isFinite(p[metric.key]) && p.t >= windowStart)
+      .map(p => ({ t: p.t, v: p[metric.key] }));
+
+    const head = document.createElement('div');
+    head.className = 'graph-card-head';
+    const labelEl = document.createElement('span');
+    labelEl.className = 'graph-card-label';
+    labelEl.style.setProperty('--dot-color', `var(${metric.varColor})`);
+    labelEl.textContent = metric.label;
+    const valueEl = document.createElement('span');
+    valueEl.className = 'graph-card-value';
+    valueEl.textContent = series.length ? fmtW(series[series.length - 1].v) : '–';
+    head.appendChild(labelEl);
+    head.appendChild(valueEl);
+    card.appendChild(head);
+
+    if (series.length < 2) {
+      const empty = document.createElement('div');
+      empty.className = 'graph-card-empty';
+      empty.textContent = 'Sammle Daten…';
+      card.appendChild(empty);
+      return card;
+    }
+
+    const values = series.map(p => p.v);
+    const min = Math.min(...values, 0);
+    const max = Math.max(...values, 0);
+    const range = (max - min) || 1;
+    const span = (windowEnd - windowStart) || 1;
+    const xOf = t => GRAPH_PAD_X + ((t - windowStart) / span) * (GRAPH_WIDTH - 2 * GRAPH_PAD_X);
+    const yOf = v => GRAPH_PAD_Y + (GRAPH_HEIGHT - 2 * GRAPH_PAD_Y) * (1 - (v - min) / range);
+
+    const coords = series.map(p => [xOf(p.t), yOf(p.v)]);
+    const linePath = coords.map((c, i) => `${i === 0 ? 'M' : 'L'}${c[0].toFixed(1)},${c[1].toFixed(1)}`).join(' ');
+    const baseY = (GRAPH_HEIGHT - GRAPH_PAD_Y).toFixed(1);
+    const areaPath = `${linePath} L${coords[coords.length - 1][0].toFixed(1)},${baseY} L${coords[0][0].toFixed(1)},${baseY} Z`;
+    const last = coords[coords.length - 1];
+
+    const svg = document.createElementNS(SVG_NS, 'svg');
+    svg.setAttribute('viewBox', `0 0 ${GRAPH_WIDTH} ${GRAPH_HEIGHT}`);
+    svg.setAttribute('preserveAspectRatio', 'none');
+    svg.classList.add('graph-svg');
+
+    if (min < 0 && max > 0) {
+      const zeroY = yOf(0).toFixed(1);
+      const zeroLine = document.createElementNS(SVG_NS, 'line');
+      zeroLine.setAttribute('x1', String(GRAPH_PAD_X));
+      zeroLine.setAttribute('x2', String(GRAPH_WIDTH - GRAPH_PAD_X));
+      zeroLine.setAttribute('y1', zeroY);
+      zeroLine.setAttribute('y2', zeroY);
+      zeroLine.classList.add('graph-zero-line');
+      svg.appendChild(zeroLine);
+    }
+
+    const area = document.createElementNS(SVG_NS, 'path');
+    area.setAttribute('d', areaPath);
+    area.classList.add('graph-area');
+    area.style.fill = `var(${metric.varColor})`;
+    svg.appendChild(area);
+
+    const line = document.createElementNS(SVG_NS, 'path');
+    line.setAttribute('d', linePath);
+    line.classList.add('graph-line');
+    line.style.stroke = `var(${metric.varColor})`;
+    svg.appendChild(line);
+
+    const endDot = document.createElementNS(SVG_NS, 'circle');
+    endDot.setAttribute('cx', last[0].toFixed(1));
+    endDot.setAttribute('cy', last[1].toFixed(1));
+    endDot.setAttribute('r', '4');
+    endDot.classList.add('graph-end-dot');
+    endDot.style.fill = `var(${metric.varColor})`;
+    svg.appendChild(endDot);
+
+    const crosshairLine = document.createElementNS(SVG_NS, 'line');
+    crosshairLine.classList.add('graph-crosshair');
+    crosshairLine.setAttribute('y1', String(GRAPH_PAD_Y));
+    crosshairLine.setAttribute('y2', String(GRAPH_HEIGHT - GRAPH_PAD_Y));
+    crosshairLine.setAttribute('x1', last[0].toFixed(1));
+    crosshairLine.setAttribute('x2', last[0].toFixed(1));
+    svg.appendChild(crosshairLine);
+
+    const crosshairDot = document.createElementNS(SVG_NS, 'circle');
+    crosshairDot.classList.add('graph-crosshair-dot');
+    crosshairDot.setAttribute('r', '4');
+    crosshairDot.style.fill = `var(${metric.varColor})`;
+    svg.appendChild(crosshairDot);
+
+    card.appendChild(svg);
+
+    const rangeEl = document.createElement('div');
+    rangeEl.className = 'graph-card-range';
+    const startLabel = document.createElement('span');
+    startLabel.textContent = fmtClock(windowStart);
+    const endLabel = document.createElement('span');
+    endLabel.textContent = fmtClock(windowEnd);
+    rangeEl.appendChild(startLabel);
+    rangeEl.appendChild(endLabel);
+    card.appendChild(rangeEl);
+
+    const tooltip = document.createElement('div');
+    tooltip.className = 'graph-tooltip';
+    tooltip.hidden = true;
+    card.appendChild(tooltip);
+
+    function pointerMove(evt) {
+      const rect = svg.getBoundingClientRect();
+      if (rect.width === 0) return;
+      const px = ((evt.clientX - rect.left) / rect.width) * GRAPH_WIDTH;
+      let nearestIdx = 0;
+      let bestDist = Infinity;
+      for (let i = 0; i < coords.length; i++) {
+        const d = Math.abs(coords[i][0] - px);
+        if (d < bestDist) { bestDist = d; nearestIdx = i; }
+      }
+      const [nx, ny] = coords[nearestIdx];
+      const point = series[nearestIdx];
+
+      crosshairLine.setAttribute('x1', nx.toFixed(1));
+      crosshairLine.setAttribute('x2', nx.toFixed(1));
+      crosshairDot.setAttribute('cx', nx.toFixed(1));
+      crosshairDot.setAttribute('cy', ny.toFixed(1));
+      crosshairLine.classList.add('active');
+      crosshairDot.classList.add('active');
+
+      tooltip.hidden = false;
+      tooltip.innerHTML = '';
+      const valueEl2 = document.createElement('strong');
+      valueEl2.textContent = fmtW(point.v);
+      const timeEl = document.createElement('span');
+      timeEl.textContent = fmtClock(point.t);
+      tooltip.appendChild(valueEl2);
+      tooltip.appendChild(timeEl);
+
+      const leftPct = (nx / GRAPH_WIDTH) * 100;
+      tooltip.style.left = `${Math.min(80, Math.max(2, leftPct))}%`;
+    }
+
+    function pointerLeave() {
+      crosshairLine.classList.remove('active');
+      crosshairDot.classList.remove('active');
+      tooltip.hidden = true;
+    }
+
+    svg.addEventListener('pointermove', pointerMove);
+    svg.addEventListener('pointerleave', pointerLeave);
+
+    return card;
+  }
+
+  function renderGraphs() {
+    const metrics = GRAPH_METRICS.filter(
+      m => (!m.pvOnly || graphHistory.pvEnabled) && (!m.houseOnly || graphHistory.houseEnabled)
+    );
+    const windowEnd = Date.now();
+    const windowStart = windowEnd - graphWindowMinutes * 60000;
+
+    graphGrid.innerHTML = '';
+    for (const metric of metrics) {
+      graphGrid.appendChild(buildGraphCard(metric, windowStart, windowEnd));
+    }
+  }
+
+  function setGraphWindow(minutes) {
+    graphWindowMinutes = minutes;
+    graphRange60.setAttribute('aria-pressed', String(minutes === 60));
+    graphRange120.setAttribute('aria-pressed', String(minutes === 120));
+    renderGraphs();
+  }
+
+  async function pollGraphHistory() {
+    try {
+      const res = await fetch('/api/telemetry/history', { cache: 'no-store' });
+      if (!res.ok) return;
+      graphHistory = await res.json();
+      renderGraphs();
+    } catch {
+      // Transient fetch failure: keep showing the last known graphs rather than blanking them.
+    }
+  }
+
   async function poll() {
     try {
       const res = await fetch('/api/status', { cache: 'no-store' });
@@ -510,11 +761,19 @@
   telemetryClose.addEventListener('click', closeTelemetry);
   telemetryOverlay.addEventListener('click', e => { if (e.target === telemetryOverlay) closeTelemetry(); });
 
+  controlToggle.addEventListener('click', () => setControlExpanded(controlBody.hidden));
+
+  flowFullscreenBtn.addEventListener('click', () => toggleFullscreen(FULLSCREEN_PANELS[0]));
+  graphFullscreenBtn.addEventListener('click', () => toggleFullscreen(FULLSCREEN_PANELS[1]));
+  graphRange60.addEventListener('click', () => setGraphWindow(60));
+  graphRange120.addEventListener('click', () => setGraphWindow(120));
+
   document.addEventListener('keydown', e => {
     if (e.key !== 'Escape') return;
     closeDetails();
     closeMenu();
     closeTelemetry();
+    exitAllFullscreen();
   });
 
   if ('serviceWorker' in navigator) {
@@ -522,5 +781,8 @@
   }
 
   buildControlPanel();
+  setControlExpanded(false);
   poll();
+  pollGraphHistory();
+  setInterval(pollGraphHistory, GRAPH_POLL_MS);
 })();
