@@ -628,7 +628,18 @@
       gradient.setAttribute('x2', '0');
       gradient.setAttribute('y1', String(GRAPH_PAD_Y));
       gradient.setAttribute('y2', String(height - GRAPH_PAD_Y));
-      for (const [offset, color] of [[0, 'var(--accent-discharge)'], [50, 'var(--border)'], [100, 'var(--accent-charge)']]) {
+      // Holds the full-strength hue for most of each half and only blends through the neutral
+      // tone in a narrow band around zero - a stop at 50% alone faded the whole line toward gray
+      // well before it got there, reading as washed out rather than "neutral right at zero".
+      // --text-muted (not --border) for that stop: --border is a near-invisible divider color
+      // by design, illegible as a line color exactly where the line crosses it.
+      for (const [offset, color] of [
+        [0, 'var(--accent-discharge)'],
+        [42, 'var(--accent-discharge)'],
+        [50, 'var(--text-muted)'],
+        [58, 'var(--accent-charge)'],
+        [100, 'var(--accent-charge)']
+      ]) {
         const stop = document.createElementNS(SVG_NS, 'stop');
         stop.setAttribute('offset', `${offset}%`);
         stop.setAttribute('style', `stop-color:${color}`);
