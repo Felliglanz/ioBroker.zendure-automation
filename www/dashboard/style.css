@@ -582,10 +582,13 @@ body.fullscreen-active { overflow: hidden; }
   position: absolute;
   top: 4.2rem;
   right: clamp(1rem, 3vw, 2.5rem);
-  background: var(--panel-bg);
-  border: 1px solid var(--border);
+  /* Deliberately not --panel-bg: this floats over other panels that already use that
+     color, so it needs its own step to read as "above", not "part of" (issue: blended
+     into the control panel behind it). */
+  background: var(--input-bg);
+  border: 1px solid color-mix(in srgb, var(--text) 18%, var(--border));
   border-radius: 12px;
-  box-shadow: var(--shadow);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.35), 0 2px 8px rgba(0, 0, 0, 0.25);
   min-width: 220px;
   padding: 0.4rem;
   display: flex;
@@ -602,7 +605,7 @@ body.fullscreen-active { overflow: hidden; }
   border-radius: 8px;
   cursor: pointer;
 }
-.menu-item:hover { background: var(--input-bg); }
+.menu-item:hover { background: var(--track-bg); }
 
 .telemetry-grid {
   display: grid;
