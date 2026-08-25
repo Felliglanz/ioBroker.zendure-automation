@@ -442,18 +442,27 @@
   function toggleFullscreen(entry) {
     const goingFullscreen = !entry.panel.classList.contains('is-fullscreen');
     exitAllFullscreen();
-    if (!goingFullscreen) return;
-    entry.panel.classList.add('is-fullscreen');
-    entry.btn.textContent = '✕';
-    entry.btn.setAttribute('aria-label', 'Vollbild schließen');
-    document.body.classList.add('fullscreen-active');
+    if (goingFullscreen) {
+      entry.panel.classList.add('is-fullscreen');
+      entry.btn.textContent = '✕';
+      entry.btn.setAttribute('aria-label', 'Vollbild schließen');
+      document.body.classList.add('fullscreen-active');
+    }
+    // Card size changes with fullscreen either way (graph-grid's own column count reflows),
+    // so the charts need to re-measure and redraw regardless of which panel was toggled.
+    renderGraphs();
   }
 
   // Small-multiples line/area chart, hand-rolled SVG (no charting library) to match the
   // existing flow diagram's own approach. windowStart/windowEnd position points by actual
   // time, not index, so a missed sample doesn't visually compress the gap.
-  const GRAPH_WIDTH = 300;
-  const GRAPH_HEIGHT = 120;
+  //
+  // The SVG's viewBox is set to the card's *actual measured pixel size* (not a fixed virtual
+  // coordinate space stretched via preserveAspectRatio="none") - a non-uniform stretch is what
+  // was distorting the end/crosshair dots into ellipses whenever a card's aspect ratio differed
+  // from the fixed box (mobile vs. desktop vs. fullscreen all size cards differently). Building
+  // the shell first and measuring it once it's laid out avoids that entirely: the coordinate
+  // space always equals the rendered pixels 1:1, so a circle is always a circle.
   const GRAPH_PAD_Y = 14;
   const GRAPH_PAD_X = 4;
   const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -465,7 +474,70 @@
     return new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   }
 
-  function buildGraphCard(metric, windowStart, windowEnd) {
+  /**
+   * Monotone cubic Hermite tangents (Fritsch-Carlson), i.e. the same curve family as D3's
+   * curveMonotoneX: smooth, but - unlike a plain Catmull-Rom spline - never overshoots past a
+   * point's neighbors. That matters here: an overshooting spline would draw a small fake bump
+   * between two real samples, which for a power graph reads as data that didn't happen.
+   */
+  function monotoneTangents(xs, ys) {
+    const n = xs.length;
+    const d = new Array(n - 1);
+    for (let i = 0; i < n - 1; i++) {
+      const dx = xs[i + 1] - xs[i];
+      d[i] = dx !== 0 ? (ys[i + 1] - ys[i]) / dx : 0;
+    }
+
+    const m = new Array(n);
+    m[0] = d[0];
+    m[n - 1] = d[n - 2];
+    for (let i = 1; i < n - 1; i++) {
+      m[i] = (d[i - 1] === 0 || d[i] === 0 || (d[i - 1] < 0) !== (d[i] < 0)) ? 0 : (d[i - 1] + d[i]) / 2;
+    }
+
+    for (let i = 0; i < n - 1; i++) {
+      if (d[i] === 0) {
+        m[i] = 0;
+        m[i + 1] = 0;
+        continue;
+      }
+      const a = m[i] / d[i];
+      const b = m[i + 1] / d[i];
+      const s = a * a + b * b;
+      if (s > 9) {
+        const t = 3 / Math.sqrt(s);
+        m[i] = t * a * d[i];
+        m[i + 1] = t * b * d[i];
+      }
+    }
+    return m;
+  }
+
+  function buildSmoothPath(coords) {
+    const n = coords.length;
+    if (n === 2) {
+      return `M${coords[0][0].toFixed(1)},${coords[0][1].toFixed(1)} L${coords[1][0].toFixed(1)},${coords[1][1].toFixed(1)}`;
+    }
+
+    const xs = coords.map(c => c[0]);
+    const ys = coords.map(c => c[1]);
+    const m = monotoneTangents(xs, ys);
+
+    let d = `M${xs[0].toFixed(1)},${ys[0].toFixed(1)}`;
+    for (let i = 0; i < n - 1; i++) {
+      const dx = xs[i + 1] - xs[i];
+      const cp1x = xs[i] + dx / 3;
+      const cp1y = ys[i] + (m[i] * dx) / 3;
+      const cp2x = xs[i + 1] - dx / 3;
+      const cp2y = ys[i + 1] - (m[i + 1] * dx) / 3;
+      d += ` C${cp1x.toFixed(1)},${cp1y.toFixed(1)} ${cp2x.toFixed(1)},${cp2y.toFixed(1)} ${xs[i + 1].toFixed(1)},${ys[i + 1].toFixed(1)}`;
+    }
+    return d;
+  }
+
+  /** Card shell (label, value, empty svg placeholder sized purely by CSS) - no drawing yet,
+   *  so it can be measured after layout. Returns svg: null for the "collecting data" case. */
+  function buildGraphCardShell(metric, windowStart) {
     const card = document.createElement('div');
     card.className = 'graph-card';
 
@@ -490,33 +562,43 @@
       empty.className = 'graph-card-empty';
       empty.textContent = 'Sammle Daten…';
       card.appendChild(empty);
-      return card;
+      return { card, svg: null, series: null };
     }
+
+    const svg = document.createElementNS(SVG_NS, 'svg');
+    svg.classList.add('graph-svg');
+    card.appendChild(svg);
+
+    return { card, svg, series };
+  }
+
+  /** Measures the now-laid-out svg and draws into it - see the sizing note above buildSmoothPath. */
+  function drawGraphCard({ card, svg, series, metric, windowStart, windowEnd }) {
+    const width = svg.clientWidth;
+    const height = svg.clientHeight;
+    if (width === 0 || height === 0) return;
+
+    svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
 
     const values = series.map(p => p.v);
     const min = Math.min(...values, 0);
     const max = Math.max(...values, 0);
     const range = (max - min) || 1;
     const span = (windowEnd - windowStart) || 1;
-    const xOf = t => GRAPH_PAD_X + ((t - windowStart) / span) * (GRAPH_WIDTH - 2 * GRAPH_PAD_X);
-    const yOf = v => GRAPH_PAD_Y + (GRAPH_HEIGHT - 2 * GRAPH_PAD_Y) * (1 - (v - min) / range);
+    const xOf = t => GRAPH_PAD_X + ((t - windowStart) / span) * (width - 2 * GRAPH_PAD_X);
+    const yOf = v => GRAPH_PAD_Y + (height - 2 * GRAPH_PAD_Y) * (1 - (v - min) / range);
 
     const coords = series.map(p => [xOf(p.t), yOf(p.v)]);
-    const linePath = coords.map((c, i) => `${i === 0 ? 'M' : 'L'}${c[0].toFixed(1)},${c[1].toFixed(1)}`).join(' ');
-    const baseY = (GRAPH_HEIGHT - GRAPH_PAD_Y).toFixed(1);
+    const linePath = buildSmoothPath(coords);
+    const baseY = (height - GRAPH_PAD_Y).toFixed(1);
     const areaPath = `${linePath} L${coords[coords.length - 1][0].toFixed(1)},${baseY} L${coords[0][0].toFixed(1)},${baseY} Z`;
     const last = coords[coords.length - 1];
-
-    const svg = document.createElementNS(SVG_NS, 'svg');
-    svg.setAttribute('viewBox', `0 0 ${GRAPH_WIDTH} ${GRAPH_HEIGHT}`);
-    svg.setAttribute('preserveAspectRatio', 'none');
-    svg.classList.add('graph-svg');
 
     if (min < 0 && max > 0) {
       const zeroY = yOf(0).toFixed(1);
       const zeroLine = document.createElementNS(SVG_NS, 'line');
       zeroLine.setAttribute('x1', String(GRAPH_PAD_X));
-      zeroLine.setAttribute('x2', String(GRAPH_WIDTH - GRAPH_PAD_X));
+      zeroLine.setAttribute('x2', String(width - GRAPH_PAD_X));
       zeroLine.setAttribute('y1', zeroY);
       zeroLine.setAttribute('y2', zeroY);
       zeroLine.classList.add('graph-zero-line');
@@ -546,7 +628,7 @@
     const crosshairLine = document.createElementNS(SVG_NS, 'line');
     crosshairLine.classList.add('graph-crosshair');
     crosshairLine.setAttribute('y1', String(GRAPH_PAD_Y));
-    crosshairLine.setAttribute('y2', String(GRAPH_HEIGHT - GRAPH_PAD_Y));
+    crosshairLine.setAttribute('y2', String(height - GRAPH_PAD_Y));
     crosshairLine.setAttribute('x1', last[0].toFixed(1));
     crosshairLine.setAttribute('x2', last[0].toFixed(1));
     svg.appendChild(crosshairLine);
@@ -556,8 +638,6 @@
     crosshairDot.setAttribute('r', '4');
     crosshairDot.style.fill = `var(${metric.varColor})`;
     svg.appendChild(crosshairDot);
-
-    card.appendChild(svg);
 
     const rangeEl = document.createElement('div');
     rangeEl.className = 'graph-card-range';
@@ -577,7 +657,7 @@
     function pointerMove(evt) {
       const rect = svg.getBoundingClientRect();
       if (rect.width === 0) return;
-      const px = ((evt.clientX - rect.left) / rect.width) * GRAPH_WIDTH;
+      const px = ((evt.clientX - rect.left) / rect.width) * width;
       let nearestIdx = 0;
       let bestDist = Infinity;
       for (let i = 0; i < coords.length; i++) {
@@ -603,7 +683,7 @@
       tooltip.appendChild(valueEl2);
       tooltip.appendChild(timeEl);
 
-      const leftPct = (nx / GRAPH_WIDTH) * 100;
+      const leftPct = (nx / width) * 100;
       tooltip.style.left = `${Math.min(80, Math.max(2, leftPct))}%`;
     }
 
@@ -615,8 +695,6 @@
 
     svg.addEventListener('pointermove', pointerMove);
     svg.addEventListener('pointerleave', pointerLeave);
-
-    return card;
   }
 
   function renderGraphs() {
@@ -627,10 +705,22 @@
     const windowStart = windowEnd - graphWindowMinutes * 60000;
 
     graphGrid.innerHTML = '';
-    for (const metric of metrics) {
-      graphGrid.appendChild(buildGraphCard(metric, windowStart, windowEnd));
+    const shells = metrics.map(metric => ({ metric, ...buildGraphCardShell(metric, windowStart) }));
+    for (const shell of shells) graphGrid.appendChild(shell.card);
+
+    // Drawing needs each svg's real laid-out size, which only exists once the shells above are
+    // in the document - hence the separate pass instead of measuring while still detached.
+    for (const shell of shells) {
+      if (shell.svg) drawGraphCard({ ...shell, windowStart, windowEnd });
     }
   }
+
+  let graphResizeTimer = null;
+  function scheduleGraphResize() {
+    clearTimeout(graphResizeTimer);
+    graphResizeTimer = setTimeout(renderGraphs, 150);
+  }
+  window.addEventListener('resize', scheduleGraphResize);
 
   function setGraphWindow(minutes) {
     graphWindowMinutes = minutes;
