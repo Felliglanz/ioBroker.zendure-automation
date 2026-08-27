@@ -92,6 +92,8 @@
     "adminUI": {
       "config": "json"
     },
+    "encryptedNative": ["influxToken"],
+    "protectedNative": ["influxToken"],
     "type": "energy",
     "connectionType": "local",
     "dataSource": "poll",
@@ -154,7 +156,17 @@
     "housePowerDp": "",
     "subtractBatteryChargeFromHouse": false,
     "enablePvPower": false,
-    "pvPowerDp": ""
+    "pvPowerDp": "",
+    "influxEnabled": false,
+    "influxUrl": "",
+    "influxToken": "",
+    "influxOrg": "",
+    "influxBucket": "",
+    "influxMeasurement": "zendure",
+    "influxIntervalSec": 60,
+    "influxIncludeTelemetry": true,
+    "influxIncludeStatus": true,
+    "influxHistoryUiEnabled": false
   },
   "objects": [],
   "instanceObjects": [
@@ -675,6 +687,32 @@
         "read": true,
         "write": false,
         "def": 0
+      },
+      "native": {}
+    },
+    {
+      "_id": "telemetry.housePowerW",
+      "type": "state",
+      "common": {
+        "name": "Current house consumption (W)",
+        "type": "number",
+        "role": "value.power",
+        "read": true,
+        "write": false,
+        "unit": "W"
+      },
+      "native": {}
+    },
+    {
+      "_id": "telemetry.pvPowerW",
+      "type": "state",
+      "common": {
+        "name": "Current PV production (W)",
+        "type": "number",
+        "role": "value.power",
+        "read": true,
+        "write": false,
+        "unit": "W"
       },
       "native": {}
     },

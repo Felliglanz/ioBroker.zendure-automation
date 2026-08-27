@@ -15,6 +15,8 @@ const MultiDeviceController = require('./lib/MultiDeviceController');
 const DashboardServer = require('./lib/DashboardServer');
 const Telemetry = require('./lib/Telemetry');
 const HousePower = require('./lib/HousePower');
+const InfluxWriter = require('./lib/InfluxWriter');
+const { deviceStateId } = require('./lib/deviceId');
 
 /**
  * Battery Automation Engine
@@ -70,6 +72,7 @@ class ZendureAutomation extends utils.Adapter {
         this.multiDeviceController = null;  // Multi-device automation controller
         this.dashboardServer = null;  // Standalone web dashboard
         this.telemetry = null;  // Daily telemetry counters (mode switches, energy totals)
+        this.influxWriter = null;  // Optional periodic InfluxDB v2 export
     }
 
     /**
@@ -312,6 +315,22 @@ class ZendureAutomation extends utils.Adapter {
             }
         }
 
+        // Start optional InfluxDB v2 export (opt-in, config appears only once configured)
+        if (this.config.influxEnabled) {
+            this.influxWriter = new InfluxWriter(this, {
+                url: this.config.influxUrl,
+                token: this.config.influxToken,
+                org: this.config.influxOrg,
+                bucket: this.config.influxBucket,
+                measurement: this.config.influxMeasurement || 'zendure',
+                intervalSec: Number(this.config.influxIntervalSec) || 60,
+                includeTelemetry: this.config.influxIncludeTelemetry !== false,
+                includeStatus: this.config.influxIncludeStatus !== false,
+                singleDeviceId: this._isMultiDevice ? null : deviceStateId(this.config.deviceKey)
+            });
+            this.influxWriter.start();
+        }
+
         // Start automation loop
         this.startAutomation();
     }
@@ -517,6 +536,12 @@ class ZendureAutomation extends utils.Adapter {
                 houseW,
                 emergencyActive: !!(emergencyReasonState && emergencyReasonState.val)
             });
+
+            // Only persisted (not just fed into Telemetry's in-memory Wh accumulation) so the
+            // InfluxWriter's generic status/telemetry scan can pick it up like everything else -
+            // null when not configured, same as their own source reads above.
+            await this.setStateAsync('telemetry.housePowerW', houseW, true);
+            await this.setStateAsync('telemetry.pvPowerW', pvPowerW, true);
         } catch (err) {
             this.log.warn(`Telemetry recording failed: ${err.message}`);
         }
@@ -1195,6 +1220,11 @@ class ZendureAutomation extends utils.Adapter {
             if (this.dashboardServer) {
                 await this.dashboardServer.stop();
                 this.dashboardServer = null;
+            }
+
+            if (this.influxWriter) {
+                this.influxWriter.stop();
+                this.influxWriter = null;
             }
 
             if (this._updateTimer) {
