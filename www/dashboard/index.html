@@ -30,7 +30,8 @@
 
     <nav class="menu-overlay" id="menuOverlay" hidden>
       <div class="menu-panel" role="menu">
-        <button type="button" class="menu-item" id="menuTelemetry" role="menuitem">📊 Telemetrie (heute)</button>
+        <button type="button" class="menu-item" id="menuTelemetry" role="menuitem">📊 Tagesansicht</button>
+        <button type="button" class="menu-item" id="menuHistory" role="menuitem" hidden>📈 Historie</button>
       </div>
     </nav>
 
@@ -159,10 +160,20 @@
   <div class="modal-overlay" id="telemetryOverlay" hidden>
     <div class="modal" role="dialog" aria-modal="true" aria-labelledby="telemetryTitle">
       <div class="modal-head">
-        <h3 id="telemetryTitle">Telemetrie – heute</h3>
+        <h3 id="telemetryTitle">Tagesansicht</h3>
         <button type="button" class="modal-close" id="telemetryClose" aria-label="Schließen">&times;</button>
       </div>
       <div class="modal-body" id="telemetryBody"></div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="historyOverlay" hidden>
+    <div class="modal modal-wide" role="dialog" aria-modal="true" aria-labelledby="historyTitle">
+      <div class="modal-head">
+        <h3 id="historyTitle">Historie</h3>
+        <button type="button" class="modal-close" id="historyClose" aria-label="Schließen">&times;</button>
+      </div>
+      <div class="modal-body" id="historyBody"></div>
     </div>
   </div>
 
