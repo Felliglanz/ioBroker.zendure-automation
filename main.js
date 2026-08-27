@@ -864,6 +864,20 @@ class ZendureAutomation extends utils.Adapter {
                 native: {}
             });
 
+            await this.setObjectNotExistsAsync(`status.devices.${device.id}.solarInputPowerW`, {
+                type: 'state',
+                common: {
+                    name: 'Live PV production at this device (0 for non-PV/stale)',
+                    type: 'number',
+                    role: 'value.power',
+                    unit: 'W',
+                    read: true,
+                    write: false,
+                    def: 0
+                },
+                native: {}
+            });
+
             await this.setObjectNotExistsAsync(`status.devices.${device.id}.minPackVoltageV`, {
                 type: 'state',
                 common: {
