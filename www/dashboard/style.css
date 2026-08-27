@@ -15,6 +15,8 @@
   --node-fill-hi: #ffffff;
   --node-stroke: #d7dbe2;
   --hub-fill: #eef0f3;
+  --chart-house: #2a78d6;
+  --chart-pv: #eda100;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -31,6 +33,8 @@
     --node-fill-hi: #262c38;
     --node-stroke: #313846;
     --hub-fill: #12151b;
+    --chart-house: #3987e5;
+    --chart-pv: #c98500;
   }
 }
 
@@ -127,7 +131,7 @@ body {
   .layout { grid-template-columns: 1fr; }
 }
 
-.flow-panel, .control-panel {
+.flow-panel, .control-panel, .graph-panel {
   background: var(--panel-bg);
   border: 1px solid var(--border);
   border-radius: 16px;
@@ -142,7 +146,39 @@ body {
   justify-content: center;
   gap: 1rem;
   min-width: 0;
+  position: relative;
 }
+
+.panel-fullscreen-btn {
+  position: absolute;
+  top: 0.85rem;
+  right: 0.85rem;
+  z-index: 1;
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--input-bg);
+  color: var(--text-muted);
+  font-size: 0.95rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.panel-fullscreen-btn:hover { color: var(--text); }
+
+body.fullscreen-active { overflow: hidden; }
+
+.flow-panel.is-fullscreen, .graph-panel.is-fullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  border-radius: 0;
+  overflow-y: auto;
+  padding-top: 3.25rem;
+}
+.flow-panel.is-fullscreen #flowSvg { max-width: min(560px, 92vw); }
+.graph-panel.is-fullscreen .graph-grid { grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
+.graph-panel.is-fullscreen .graph-svg { height: min(46vh, 320px); }
 
 #flowSvg { width: 100%; max-width: 380px; height: auto; align-self: center; flex-shrink: 0; }
 .device-cards { width: 100%; max-width: 380px; }
@@ -318,12 +354,30 @@ body {
 .device-card .bar-fill.low { background: var(--accent-error); }
 .device-card .bar-fill.mid { background: var(--accent-discharge); }
 
-.control-panel h2 {
-  margin: 0 0 0.9rem;
+.control-panel-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  border: none;
+  background: none;
+  padding: 0;
+  cursor: pointer;
+  color: var(--text);
+  font: inherit;
+}
+.control-panel-toggle-label {
   font-size: 0.95rem;
+  font-weight: 600;
+}
+.control-panel-chevron {
   color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  transition: transform 0.2s ease;
+}
+.control-panel-toggle[aria-expanded="true"] .control-panel-chevron { transform: rotate(90deg); }
+
+.control-panel-body {
+  margin-top: 0.9rem;
 }
 
 .control-list {
@@ -438,6 +492,7 @@ body {
   display: flex;
   flex-direction: column;
 }
+.modal.modal-wide { width: min(960px, 100%); }
 
 .modal-head {
   display: flex;
@@ -524,10 +579,13 @@ body {
   position: absolute;
   top: 4.2rem;
   right: clamp(1rem, 3vw, 2.5rem);
-  background: var(--panel-bg);
-  border: 1px solid var(--border);
+  /* Deliberately not --panel-bg: this floats over other panels that already use that
+     color, so it needs its own step to read as "above", not "part of" (issue: blended
+     into the control panel behind it). */
+  background: var(--input-bg);
+  border: 1px solid color-mix(in srgb, var(--text) 18%, var(--border));
   border-radius: 12px;
-  box-shadow: var(--shadow);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.35), 0 2px 8px rgba(0, 0, 0, 0.25);
   min-width: 220px;
   padding: 0.4rem;
   display: flex;
@@ -544,7 +602,7 @@ body {
   border-radius: 8px;
   cursor: pointer;
 }
-.menu-item:hover { background: var(--input-bg); }
+.menu-item:hover { background: var(--track-bg); }
 
 .telemetry-grid {
   display: grid;
@@ -569,4 +627,261 @@ body {
 .telemetry-item .telemetry-value {
   font-size: 1.15rem;
   font-weight: 600;
+}
+
+.graph-panel {
+  position: relative;
+}
+
+.graph-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+  padding-right: 2.5rem;
+}
+.graph-panel-head h2 {
+  margin: 0;
+  font-size: 0.95rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.graph-range {
+  display: flex;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.graph-range-btn {
+  border: none;
+  background: var(--input-bg);
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 0.35rem 0.75rem;
+  cursor: pointer;
+}
+.graph-range-btn + .graph-range-btn { border-left: 1px solid var(--border); }
+.graph-range-btn[aria-pressed="true"] { background: var(--accent-charge); color: #fff; }
+
+.graph-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 1rem;
+}
+
+.graph-card {
+  position: relative;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--input-bg);
+  padding: 0.75rem 0.85rem;
+}
+
+.graph-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.4rem;
+}
+
+.graph-card-label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.graph-card-value {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.graph-card-empty {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  padding: 1.5rem 0;
+  text-align: center;
+}
+
+.graph-svg {
+  width: 100%;
+  height: 96px;
+  display: block;
+  touch-action: none;
+}
+
+.graph-line {
+  fill: none;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.graph-area { opacity: 0.12; }
+.graph-zero-line {
+  stroke: var(--border);
+  stroke-width: 1;
+}
+.graph-end-dot {
+  stroke: var(--input-bg);
+  stroke-width: 2;
+}
+
+.graph-crosshair {
+  stroke: var(--text-muted);
+  stroke-width: 1;
+  opacity: 0;
+  pointer-events: none;
+}
+.graph-crosshair.active { opacity: 1; }
+.graph-crosshair-dot {
+  stroke: var(--input-bg);
+  stroke-width: 2;
+  opacity: 0;
+  pointer-events: none;
+}
+.graph-crosshair-dot.active { opacity: 1; }
+
+.graph-axis-label {
+  font-size: 9px;
+  fill: var(--text-muted);
+}
+
+.graph-tick {
+  stroke: var(--border);
+  stroke-width: 1;
+}
+.graph-tick-major { stroke: var(--text-muted); }
+
+.graph-peak-dot {
+  stroke: var(--input-bg);
+  stroke-width: 1.5;
+}
+.graph-peak-label {
+  font-size: 9px;
+  font-weight: 700;
+  fill: var(--text);
+  /* Halo in the card's own background instead of a <rect>, so it stays legible over the line/area
+     wherever the peak lands without needing to measure text width to size a backing rect. */
+  paint-order: stroke fill;
+  stroke: var(--input-bg);
+  stroke-width: 3px;
+  stroke-linejoin: round;
+}
+
+.history-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+.history-field-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.history-select {
+  padding: 0.35rem 0.5rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--input-bg);
+  color: var(--text);
+  font-size: 0.85rem;
+  max-width: 180px;
+}
+.history-btn {
+  border: 1px solid var(--border);
+  background: var(--input-bg);
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 0.35rem 0.6rem;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.history-btn:hover { color: var(--text); }
+.history-field-row .history-btn { padding: 0.3rem 0.5rem; line-height: 1; }
+.history-custom-range {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+.history-custom-range input[type="datetime-local"] {
+  padding: 0.3rem 0.4rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--input-bg);
+  color: var(--text);
+  font-size: 0.8rem;
+}
+.history-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-bottom: 0.5rem;
+  font-size: 0.8rem;
+}
+.history-legend-item { display: flex; align-items: center; gap: 0.4rem; }
+.history-legend-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.history-chart-wrap {
+  position: relative;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--input-bg);
+  padding: 0.75rem 0.85rem;
+}
+.history-svg {
+  width: 100%;
+  height: 260px;
+  display: block;
+  touch-action: none;
+}
+
+.graph-card-range {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.68rem;
+  color: var(--text-muted);
+  margin-top: 0.2rem;
+}
+
+.graph-tooltip {
+  position: absolute;
+  top: 0.4rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.05rem;
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.3rem 0.55rem;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  box-shadow: var(--shadow);
+  pointer-events: none;
+  z-index: 2;
+}
+.graph-tooltip[hidden] { display: none; }
+.graph-tooltip strong {
+  font-size: 0.82rem;
+  color: var(--text);
+}
+
+@media (max-width: 900px) {
+  .graph-grid { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 560px) {
+  .graph-grid { grid-template-columns: 1fr; }
 }

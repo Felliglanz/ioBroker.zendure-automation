@@ -30,12 +30,14 @@
 
     <nav class="menu-overlay" id="menuOverlay" hidden>
       <div class="menu-panel" role="menu">
-        <button type="button" class="menu-item" id="menuTelemetry" role="menuitem">📊 Telemetrie (heute)</button>
+        <button type="button" class="menu-item" id="menuTelemetry" role="menuitem">📊 Tagesansicht</button>
+        <button type="button" class="menu-item" id="menuHistory" role="menuitem" hidden>📈 Historie</button>
       </div>
     </nav>
 
     <main class="layout">
-      <section class="flow-panel">
+      <section class="flow-panel" id="flowPanel">
+        <button type="button" class="panel-fullscreen-btn" id="flowFullscreenBtn" aria-label="Vollbild">⛶</button>
         <svg id="flowSvg" viewBox="0 0 520 520" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Energiefluss">
           <defs>
             <radialGradient id="nodeGrad" cx="35%" cy="30%" r="75%">
@@ -116,11 +118,28 @@
       </section>
 
       <aside class="control-panel" id="controlPanel">
-        <h2>Steuerung</h2>
-        <div class="control-list" id="controlList"></div>
-        <p class="control-hint" id="controlHint" hidden>ℹ️ Waterfill-Verteilung aktiv: Max. Lade-/Entladeleistung wird pro Gerät festgelegt – siehe ⚙ an der jeweiligen Gerätekarte.</p>
+        <button type="button" class="control-panel-toggle" id="controlToggle" aria-expanded="false" aria-controls="controlBody">
+          <span class="control-panel-toggle-label">⚙ Steuerung</span>
+          <span class="control-panel-chevron" id="controlChevron" aria-hidden="true">▸</span>
+        </button>
+        <div class="control-panel-body" id="controlBody" hidden>
+          <div class="control-list" id="controlList"></div>
+          <p class="control-hint" id="controlHint" hidden>ℹ️ Waterfill-Verteilung aktiv: Max. Lade-/Entladeleistung wird pro Gerät festgelegt – siehe ⚙ an der jeweiligen Gerätekarte.</p>
+        </div>
       </aside>
     </main>
+
+    <section class="graph-panel" id="graphPanel">
+      <button type="button" class="panel-fullscreen-btn" id="graphFullscreenBtn" aria-label="Vollbild">⛶</button>
+      <div class="graph-panel-head">
+        <h2>Verlauf</h2>
+        <div class="graph-range" role="group" aria-label="Zeitraum">
+          <button type="button" class="graph-range-btn" id="graphRange60" data-minutes="60" aria-pressed="true">1h</button>
+          <button type="button" class="graph-range-btn" id="graphRange120" data-minutes="120" aria-pressed="false">2h</button>
+        </div>
+      </div>
+      <div class="graph-grid" id="graphGrid"></div>
+    </section>
 
     <footer class="statusbar">
       <span id="emergencyReason"></span>
@@ -141,10 +160,20 @@
   <div class="modal-overlay" id="telemetryOverlay" hidden>
     <div class="modal" role="dialog" aria-modal="true" aria-labelledby="telemetryTitle">
       <div class="modal-head">
-        <h3 id="telemetryTitle">Telemetrie – heute</h3>
+        <h3 id="telemetryTitle">Tagesansicht</h3>
         <button type="button" class="modal-close" id="telemetryClose" aria-label="Schließen">&times;</button>
       </div>
       <div class="modal-body" id="telemetryBody"></div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="historyOverlay" hidden>
+    <div class="modal modal-wide" role="dialog" aria-modal="true" aria-labelledby="historyTitle">
+      <div class="modal-head">
+        <h3 id="historyTitle">Historie</h3>
+        <button type="button" class="modal-close" id="historyClose" aria-label="Schließen">&times;</button>
+      </div>
+      <div class="modal-body" id="historyBody"></div>
     </div>
   </div>
 
