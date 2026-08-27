@@ -693,17 +693,45 @@
     // Each series gets its own independent min/max scale (so two differently-scaled fields, e.g.
     // W and %, still overlay meaningfully) - so unlike a single-metric graph-card, the y-axis needs
     // one min/max label pair per series, color-matched to its curve, stacked to stay legible.
-    const seriesRenderData = [];
-    keys.forEach((key, i) => {
+    // A series that dips negative (e.g. Netz/Batterie power) gets a symmetric zero-centered domain
+    // - same fix as drawGraphCard - so its zero always lands exactly on the vertical center; since
+    // that's true for every signed series regardless of its own amplitude, one shared zero line
+    // covers all of them and is drawn once, underneath the per-series areas/lines.
+    const seriesInfo = keys.map((key, i) => {
       const series = seriesMap[key];
-      const [min, max] = minMax(series.map(p => p.v));
+      const [rawMin, rawMax] = minMax(series.map(p => p.v));
+      const signed = rawMin < 0;
+      let min, max;
+      if (signed) {
+        const maxAbs = Math.max(Math.abs(rawMin), Math.abs(rawMax), 1);
+        min = -maxAbs;
+        max = maxAbs;
+      } else {
+        min = rawMin;
+        max = rawMax;
+      }
+      return { key, series, signed, min, max, color: HISTORY_LINE_COLORS[i % HISTORY_LINE_COLORS.length] };
+    });
+
+    if (seriesInfo.some(s => s.signed)) {
+      const zeroY = (GRAPH_PAD_Y + (height - 2 * GRAPH_PAD_Y) / 2).toFixed(1);
+      const zeroLine = document.createElementNS(SVG_NS, 'line');
+      zeroLine.setAttribute('x1', String(GRAPH_PLOT_LEFT));
+      zeroLine.setAttribute('x2', String(width - GRAPH_PAD_X));
+      zeroLine.setAttribute('y1', zeroY);
+      zeroLine.setAttribute('y2', zeroY);
+      zeroLine.classList.add('graph-zero-line');
+      svg.appendChild(zeroLine);
+    }
+
+    const seriesRenderData = [];
+    seriesInfo.forEach(({ key, series, signed, min, max, color }, i) => {
       const range = (max - min) || 1;
       const yOf = v => GRAPH_PAD_Y + (height - 2 * GRAPH_PAD_Y) * (1 - (v - min) / range);
-      const color = HISTORY_LINE_COLORS[i % HISTORY_LINE_COLORS.length];
 
       const coords = series.map(p => [xOf(p.t), yOf(p.v)]);
       const linePath = buildSmoothPath(coords);
-      const baseY = (height - GRAPH_PAD_Y).toFixed(1);
+      const baseY = (signed ? yOf(0) : (height - GRAPH_PAD_Y)).toFixed(1);
       const areaPath = `${linePath} L${coords[coords.length - 1][0].toFixed(1)},${baseY} L${coords[0][0].toFixed(1)},${baseY} Z`;
 
       const area = document.createElementNS(SVG_NS, 'path');
