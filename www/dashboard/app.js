@@ -764,6 +764,13 @@
   // see style.css, stops the browser from hijacking that swipe as a page scroll instead).
   function setupHistoryCrosshair(svg, seriesRenderData, width, height) {
     const wrap = svg.closest('.history-chart-wrap');
+
+    // drawHistoryChart() only clears the <svg>'s children on redraw (field/range change, etc.) -
+    // this #historySvg node itself is reused, so without cleanup every redraw would stack another
+    // tooltip element and another set of pointer listeners on top of the previous ones, leaving
+    // stale, overlapping tooltips visible on hover.
+    if (svg._historyCrosshairCleanup) svg._historyCrosshairCleanup();
+
     const tooltip = document.createElement('div');
     tooltip.className = 'graph-tooltip';
     tooltip.hidden = true;
@@ -848,6 +855,14 @@
     svg.addEventListener('pointerdown', pointerMove);
     svg.addEventListener('pointerleave', pointerLeave);
     svg.addEventListener('pointerup', pointerLeave);
+
+    svg._historyCrosshairCleanup = () => {
+      svg.removeEventListener('pointermove', pointerMove);
+      svg.removeEventListener('pointerdown', pointerMove);
+      svg.removeEventListener('pointerleave', pointerLeave);
+      svg.removeEventListener('pointerup', pointerLeave);
+      tooltip.remove();
+    };
   }
 
   function setControlExpanded(expanded) {
