@@ -434,7 +434,11 @@
   // History view: reads back data InfluxWriter already exported, via DashboardServer's
   // read-only Flux proxy (the Influx token stays server-side). Independent of the live
   // dashboard/Tagesansicht - only shown at all once InfluxDB export + this UI are both enabled.
+  // 'today' has no fixed Flux duration (unlike the others, which are just relative durations the
+  // query evaluates at request time) - it means "since local midnight", so its start is computed
+  // fresh in loadHistoryChart() from the browser's own clock/timezone instead of a preset string.
   const HISTORY_RANGE_PRESETS = [
+    { key: 'today', label: 'Heute', start: null },
     { key: '24h', label: '24 Std.', start: '-24h' },
     { key: '7d', label: '7 Tage', start: '-7d' },
     { key: '30d', label: '30 Tage', start: '-30d' },
@@ -625,6 +629,10 @@
       if (!historyState.customStart || !historyState.customStop) return;
       start = historyState.customStart;
       stop = historyState.customStop;
+    } else if (historyState.rangeKey === 'today') {
+      const midnight = new Date();
+      midnight.setHours(0, 0, 0, 0);
+      start = midnight.toISOString();
     } else {
       start = HISTORY_RANGE_PRESETS.find(p => p.key === historyState.rangeKey).start;
     }
