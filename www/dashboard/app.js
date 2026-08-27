@@ -70,6 +70,10 @@
   const telemetryOverlay = document.getElementById('telemetryOverlay');
   const telemetryBody = document.getElementById('telemetryBody');
   const telemetryClose = document.getElementById('telemetryClose');
+  const menuHistory = document.getElementById('menuHistory');
+  const historyOverlay = document.getElementById('historyOverlay');
+  const historyBody = document.getElementById('historyBody');
+  const historyClose = document.getElementById('historyClose');
   const flowPanel = document.getElementById('flowPanel');
   const flowFullscreenBtn = document.getElementById('flowFullscreenBtn');
   const graphPanel = document.getElementById('graphPanel');
@@ -425,6 +429,411 @@
 
   function closeTelemetry() {
     telemetryOverlay.hidden = true;
+  }
+
+  // History view: reads back data InfluxWriter already exported, via DashboardServer's
+  // read-only Flux proxy (the Influx token stays server-side). Independent of the live
+  // dashboard/Tagesansicht - only shown at all once InfluxDB export + this UI are both enabled.
+  const HISTORY_RANGE_PRESETS = [
+    { key: '24h', label: '24 Std.', start: '-24h' },
+    { key: '7d', label: '7 Tage', start: '-7d' },
+    { key: '30d', label: '30 Tage', start: '-30d' },
+    { key: 'custom', label: 'Frei' }
+  ];
+  const HISTORY_LINE_COLORS = ['#2a78d6', '#f59e0b'];
+
+  // Every field InfluxWriter can produce (see lib/InfluxWriter.js / telemetry.* in
+  // io-package.json), translated for the field picker/legend/tooltip. Anything not listed here
+  // (a future field the writer starts exporting) still works, just falls back to its raw name.
+  const HISTORY_FIELD_LABELS = {
+    mode: 'Betriebsmodus',
+    gridPowerW: 'Netzleistung (W)',
+    emergencyReason: 'Notfall-Grund',
+    feedInCounter: 'Einspeise-Zähler (intern)',
+    dischargeCounter: 'Entlade-Zähler (intern)',
+    deadbandCounter: 'Deadband-Zähler (intern)',
+    totalPowerW: 'Batterieleistung gesamt (W)',
+    avgSoc: 'Batterie-SOC Durchschnitt (%)',
+    powerW: 'Batterieleistung (W)',
+    soc: 'Batterie-SOC (%)',
+    minPackVoltageV: 'Min. Pack-Spannung (V)',
+    emergencyRecoveryActive: 'Notfall-Recovery aktiv',
+    voltageRecoveryActive: 'Spannungs-Recovery aktiv',
+    socRecoveryActive: 'SOC-Recovery aktiv',
+    minSocRecoveryActive: 'MinSOC-Recovery aktiv',
+    maxSocRecoveryActive: 'MaxSOC-Recovery aktiv',
+    effectiveMinSoc: 'Effektives Min-SOC (%)',
+    name: 'Gerätename',
+    available: 'Gerät verfügbar',
+    excluded: 'Von Verteilung ausgeschlossen',
+    gridImportWhToday: 'Netzbezug heute (Wh)',
+    gridExportWhToday: 'Netzeinspeisung heute (Wh)',
+    pvWhToday: 'PV-Ertrag heute (Wh)',
+    batteryChargeWhToday: 'Batterie geladen heute (Wh)',
+    batteryDischargeWhToday: 'Batterie entladen heute (Wh)',
+    modeSwitchesToday: 'Moduswechsel heute',
+    emergencyEventsToday: 'Notfall-Events heute',
+    housePowerW: 'Hausverbrauch (W)',
+    pvPowerW: 'PV-Leistung (W)'
+  };
+
+  function historyFieldLabel(rawField) {
+    return HISTORY_FIELD_LABELS[rawField] || rawField;
+  }
+
+  // seriesMap keys are "field" or "field@device" (see DashboardServer._handleInfluxHistory) -
+  // translates the field part, keeps the device suffix so multi-device series stay distinguishable.
+  function historySeriesLabel(key) {
+    const at = key.indexOf('@');
+    if (at === -1) return historyFieldLabel(key);
+    return `${historyFieldLabel(key.slice(0, at))} (${key.slice(at + 1)})`;
+  }
+
+  let historyFields = null; // fetched once per modal session
+  const historyState = { fields: [null, null], rangeKey: '24h', customStart: null, customStop: null };
+
+  function minMax(values) {
+    let min = Infinity;
+    let max = -Infinity;
+    for (const v of values) {
+      if (v < min) min = v;
+      if (v > max) max = v;
+    }
+    return [min, max];
+  }
+
+  function fmtHistoryDate(ms) {
+    return new Date(ms).toLocaleString([], { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+  }
+
+  // No fixed unit here (unlike fmtWAuto/fmtWh) - the field picker offers arbitrary telemetry/status
+  // fields (W, %, counts, ...), so this just keeps the number itself readable.
+  function fmtHistoryValue(v) {
+    if (!Number.isFinite(v)) return '–';
+    return Number.isInteger(v) ? String(v) : v.toFixed(2);
+  }
+
+  function buildHistorySkeleton() {
+    if (historyBody.dataset.built) return;
+    historyBody.dataset.built = '1';
+
+    historyBody.innerHTML = `
+      <div class="history-controls">
+        <div class="history-field-row"><select class="history-select" id="historyField1"></select></div>
+        <div class="history-field-row"><select class="history-select" id="historyField2"><option value="">+ 2. Feld</option></select></div>
+        <div class="graph-range" id="historyRangeButtons"></div>
+      </div>
+      <div class="history-custom-range" id="historyCustomRange" hidden>
+        <input type="datetime-local" id="historyStart">
+        <span>bis</span>
+        <input type="datetime-local" id="historyStop">
+        <button type="button" class="history-btn" id="historyCustomApply">Anwenden</button>
+      </div>
+      <div class="history-legend" id="historyLegend"></div>
+      <div class="history-chart-wrap"><svg class="history-svg" id="historySvg"></svg></div>
+      <p class="modal-hint">Nur numerische Felder ergeben eine Kurve. Zweites Feld optional, z.B. um Netz- und Batterieleistung zu vergleichen.</p>
+    `;
+
+    const rangeButtonsEl = document.getElementById('historyRangeButtons');
+    for (const preset of HISTORY_RANGE_PRESETS) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'graph-range-btn';
+      btn.textContent = preset.label;
+      btn.dataset.key = preset.key;
+      btn.addEventListener('click', () => selectHistoryRange(preset.key));
+      rangeButtonsEl.appendChild(btn);
+    }
+
+    document.getElementById('historyField1').addEventListener('change', e => {
+      historyState.fields[0] = e.target.value || null;
+      loadHistoryChart();
+    });
+    document.getElementById('historyField2').addEventListener('change', e => {
+      historyState.fields[1] = e.target.value || null;
+      loadHistoryChart();
+    });
+    document.getElementById('historyCustomApply').addEventListener('click', () => {
+      const startEl = document.getElementById('historyStart');
+      const stopEl = document.getElementById('historyStop');
+      if (!startEl.value || !stopEl.value) return;
+      historyState.customStart = new Date(startEl.value).toISOString();
+      historyState.customStop = new Date(stopEl.value).toISOString();
+      loadHistoryChart();
+    });
+  }
+
+  function selectHistoryRange(key, opts = {}) {
+    historyState.rangeKey = key;
+    document.getElementById('historyCustomRange').hidden = key !== 'custom';
+    for (const btn of document.querySelectorAll('#historyRangeButtons .graph-range-btn')) {
+      btn.setAttribute('aria-pressed', String(btn.dataset.key === key));
+    }
+    if (key !== 'custom' && !opts.skipLoad) loadHistoryChart();
+  }
+
+  async function openHistory() {
+    closeMenu();
+    buildHistorySkeleton();
+    historyOverlay.hidden = false;
+    selectHistoryRange(historyState.rangeKey, { skipLoad: true });
+
+    if (!historyFields) {
+      const field1 = document.getElementById('historyField1');
+      const field2 = document.getElementById('historyField2');
+      field1.innerHTML = '<option value="">Lade…</option>';
+
+      try {
+        const res = await fetch('/api/influx/fields', { cache: 'no-store' });
+        const data = await res.json();
+        historyFields = (res.ok && Array.isArray(data.fields)) ? data.fields : [];
+      } catch {
+        historyFields = [];
+      }
+
+      const sortedFields = [...historyFields].sort((a, b) => historyFieldLabel(a).localeCompare(historyFieldLabel(b), 'de'));
+      const options = sortedFields.map(f => `<option value="${escapeHtml(f)}">${escapeHtml(historyFieldLabel(f))}</option>`).join('');
+      field1.innerHTML = options || '<option value="">Keine Felder gefunden</option>';
+      field2.innerHTML = '<option value="">+ 2. Feld</option>' + options;
+
+      if (sortedFields.length) {
+        historyState.fields[0] = sortedFields[0];
+        field1.value = sortedFields[0];
+      }
+    }
+
+    loadHistoryChart();
+  }
+
+  function closeHistory() {
+    historyOverlay.hidden = true;
+  }
+
+  async function loadHistoryChart() {
+    const svg = document.getElementById('historySvg');
+    const legend = document.getElementById('historyLegend');
+    const fields = historyState.fields.filter(Boolean);
+    if (!fields.length) {
+      legend.innerHTML = '';
+      svg.innerHTML = '';
+      return;
+    }
+
+    let start;
+    let stop = 'now()';
+    if (historyState.rangeKey === 'custom') {
+      if (!historyState.customStart || !historyState.customStop) return;
+      start = historyState.customStart;
+      stop = historyState.customStop;
+    } else {
+      start = HISTORY_RANGE_PRESETS.find(p => p.key === historyState.rangeKey).start;
+    }
+
+    legend.innerHTML = '<span class="history-legend-item">Lade…</span>';
+
+    const qs = new URLSearchParams({ fields: fields.join(','), start });
+    if (stop !== 'now()') qs.set('stop', stop);
+
+    try {
+      const res = await fetch(`/api/influx/history?${qs}`, { cache: 'no-store' });
+      const data = await res.json();
+      if (!res.ok) {
+        legend.innerHTML = `<span class="history-legend-item">${escapeHtml(data.error || 'Fehler')}</span>`;
+        svg.innerHTML = '';
+        return;
+      }
+      drawHistoryChart(data.series || {});
+    } catch {
+      legend.innerHTML = '<span class="history-legend-item">Verbindung zum Dashboard-Server fehlgeschlagen.</span>';
+      svg.innerHTML = '';
+    }
+  }
+
+  function drawHistoryChart(seriesMap) {
+    const svg = document.getElementById('historySvg');
+    const legend = document.getElementById('historyLegend');
+    const keys = Object.keys(seriesMap).filter(k => seriesMap[k].length >= 2);
+
+    svg.innerHTML = '';
+    if (!keys.length) {
+      legend.innerHTML = '<span class="history-legend-item">Keine Daten im gewählten Zeitraum.</span>';
+      return;
+    }
+
+    const width = svg.clientWidth;
+    const height = svg.clientHeight;
+    if (width === 0 || height === 0) return;
+    svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+
+    const [windowStart, windowEnd] = minMax(keys.flatMap(k => seriesMap[k].map(p => p.t)));
+    const span = (windowEnd - windowStart) || 1;
+    const xOf = t => GRAPH_PLOT_LEFT + ((t - windowStart) / span) * (width - GRAPH_PLOT_LEFT - GRAPH_PAD_X);
+
+    legend.innerHTML = keys.map((key, i) => {
+      const series = seriesMap[key];
+      const last = series[series.length - 1].v;
+      const color = HISTORY_LINE_COLORS[i % HISTORY_LINE_COLORS.length];
+      return `<span class="history-legend-item"><span class="history-legend-dot" style="background:${color}"></span>${escapeHtml(historySeriesLabel(key))}: ${fmtHistoryValue(last)}</span>`;
+    }).join('');
+
+    // Each series gets its own independent min/max scale (so two differently-scaled fields, e.g.
+    // W and %, still overlay meaningfully) - so unlike a single-metric graph-card, the y-axis needs
+    // one min/max label pair per series, color-matched to its curve, stacked to stay legible.
+    const seriesRenderData = [];
+    keys.forEach((key, i) => {
+      const series = seriesMap[key];
+      const [min, max] = minMax(series.map(p => p.v));
+      const range = (max - min) || 1;
+      const yOf = v => GRAPH_PAD_Y + (height - 2 * GRAPH_PAD_Y) * (1 - (v - min) / range);
+      const color = HISTORY_LINE_COLORS[i % HISTORY_LINE_COLORS.length];
+
+      const coords = series.map(p => [xOf(p.t), yOf(p.v)]);
+      const linePath = buildSmoothPath(coords);
+      const baseY = (height - GRAPH_PAD_Y).toFixed(1);
+      const areaPath = `${linePath} L${coords[coords.length - 1][0].toFixed(1)},${baseY} L${coords[0][0].toFixed(1)},${baseY} Z`;
+
+      const area = document.createElementNS(SVG_NS, 'path');
+      area.setAttribute('d', areaPath);
+      area.setAttribute('fill', color);
+      area.classList.add('graph-area');
+      svg.appendChild(area);
+
+      const line = document.createElementNS(SVG_NS, 'path');
+      line.setAttribute('d', linePath);
+      line.setAttribute('stroke', color);
+      line.classList.add('graph-line');
+      svg.appendChild(line);
+
+      const maxLabel = document.createElementNS(SVG_NS, 'text');
+      maxLabel.classList.add('graph-axis-label');
+      maxLabel.setAttribute('x', String(GRAPH_PLOT_LEFT - 6));
+      maxLabel.setAttribute('y', String(GRAPH_PAD_Y + 3 + i * 11));
+      maxLabel.setAttribute('text-anchor', 'end');
+      maxLabel.setAttribute('fill', color);
+      maxLabel.textContent = fmtHistoryValue(max);
+      svg.appendChild(maxLabel);
+
+      const minLabel = document.createElementNS(SVG_NS, 'text');
+      minLabel.classList.add('graph-axis-label');
+      minLabel.setAttribute('x', String(GRAPH_PLOT_LEFT - 6));
+      minLabel.setAttribute('y', String(height - GRAPH_PAD_Y - i * 11));
+      minLabel.setAttribute('text-anchor', 'end');
+      minLabel.setAttribute('fill', color);
+      minLabel.textContent = fmtHistoryValue(min);
+      svg.appendChild(minLabel);
+
+      seriesRenderData.push({ key, color, coords, series });
+    });
+
+    const startLabel = document.createElementNS(SVG_NS, 'text');
+    startLabel.classList.add('graph-axis-label');
+    startLabel.setAttribute('x', String(GRAPH_PLOT_LEFT));
+    startLabel.setAttribute('y', String(height - 2));
+    startLabel.textContent = fmtHistoryDate(windowStart);
+    svg.appendChild(startLabel);
+
+    const endLabel = document.createElementNS(SVG_NS, 'text');
+    endLabel.classList.add('graph-axis-label');
+    endLabel.setAttribute('x', String(width - GRAPH_PAD_X));
+    endLabel.setAttribute('y', String(height - 2));
+    endLabel.setAttribute('text-anchor', 'end');
+    endLabel.textContent = fmtHistoryDate(windowEnd);
+    svg.appendChild(endLabel);
+
+    setupHistoryCrosshair(svg, seriesRenderData, width, height);
+  }
+
+  // One shared crosshair line (by x/time) with one dot per series - each series can sit at a
+  // different y since they're independently scaled, but they share the same time axis, so a
+  // single vertical line naturally lines them all up. pointermove/pointerdown covers mouse hover
+  // *and* touch (a swiping finger keeps firing pointermove; touch-action:none on .history-svg,
+  // see style.css, stops the browser from hijacking that swipe as a page scroll instead).
+  function setupHistoryCrosshair(svg, seriesRenderData, width, height) {
+    const wrap = svg.closest('.history-chart-wrap');
+    const tooltip = document.createElement('div');
+    tooltip.className = 'graph-tooltip';
+    tooltip.hidden = true;
+    wrap.appendChild(tooltip);
+
+    const crosshairLine = document.createElementNS(SVG_NS, 'line');
+    crosshairLine.classList.add('graph-crosshair');
+    crosshairLine.setAttribute('y1', String(GRAPH_PAD_Y));
+    crosshairLine.setAttribute('y2', String(height - GRAPH_PAD_Y));
+    svg.appendChild(crosshairLine);
+
+    const dots = seriesRenderData.map(entry => {
+      const dot = document.createElementNS(SVG_NS, 'circle');
+      dot.classList.add('graph-crosshair-dot');
+      dot.setAttribute('r', '4');
+      dot.style.fill = entry.color;
+      svg.appendChild(dot);
+      return dot;
+    });
+
+    function pointerMove(evt) {
+      const rect = svg.getBoundingClientRect();
+      if (rect.width === 0 || !seriesRenderData.length) return;
+      const px = ((evt.clientX - rect.left) / rect.width) * width;
+
+      // Nearest sample per series independently - series can have gaps/different sample counts,
+      // so index-aligning them would drift; matching by x (time) position stays correct either way.
+      let sharedX = null;
+      const rows = seriesRenderData.map((entry, i) => {
+        let nearestIdx = 0;
+        let bestDist = Infinity;
+        for (let j = 0; j < entry.coords.length; j++) {
+          const d = Math.abs(entry.coords[j][0] - px);
+          if (d < bestDist) { bestDist = d; nearestIdx = j; }
+        }
+        const [nx, ny] = entry.coords[nearestIdx];
+        const point = entry.series[nearestIdx];
+        if (i === 0) sharedX = nx;
+        dots[i].setAttribute('cx', nx.toFixed(1));
+        dots[i].setAttribute('cy', ny.toFixed(1));
+        dots[i].classList.add('active');
+        return { key: entry.key, color: entry.color, point };
+      });
+
+      crosshairLine.setAttribute('x1', sharedX.toFixed(1));
+      crosshairLine.setAttribute('x2', sharedX.toFixed(1));
+      crosshairLine.classList.add('active');
+
+      tooltip.hidden = false;
+      tooltip.innerHTML = '';
+      for (const row of rows) {
+        const line = document.createElement('div');
+        const dotSpan = document.createElement('span');
+        dotSpan.className = 'history-legend-dot';
+        dotSpan.style.background = row.color;
+        dotSpan.style.display = 'inline-block';
+        dotSpan.style.marginRight = '0.35rem';
+        const labelSpan = document.createElement('span');
+        labelSpan.textContent = `${historySeriesLabel(row.key)}: `;
+        const valueEl = document.createElement('strong');
+        valueEl.textContent = fmtHistoryValue(row.point.v);
+        line.appendChild(dotSpan);
+        line.appendChild(labelSpan);
+        line.appendChild(valueEl);
+        tooltip.appendChild(line);
+      }
+      const timeEl = document.createElement('span');
+      timeEl.textContent = fmtHistoryDate(rows[0].point.t);
+      tooltip.appendChild(timeEl);
+
+      const leftPct = (sharedX / width) * 100;
+      tooltip.style.left = `${Math.min(78, Math.max(2, leftPct))}%`;
+    }
+
+    function pointerLeave() {
+      crosshairLine.classList.remove('active');
+      for (const dot of dots) dot.classList.remove('active');
+      tooltip.hidden = true;
+    }
+
+    svg.addEventListener('pointermove', pointerMove);
+    svg.addEventListener('pointerdown', pointerMove);
+    svg.addEventListener('pointerleave', pointerLeave);
+    svg.addEventListener('pointerup', pointerLeave);
   }
 
   function setControlExpanded(expanded) {
@@ -990,6 +1399,10 @@
   telemetryClose.addEventListener('click', closeTelemetry);
   telemetryOverlay.addEventListener('click', e => { if (e.target === telemetryOverlay) closeTelemetry(); });
 
+  menuHistory.addEventListener('click', openHistory);
+  historyClose.addEventListener('click', closeHistory);
+  historyOverlay.addEventListener('click', e => { if (e.target === historyOverlay) closeHistory(); });
+
   controlToggle.addEventListener('click', () => setControlExpanded(controlBody.hidden));
 
   flowFullscreenBtn.addEventListener('click', () => toggleFullscreen(FULLSCREEN_PANELS[0]));
@@ -1002,12 +1415,18 @@
     closeDetails();
     closeMenu();
     closeTelemetry();
+    closeHistory();
     exitAllFullscreen();
   });
 
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('/service-worker.js').catch(() => {});
   }
+
+  fetch('/api/influx/enabled', { cache: 'no-store' })
+    .then(res => res.json())
+    .then(data => { if (data && data.enabled) menuHistory.hidden = false; })
+    .catch(() => {});
 
   buildControlPanel();
   setControlExpanded(false);
