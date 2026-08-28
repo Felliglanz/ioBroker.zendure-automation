@@ -1157,6 +1157,148 @@ async function testModules() {
         assertEqual(getMockState(dp).val, 0, 'Setpoint stays at literal 0W, no keep-alive pulses re-appear');
     });
 
+    await runTest('[4.6d] validateZeroSetpoint confirms a genuine 0W once outputLimit/inputLimit read back as 0', async () => {
+        initializeMockStates();
+        const validationService = new ValidationService(mockAdapter);
+        const deviceId = 'dev1';
+        const basePath = 'test.0.device1';
+
+        // Safety-bypass 0 (config omitted) - no grace window, validation can start immediately.
+        await validationService.writePowerSetpoint(deviceId, basePath, 0);
+        assertEqual(validationService.getDeviceState(deviceId).zeroPendingValidation, true, 'Zero validation armed after a genuine 0W write');
+
+        setMockState(`${basePath}.outputLimit`, 0);
+        setMockState(`${basePath}.inputLimit`, 0);
+        await validationService.validateZeroSetpoint(deviceId, basePath, mockConfig, 0);
+
+        const state = validationService.getDeviceState(deviceId);
+        assertEqual(state.zeroPendingValidation, false, 'Confirmed 0W clears pending validation');
+        assertEqual(state.zeroValidationRetryCount, 0, 'Retry counter stays at 0 on immediate confirmation');
+    });
+
+    await runTest('[4.6e] validateZeroSetpoint waits out the post-zero grace window before checking anything', async () => {
+        initializeMockStates();
+        const validationService = new ValidationService(mockAdapter);
+        const avoidZeroConfig = { ...mockConfig, avoidZeroSetpoint: true, standbyKeepAliveW: 10, smartModeIdleTimeoutSec: 30, zeroHoldOffSec: 8 };
+        const deviceId = 'dev1';
+        const basePath = 'test.0.device1';
+
+        // Commit a real 0 via the idle-timeout path, same as [4.6b] - this opens the grace window.
+        await validationService.writePowerSetpoint(deviceId, basePath, 0, avoidZeroConfig);
+        const state = validationService.getDeviceState(deviceId);
+        state.standbySince = Date.now() - 31 * 1000;
+        await validationService.writePowerSetpoint(deviceId, basePath, 0, avoidZeroConfig);
+        assert(state.holdOffUntil > Date.now(), 'Grace window is open right after committing the real 0W');
+
+        // outputLimit/inputLimit still show the old (non-zero) values - nograx hasn't caught
+        // up yet, which is expected and must NOT be flagged while the grace window is open.
+        setMockState(`${basePath}.outputLimit`, 10);
+        setMockState(`${basePath}.inputLimit`, 0);
+        await validationService.validateZeroSetpoint(deviceId, basePath, avoidZeroConfig, 0);
+        assertEqual(state.zeroValidationRetryCount, 0, 'No retry counted while the grace window is still active');
+        assertEqual(state.zeroPendingValidation, true, 'Still pending - not silently dropped, just not checked yet');
+    });
+
+    await runTest('[4.6f] validateZeroSetpoint resends and warns exactly once after the retry threshold, then stays quiet', async () => {
+        // Reproduces the real incident (2026-08-28): setDeviceAutomationInOutLimit correctly
+        // reads 0, but nograx's own outputLimit stayed stuck at a stale non-zero value.
+        initializeMockStates();
+        const validationService = new ValidationService(mockAdapter);
+        const deviceId = 'dev1';
+        const basePath = 'test.0.device1';
+        const dp = `${basePath}.control.setDeviceAutomationInOutLimit`;
+
+        await validationService.writePowerSetpoint(deviceId, basePath, 0); // safety-bypass, no grace window
+        setMockState(`${basePath}.outputLimit`, 10); // stuck
+        setMockState(`${basePath}.inputLimit`, 0);
+
+        const state = validationService.getDeviceState(deviceId);
+        let warnCount = 0;
+        const originalWarn = mockAdapter.log.warn;
+        mockAdapter.log.warn = (msg) => { warnCount++; originalWarn(msg); };
+
+        try {
+            // Cycles 1-2: below the retry threshold, no warning yet.
+            await validationService.validateZeroSetpoint(deviceId, basePath, mockConfig, 0);
+            await validationService.validateZeroSetpoint(deviceId, basePath, mockConfig, 0);
+            assertEqual(warnCount, 0, 'No warning before the retry threshold is reached');
+
+            // Cycle 3: threshold reached - warns exactly once and marks a resend as due.
+            await validationService.validateZeroSetpoint(deviceId, basePath, mockConfig, 0);
+            assertEqual(warnCount, 1, 'Warns exactly once at the retry threshold');
+            assertEqual(state.zeroValidationRetryCount, 3, 'Retry counter reached the threshold');
+
+            // The write layer must now actually resend the (still logically unchanged) 0W,
+            // even though lastWrittenLimit already says 0 - this is what gets a stuck
+            // nograx-side value another chance to apply.
+            await validationService.writePowerSetpoint(deviceId, basePath, 0);
+            assertEqual(getMockState(dp).ts !== undefined, true, 'Resend write happened');
+
+            // Cycles 4-6: still stuck, but must not spam another warning.
+            await validationService.validateZeroSetpoint(deviceId, basePath, mockConfig, 0);
+            await validationService.validateZeroSetpoint(deviceId, basePath, mockConfig, 0);
+            await validationService.validateZeroSetpoint(deviceId, basePath, mockConfig, 0);
+            assertEqual(warnCount, 1, 'Still only one warning after further unconfirmed cycles - no log spam');
+
+            // Now nograx catches up - confirmation clears everything and re-arms for next time.
+            setMockState(`${basePath}.outputLimit`, 0);
+            await validationService.validateZeroSetpoint(deviceId, basePath, mockConfig, 0);
+            assertEqual(state.zeroPendingValidation, false, 'Confirmed once outputLimit finally reads 0');
+            assertEqual(state.zeroValidationWarned, false, 'Warned flag resets on confirmation, ready for a future spell');
+        } finally {
+            mockAdapter.log.warn = originalWarn;
+        }
+    });
+
+    await runTest('[4.6g] A changed setpoint (e.g. emergency charge) is never blocked or delayed by pending 0W validation', async () => {
+        initializeMockStates();
+        const validationService = new ValidationService(mockAdapter);
+        const deviceId = 'dev1';
+        const basePath = 'test.0.device1';
+        const dp = `${basePath}.control.setDeviceAutomationInOutLimit`;
+
+        // Get a 0W validation stuck at the retry threshold, exactly like [4.6f].
+        await validationService.writePowerSetpoint(deviceId, basePath, 0);
+        setMockState(`${basePath}.outputLimit`, 10);
+        setMockState(`${basePath}.inputLimit`, 0);
+        for (let i = 0; i < 3; i++) {
+            await validationService.validateZeroSetpoint(deviceId, basePath, mockConfig, 0);
+        }
+        const state = validationService.getDeviceState(deviceId);
+        assertEqual(state.zeroValidationRetryCount, 3, 'Zero validation is stuck at the threshold, as in [4.6f]');
+
+        // An emergency charge command must go through immediately regardless - bypassHoldOff
+        // mirrors the real call site in SingleDeviceController.handleEmergency().
+        await validationService.writePowerSetpoint(deviceId, basePath, -1600, mockConfig, { bypassHoldOff: true });
+        assertEqual(getMockState(dp).val, -1600, 'Emergency charge setpoint reaches the device immediately, unblocked by pending 0W validation');
+        assertEqual(state.zeroPendingValidation, false, '0W validation state is cleared by the new, changed setpoint');
+        assertEqual(state.pendingValidation, true, 'Charge validation is now armed instead for the new target');
+    });
+
+    await runTest('[4.6h] validateZeroSetpoint skips silently when outputLimit/inputLimit are not exposed (e.g. non-zenSDK setups)', async () => {
+        initializeMockStates();
+        const validationService = new ValidationService(mockAdapter);
+        const deviceId = 'dev1';
+        const basePath = 'test.0.device1';
+        // Deliberately not setting outputLimit/inputLimit mock states - getForeignStateAsync
+        // returns { val: null, ack: false } for them, same as a real device without zenSDK.
+
+        await validationService.writePowerSetpoint(deviceId, basePath, 0);
+
+        let warnCount = 0;
+        const originalWarn = mockAdapter.log.warn;
+        mockAdapter.log.warn = () => { warnCount++; };
+        try {
+            for (let i = 0; i < 5; i++) {
+                await validationService.validateZeroSetpoint(deviceId, basePath, mockConfig, 0);
+            }
+        } finally {
+            mockAdapter.log.warn = originalWarn;
+        }
+        assertEqual(warnCount, 0, 'Never warns when outputLimit/inputLimit do not exist for this device');
+        assertEqual(validationService.getDeviceState(deviceId).zeroPendingValidation, false, 'Validation stands down instead of failing forever');
+    });
+
     await runTest('[4.7] Waterfill uses sticky device and redistributes capped power', async () => {
         const distributor = new WaterfillDistributor();
         const devices = [
