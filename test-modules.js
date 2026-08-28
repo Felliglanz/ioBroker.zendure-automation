@@ -1774,24 +1774,63 @@ async function testModules() {
         });
         assertEqual(regResult.powerW, 10, 'Cycle A: regulator output unchanged (no relay switch needed yet)');
 
-        // Cycle B: deadband hold has now lasted deadbandHoldTicks - RelayProtection
-        // releases to the safety-critical 0W setpoint. Delta to lastSetPowerW (10W)
-        // is only 10W, well under hysteresisW (30W): pre-fix this got silently
-        // reverted to 10W and the relay could never switch.
+        // Cycle B: deadband hold has now lasted deadbandHoldTicks, but the device
+        // still isn't relay-safe (currentBatteryPowerW=25W is still above
+        // modeSwitchToleranceW). RelayProtection keeps holding at +operatingDeadbandW
+        // rather than releasing to a literal 0W - a literal 0 here would get
+        // laundered by config.avoidZeroSetpoint into a non-zero keep-alive in the
+        // *old* (discharge) direction downstream, which reads back as "still
+        // discharging" next cycle and restarts this whole transition from scratch
+        // (real-world livelock, 2026-08-28: adapter stuck alternating 0W/10W for
+        // hours, battery never actually reaching near-0W, only a restart recovered).
         relayResult = relayProtection.applyProtection({
             config, gridPowerW, currentBatteryPowerW,
             lastSetPowerW: 10, newBatteryPowerW: rawTargetW
         });
-        assertEqual(relayResult.powerW, 0, 'Cycle B: deadband released, RelayProtection targets exactly 0W');
+        assertEqual(relayResult.powerW, 10, 'Cycle B: still not relay-safe, deadband keeps holding at +operatingDeadbandW (not 0W)');
         assert(relayResult.relayModified, 'Cycle B: RelayProtection reports it overrode the setpoint');
 
         regResult = powerRegulator.applyRegulation({
             config, powerW: relayResult.powerW, lastSetPowerW: 10,
             safetyActive: false, bypassHysteresis: relayResult.relayModified
         });
-        assertEqual(regResult.powerW, 0, 'Cycle B: 0W setpoint reaches the device instead of being reverted by hysteresis');
+        assertEqual(regResult.powerW, 10, 'Cycle B: held setpoint reaches the device instead of being reverted by hysteresis');
 
-        // Control: without the bypass flag, the exact same 0W setpoint gets
+        // Cycle C: battery power has now actually settled near-0 (5W, within
+        // modeSwitchToleranceW) - relay-protection's own charge/discharge sign-change
+        // guard (separate from the "wait for near-zero" gate, untouched by this fix)
+        // still holds for one more deadbandHoldTicks cycle before allowing the actual
+        // sign flip, so this cycle still reports the +10W hold, not the full target yet.
+        const settledBatteryPowerW = 5;
+        relayResult = relayProtection.applyProtection({
+            config, gridPowerW, currentBatteryPowerW: settledBatteryPowerW,
+            lastSetPowerW: 10, newBatteryPowerW: rawTargetW
+        });
+        assertEqual(relayResult.powerW, 10, 'Cycle C: relay-safe now, but sign-change deadband holds once more at +operatingDeadbandW');
+
+        // Cycle D: sign-change deadband hold has now also lasted deadbandHoldTicks -
+        // RelayProtection finally releases straight to the full charge target. Note
+        // there is still no literal 0W anywhere in this sequence: the jump goes
+        // directly from the +10W hold to the full (large, unambiguous) target.
+        relayResult = relayProtection.applyProtection({
+            config, gridPowerW, currentBatteryPowerW: settledBatteryPowerW,
+            lastSetPowerW: 10, newBatteryPowerW: rawTargetW
+        });
+        assertEqual(relayResult.powerW, rawTargetW, 'Cycle D: relay-safe, RelayProtection releases straight to the full charge target');
+        // relayModified is correctly false here: this cycle passes the regulator's own
+        // target straight through unmodified (the override happened in cycles A-C).
+        // The large delta from lastSetPowerW clears hysteresis on its own regardless.
+
+        regResult = powerRegulator.applyRegulation({
+            config, powerW: relayResult.powerW, lastSetPowerW: 10,
+            safetyActive: false, bypassHysteresis: relayResult.relayModified
+        });
+        // Ramp rate limiting (a separate, unrelated regulation step) caps how much of the
+        // jump lands in one cycle - the point here is just that hysteresis didn't revert
+        // it back to the 10W hold, not that the full target arrives in a single cycle.
+        assert(regResult.powerW < -100, `Cycle D: charge step reaches the device instead of being reverted by hysteresis (got ${regResult.powerW}W)`);
+
+        // Control: without the bypass flag, a small-delta protective setpoint gets
         // reverted by hysteresis - this is the bug as reported in issue #21.
         const unfixedResult = powerRegulator.applyRegulation({
             config, powerW: 0, lastSetPowerW: 10, safetyActive: false
@@ -1843,9 +1882,31 @@ async function testModules() {
         const cycleA = await controller.calculateTargetPower(config, filteredGridPowerW, targetGridPowerW, normalDevices, aggregatedState);
         assertEqual(cycleA, 20, 'Cycle A: deadband holds at scaled operatingDeadbandW (20W for 2 devices)');
 
+        // Cycle B: deadband hold ticks expired, but the devices are still measured at
+        // 40W total (well above the scaled 20W tolerance) - keeps holding at 20W rather
+        // than releasing to a literal 0W. A literal 0 here would get laundered by
+        // config.avoidZeroSetpoint into a non-zero discharge-direction keep-alive
+        // downstream, which reads back as "still discharging" next cycle and restarts
+        // this whole transition from scratch (real-world livelock, 2026-08-28).
         controller.lastTotalWrittenPowerW = cycleA;
         const cycleB = await controller.calculateTargetPower(config, filteredGridPowerW, targetGridPowerW, normalDevices, aggregatedState);
-        assertEqual(cycleB, 0, 'Cycle B: deadband release reaches 0W - relay is finally allowed to switch to charge');
+        assertEqual(cycleB, 20, 'Cycle B: still not relay-safe, deadband keeps holding at scaled operatingDeadbandW (not 0W)');
+
+        // Cycle C: devices have now actually settled near-0 (5W total, within the
+        // scaled 20W tolerance) - relay-protection's sign-change guard (separate from
+        // the "wait for near-zero" gate, untouched by this fix) still holds for one
+        // more deadbandHoldTicks cycle, so this cycle still reports the 20W hold.
+        controller.lastTotalWrittenPowerW = cycleB;
+        const settledDevices = [{ id: 'device1', powerW: 2 }, { id: 'device2', powerW: 3 }];
+        const cycleC = await controller.calculateTargetPower(config, filteredGridPowerW, targetGridPowerW, settledDevices, aggregatedState);
+        assertEqual(cycleC, 20, 'Cycle C: relay-safe now, but sign-change deadband holds once more at scaled operatingDeadbandW');
+
+        // Cycle D: sign-change deadband hold has now also lasted deadbandHoldTicks -
+        // controller finally releases straight to a large charge target. Still no
+        // literal 0W anywhere in this sequence.
+        controller.lastTotalWrittenPowerW = cycleC;
+        const cycleD = await controller.calculateTargetPower(config, filteredGridPowerW, targetGridPowerW, settledDevices, aggregatedState);
+        assert(cycleD < -20, `Cycle D: relay-safe, controller releases straight to a large charge target (got ${cycleD}W)`);
     });
 
     await runTest('[4.23] PowerRegulator hysteresis still suppresses ordinary I-Regulator jitter (regression guard for issue #21 fix)', async () => {
