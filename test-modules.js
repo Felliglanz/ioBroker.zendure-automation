@@ -1839,6 +1839,37 @@ async function testModules() {
         assertEqual(unfixedResult.powerW, 10, 'Control: omitting bypassHysteresis reproduces the reported deadlock');
     });
 
+    await runTest('[4.21b] RelayProtection switch tolerance has a flat +5W margin so measurement noise cannot block the switch forever', async () => {
+        const relayProtection = new RelayProtection(mockAdapter);
+
+        const config = {
+            ...mockConfig,
+            operatingDeadbandW: 20,
+            deadbandHoldTicks: 1,
+            feedInThresholdW: -150,
+            feedInDelayTicks: 5
+        };
+
+        relayProtection.feedInCounter = 5;
+
+        // Hub reports 21W - 1W above the 20W deadband we're holding it at, e.g. sensor
+        // rounding/noise. Without the +5W margin, abs(21) > 20 would hold this forever;
+        // with it, abs(21) > 25 is false, so the switch is allowed through.
+        const relayResult = relayProtection.applyProtection({
+            config, gridPowerW: -300, currentBatteryPowerW: 21,
+            lastSetPowerW: 10, newBatteryPowerW: -500
+        });
+        assert(relayResult.powerW !== 10, 'Hub stuck 1W over the deadband must not block the relay switch indefinitely');
+
+        // Sanity check the margin doesn't swallow real, still-unsafe readings: 30W is
+        // well past even the +5W margin (25W) and must still hold.
+        const stillUnsafe = relayProtection.applyProtection({
+            config, gridPowerW: -300, currentBatteryPowerW: 30,
+            lastSetPowerW: 10, newBatteryPowerW: -500
+        });
+        assertEqual(stillUnsafe.powerW, 20, 'A genuinely unsafe reading (30W) still holds at +operatingDeadbandW');
+    });
+
     await runTest('[4.22] MultiDeviceController.calculateTargetPower: sustained heavy feed-in reaches 0W instead of oscillating at hysteresis (issue #21, reporter\'s exact config)', async () => {
         const MultiDeviceController = require('./lib/MultiDeviceController');
 
