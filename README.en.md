@@ -37,6 +37,12 @@ Automatically controls your Zendure Solarflow battery for **zero feed-in** and *
 - **Power Validation** – checks if device accepts setpoints (with auto-retry)
 - **Zero-Setpoint Avoidance** *(experimental, off by default)* – protects against unnecessary flash writes during device control
 
+### 🖥️ Web Dashboard
+- **Standalone, no vis setup required** – live flow diagram (Grid/PV/House/Battery), control buttons, light/dark mode, installable as a PWA
+- **Daily view** – history graphs for house consumption/grid/PV/battery over the last 1h/2h, no history adapter needed
+- **History (optional)** – with InfluxDB export enabled: freely selectable time range, up to two overlaid fields, crosshair tooltip
+- **Optional InfluxDB v2 export** – periodic snapshot of telemetry/status data to your own bucket, token stored encrypted
+
 ### How it Works
 
 **Power Distribution:**
