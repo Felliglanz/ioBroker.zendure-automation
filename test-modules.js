@@ -1157,6 +1157,148 @@ async function testModules() {
         assertEqual(getMockState(dp).val, 0, 'Setpoint stays at literal 0W, no keep-alive pulses re-appear');
     });
 
+    await runTest('[4.6d] validateZeroSetpoint confirms a genuine 0W once outputLimit/inputLimit read back as 0', async () => {
+        initializeMockStates();
+        const validationService = new ValidationService(mockAdapter);
+        const deviceId = 'dev1';
+        const basePath = 'test.0.device1';
+
+        // Safety-bypass 0 (config omitted) - no grace window, validation can start immediately.
+        await validationService.writePowerSetpoint(deviceId, basePath, 0);
+        assertEqual(validationService.getDeviceState(deviceId).zeroPendingValidation, true, 'Zero validation armed after a genuine 0W write');
+
+        setMockState(`${basePath}.outputLimit`, 0);
+        setMockState(`${basePath}.inputLimit`, 0);
+        await validationService.validateZeroSetpoint(deviceId, basePath, mockConfig, 0);
+
+        const state = validationService.getDeviceState(deviceId);
+        assertEqual(state.zeroPendingValidation, false, 'Confirmed 0W clears pending validation');
+        assertEqual(state.zeroValidationRetryCount, 0, 'Retry counter stays at 0 on immediate confirmation');
+    });
+
+    await runTest('[4.6e] validateZeroSetpoint waits out the post-zero grace window before checking anything', async () => {
+        initializeMockStates();
+        const validationService = new ValidationService(mockAdapter);
+        const avoidZeroConfig = { ...mockConfig, avoidZeroSetpoint: true, standbyKeepAliveW: 10, smartModeIdleTimeoutSec: 30, zeroHoldOffSec: 8 };
+        const deviceId = 'dev1';
+        const basePath = 'test.0.device1';
+
+        // Commit a real 0 via the idle-timeout path, same as [4.6b] - this opens the grace window.
+        await validationService.writePowerSetpoint(deviceId, basePath, 0, avoidZeroConfig);
+        const state = validationService.getDeviceState(deviceId);
+        state.standbySince = Date.now() - 31 * 1000;
+        await validationService.writePowerSetpoint(deviceId, basePath, 0, avoidZeroConfig);
+        assert(state.holdOffUntil > Date.now(), 'Grace window is open right after committing the real 0W');
+
+        // outputLimit/inputLimit still show the old (non-zero) values - nograx hasn't caught
+        // up yet, which is expected and must NOT be flagged while the grace window is open.
+        setMockState(`${basePath}.outputLimit`, 10);
+        setMockState(`${basePath}.inputLimit`, 0);
+        await validationService.validateZeroSetpoint(deviceId, basePath, avoidZeroConfig, 0);
+        assertEqual(state.zeroValidationRetryCount, 0, 'No retry counted while the grace window is still active');
+        assertEqual(state.zeroPendingValidation, true, 'Still pending - not silently dropped, just not checked yet');
+    });
+
+    await runTest('[4.6f] validateZeroSetpoint resends and warns exactly once after the retry threshold, then stays quiet', async () => {
+        // Reproduces the real incident (2026-08-28): setDeviceAutomationInOutLimit correctly
+        // reads 0, but nograx's own outputLimit stayed stuck at a stale non-zero value.
+        initializeMockStates();
+        const validationService = new ValidationService(mockAdapter);
+        const deviceId = 'dev1';
+        const basePath = 'test.0.device1';
+        const dp = `${basePath}.control.setDeviceAutomationInOutLimit`;
+
+        await validationService.writePowerSetpoint(deviceId, basePath, 0); // safety-bypass, no grace window
+        setMockState(`${basePath}.outputLimit`, 10); // stuck
+        setMockState(`${basePath}.inputLimit`, 0);
+
+        const state = validationService.getDeviceState(deviceId);
+        let warnCount = 0;
+        const originalWarn = mockAdapter.log.warn;
+        mockAdapter.log.warn = (msg) => { warnCount++; originalWarn(msg); };
+
+        try {
+            // Cycles 1-2: below the retry threshold, no warning yet.
+            await validationService.validateZeroSetpoint(deviceId, basePath, mockConfig, 0);
+            await validationService.validateZeroSetpoint(deviceId, basePath, mockConfig, 0);
+            assertEqual(warnCount, 0, 'No warning before the retry threshold is reached');
+
+            // Cycle 3: threshold reached - warns exactly once and marks a resend as due.
+            await validationService.validateZeroSetpoint(deviceId, basePath, mockConfig, 0);
+            assertEqual(warnCount, 1, 'Warns exactly once at the retry threshold');
+            assertEqual(state.zeroValidationRetryCount, 3, 'Retry counter reached the threshold');
+
+            // The write layer must now actually resend the (still logically unchanged) 0W,
+            // even though lastWrittenLimit already says 0 - this is what gets a stuck
+            // nograx-side value another chance to apply.
+            await validationService.writePowerSetpoint(deviceId, basePath, 0);
+            assertEqual(getMockState(dp).ts !== undefined, true, 'Resend write happened');
+
+            // Cycles 4-6: still stuck, but must not spam another warning.
+            await validationService.validateZeroSetpoint(deviceId, basePath, mockConfig, 0);
+            await validationService.validateZeroSetpoint(deviceId, basePath, mockConfig, 0);
+            await validationService.validateZeroSetpoint(deviceId, basePath, mockConfig, 0);
+            assertEqual(warnCount, 1, 'Still only one warning after further unconfirmed cycles - no log spam');
+
+            // Now nograx catches up - confirmation clears everything and re-arms for next time.
+            setMockState(`${basePath}.outputLimit`, 0);
+            await validationService.validateZeroSetpoint(deviceId, basePath, mockConfig, 0);
+            assertEqual(state.zeroPendingValidation, false, 'Confirmed once outputLimit finally reads 0');
+            assertEqual(state.zeroValidationWarned, false, 'Warned flag resets on confirmation, ready for a future spell');
+        } finally {
+            mockAdapter.log.warn = originalWarn;
+        }
+    });
+
+    await runTest('[4.6g] A changed setpoint (e.g. emergency charge) is never blocked or delayed by pending 0W validation', async () => {
+        initializeMockStates();
+        const validationService = new ValidationService(mockAdapter);
+        const deviceId = 'dev1';
+        const basePath = 'test.0.device1';
+        const dp = `${basePath}.control.setDeviceAutomationInOutLimit`;
+
+        // Get a 0W validation stuck at the retry threshold, exactly like [4.6f].
+        await validationService.writePowerSetpoint(deviceId, basePath, 0);
+        setMockState(`${basePath}.outputLimit`, 10);
+        setMockState(`${basePath}.inputLimit`, 0);
+        for (let i = 0; i < 3; i++) {
+            await validationService.validateZeroSetpoint(deviceId, basePath, mockConfig, 0);
+        }
+        const state = validationService.getDeviceState(deviceId);
+        assertEqual(state.zeroValidationRetryCount, 3, 'Zero validation is stuck at the threshold, as in [4.6f]');
+
+        // An emergency charge command must go through immediately regardless - bypassHoldOff
+        // mirrors the real call site in SingleDeviceController.handleEmergency().
+        await validationService.writePowerSetpoint(deviceId, basePath, -1600, mockConfig, { bypassHoldOff: true });
+        assertEqual(getMockState(dp).val, -1600, 'Emergency charge setpoint reaches the device immediately, unblocked by pending 0W validation');
+        assertEqual(state.zeroPendingValidation, false, '0W validation state is cleared by the new, changed setpoint');
+        assertEqual(state.pendingValidation, true, 'Charge validation is now armed instead for the new target');
+    });
+
+    await runTest('[4.6h] validateZeroSetpoint skips silently when outputLimit/inputLimit are not exposed (e.g. non-zenSDK setups)', async () => {
+        initializeMockStates();
+        const validationService = new ValidationService(mockAdapter);
+        const deviceId = 'dev1';
+        const basePath = 'test.0.device1';
+        // Deliberately not setting outputLimit/inputLimit mock states - getForeignStateAsync
+        // returns { val: null, ack: false } for them, same as a real device without zenSDK.
+
+        await validationService.writePowerSetpoint(deviceId, basePath, 0);
+
+        let warnCount = 0;
+        const originalWarn = mockAdapter.log.warn;
+        mockAdapter.log.warn = () => { warnCount++; };
+        try {
+            for (let i = 0; i < 5; i++) {
+                await validationService.validateZeroSetpoint(deviceId, basePath, mockConfig, 0);
+            }
+        } finally {
+            mockAdapter.log.warn = originalWarn;
+        }
+        assertEqual(warnCount, 0, 'Never warns when outputLimit/inputLimit do not exist for this device');
+        assertEqual(validationService.getDeviceState(deviceId).zeroPendingValidation, false, 'Validation stands down instead of failing forever');
+    });
+
     await runTest('[4.7] Waterfill uses sticky device and redistributes capped power', async () => {
         const distributor = new WaterfillDistributor();
         const devices = [
@@ -1774,30 +1916,100 @@ async function testModules() {
         });
         assertEqual(regResult.powerW, 10, 'Cycle A: regulator output unchanged (no relay switch needed yet)');
 
-        // Cycle B: deadband hold has now lasted deadbandHoldTicks - RelayProtection
-        // releases to the safety-critical 0W setpoint. Delta to lastSetPowerW (10W)
-        // is only 10W, well under hysteresisW (30W): pre-fix this got silently
-        // reverted to 10W and the relay could never switch.
+        // Cycle B: deadband hold has now lasted deadbandHoldTicks, but the device
+        // still isn't relay-safe (currentBatteryPowerW=25W is still above
+        // modeSwitchToleranceW). RelayProtection keeps holding at +operatingDeadbandW
+        // rather than releasing to a literal 0W - a literal 0 here would get
+        // laundered by config.avoidZeroSetpoint into a non-zero keep-alive in the
+        // *old* (discharge) direction downstream, which reads back as "still
+        // discharging" next cycle and restarts this whole transition from scratch
+        // (real-world livelock, 2026-08-28: adapter stuck alternating 0W/10W for
+        // hours, battery never actually reaching near-0W, only a restart recovered).
         relayResult = relayProtection.applyProtection({
             config, gridPowerW, currentBatteryPowerW,
             lastSetPowerW: 10, newBatteryPowerW: rawTargetW
         });
-        assertEqual(relayResult.powerW, 0, 'Cycle B: deadband released, RelayProtection targets exactly 0W');
+        assertEqual(relayResult.powerW, 10, 'Cycle B: still not relay-safe, deadband keeps holding at +operatingDeadbandW (not 0W)');
         assert(relayResult.relayModified, 'Cycle B: RelayProtection reports it overrode the setpoint');
 
         regResult = powerRegulator.applyRegulation({
             config, powerW: relayResult.powerW, lastSetPowerW: 10,
             safetyActive: false, bypassHysteresis: relayResult.relayModified
         });
-        assertEqual(regResult.powerW, 0, 'Cycle B: 0W setpoint reaches the device instead of being reverted by hysteresis');
+        assertEqual(regResult.powerW, 10, 'Cycle B: held setpoint reaches the device instead of being reverted by hysteresis');
 
-        // Control: without the bypass flag, the exact same 0W setpoint gets
+        // Cycle C: battery power has now actually settled near-0 (5W, within
+        // modeSwitchToleranceW) - relay-protection's own charge/discharge sign-change
+        // guard (separate from the "wait for near-zero" gate, untouched by this fix)
+        // still holds for one more deadbandHoldTicks cycle before allowing the actual
+        // sign flip, so this cycle still reports the +10W hold, not the full target yet.
+        const settledBatteryPowerW = 5;
+        relayResult = relayProtection.applyProtection({
+            config, gridPowerW, currentBatteryPowerW: settledBatteryPowerW,
+            lastSetPowerW: 10, newBatteryPowerW: rawTargetW
+        });
+        assertEqual(relayResult.powerW, 10, 'Cycle C: relay-safe now, but sign-change deadband holds once more at +operatingDeadbandW');
+
+        // Cycle D: sign-change deadband hold has now also lasted deadbandHoldTicks -
+        // RelayProtection finally releases straight to the full charge target. Note
+        // there is still no literal 0W anywhere in this sequence: the jump goes
+        // directly from the +10W hold to the full (large, unambiguous) target.
+        relayResult = relayProtection.applyProtection({
+            config, gridPowerW, currentBatteryPowerW: settledBatteryPowerW,
+            lastSetPowerW: 10, newBatteryPowerW: rawTargetW
+        });
+        assertEqual(relayResult.powerW, rawTargetW, 'Cycle D: relay-safe, RelayProtection releases straight to the full charge target');
+        // relayModified is correctly false here: this cycle passes the regulator's own
+        // target straight through unmodified (the override happened in cycles A-C).
+        // The large delta from lastSetPowerW clears hysteresis on its own regardless.
+
+        regResult = powerRegulator.applyRegulation({
+            config, powerW: relayResult.powerW, lastSetPowerW: 10,
+            safetyActive: false, bypassHysteresis: relayResult.relayModified
+        });
+        // Ramp rate limiting (a separate, unrelated regulation step) caps how much of the
+        // jump lands in one cycle - the point here is just that hysteresis didn't revert
+        // it back to the 10W hold, not that the full target arrives in a single cycle.
+        assert(regResult.powerW < -100, `Cycle D: charge step reaches the device instead of being reverted by hysteresis (got ${regResult.powerW}W)`);
+
+        // Control: without the bypass flag, a small-delta protective setpoint gets
         // reverted by hysteresis - this is the bug as reported in issue #21.
         const unfixedResult = powerRegulator.applyRegulation({
             config, powerW: 0, lastSetPowerW: 10, safetyActive: false
             // bypassHysteresis omitted, as pre-fix call sites did
         });
         assertEqual(unfixedResult.powerW, 10, 'Control: omitting bypassHysteresis reproduces the reported deadlock');
+    });
+
+    await runTest('[4.21b] RelayProtection switch tolerance has a flat +5W margin so measurement noise cannot block the switch forever', async () => {
+        const relayProtection = new RelayProtection(mockAdapter);
+
+        const config = {
+            ...mockConfig,
+            operatingDeadbandW: 20,
+            deadbandHoldTicks: 1,
+            feedInThresholdW: -150,
+            feedInDelayTicks: 5
+        };
+
+        relayProtection.feedInCounter = 5;
+
+        // Hub reports 21W - 1W above the 20W deadband we're holding it at, e.g. sensor
+        // rounding/noise. Without the +5W margin, abs(21) > 20 would hold this forever;
+        // with it, abs(21) > 25 is false, so the switch is allowed through.
+        const relayResult = relayProtection.applyProtection({
+            config, gridPowerW: -300, currentBatteryPowerW: 21,
+            lastSetPowerW: 10, newBatteryPowerW: -500
+        });
+        assert(relayResult.powerW !== 10, 'Hub stuck 1W over the deadband must not block the relay switch indefinitely');
+
+        // Sanity check the margin doesn't swallow real, still-unsafe readings: 30W is
+        // well past even the +5W margin (25W) and must still hold.
+        const stillUnsafe = relayProtection.applyProtection({
+            config, gridPowerW: -300, currentBatteryPowerW: 30,
+            lastSetPowerW: 10, newBatteryPowerW: -500
+        });
+        assertEqual(stillUnsafe.powerW, 20, 'A genuinely unsafe reading (30W) still holds at +operatingDeadbandW');
     });
 
     await runTest('[4.22] MultiDeviceController.calculateTargetPower: sustained heavy feed-in reaches 0W instead of oscillating at hysteresis (issue #21, reporter\'s exact config)', async () => {
@@ -1843,9 +2055,31 @@ async function testModules() {
         const cycleA = await controller.calculateTargetPower(config, filteredGridPowerW, targetGridPowerW, normalDevices, aggregatedState);
         assertEqual(cycleA, 20, 'Cycle A: deadband holds at scaled operatingDeadbandW (20W for 2 devices)');
 
+        // Cycle B: deadband hold ticks expired, but the devices are still measured at
+        // 40W total (well above the scaled 20W tolerance) - keeps holding at 20W rather
+        // than releasing to a literal 0W. A literal 0 here would get laundered by
+        // config.avoidZeroSetpoint into a non-zero discharge-direction keep-alive
+        // downstream, which reads back as "still discharging" next cycle and restarts
+        // this whole transition from scratch (real-world livelock, 2026-08-28).
         controller.lastTotalWrittenPowerW = cycleA;
         const cycleB = await controller.calculateTargetPower(config, filteredGridPowerW, targetGridPowerW, normalDevices, aggregatedState);
-        assertEqual(cycleB, 0, 'Cycle B: deadband release reaches 0W - relay is finally allowed to switch to charge');
+        assertEqual(cycleB, 20, 'Cycle B: still not relay-safe, deadband keeps holding at scaled operatingDeadbandW (not 0W)');
+
+        // Cycle C: devices have now actually settled near-0 (5W total, within the
+        // scaled 20W tolerance) - relay-protection's sign-change guard (separate from
+        // the "wait for near-zero" gate, untouched by this fix) still holds for one
+        // more deadbandHoldTicks cycle, so this cycle still reports the 20W hold.
+        controller.lastTotalWrittenPowerW = cycleB;
+        const settledDevices = [{ id: 'device1', powerW: 2 }, { id: 'device2', powerW: 3 }];
+        const cycleC = await controller.calculateTargetPower(config, filteredGridPowerW, targetGridPowerW, settledDevices, aggregatedState);
+        assertEqual(cycleC, 20, 'Cycle C: relay-safe now, but sign-change deadband holds once more at scaled operatingDeadbandW');
+
+        // Cycle D: sign-change deadband hold has now also lasted deadbandHoldTicks -
+        // controller finally releases straight to a large charge target. Still no
+        // literal 0W anywhere in this sequence.
+        controller.lastTotalWrittenPowerW = cycleC;
+        const cycleD = await controller.calculateTargetPower(config, filteredGridPowerW, targetGridPowerW, settledDevices, aggregatedState);
+        assert(cycleD < -20, `Cycle D: relay-safe, controller releases straight to a large charge target (got ${cycleD}W)`);
     });
 
     await runTest('[4.23] PowerRegulator hysteresis still suppresses ordinary I-Regulator jitter (regression guard for issue #21 fix)', async () => {

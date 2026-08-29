@@ -458,6 +458,114 @@
               }
             }
           }
+        },
+        "_panelInflux": {
+          "type": "panel",
+          "label": {
+            "en": "📈 InfluxDB Export (optional)",
+            "de": "📈 InfluxDB-Export (optional)"
+          },
+          "items": {
+            "influxEnabled": {
+              "type": "checkbox",
+              "label": {
+                "en": "Enable InfluxDB v2 export",
+                "de": "InfluxDB-v2-Export aktivieren"
+              },
+              "sm": 12,
+              "default": false
+            },
+            "influxUrl": {
+              "type": "text",
+              "label": {
+                "en": "URL",
+                "de": "URL"
+              },
+              "placeholder": "http://192.168.1.10:8086",
+              "sm": 12,
+              "hidden": "!data.influxEnabled",
+              "help": {
+                "en": "Include protocol and port, e.g. http://... or https://...",
+                "de": "Mit Protokoll und Port, z.B. http://... oder https://..."
+              }
+            },
+            "influxOrg": {
+              "type": "text",
+              "label": {
+                "en": "Organization",
+                "de": "Organisation"
+              },
+              "sm": 6,
+              "hidden": "!data.influxEnabled"
+            },
+            "influxBucket": {
+              "type": "text",
+              "label": {
+                "en": "Bucket",
+                "de": "Bucket"
+              },
+              "sm": 6,
+              "hidden": "!data.influxEnabled"
+            },
+            "influxToken": {
+              "type": "password",
+              "label": {
+                "en": "API Token",
+                "de": "API-Token"
+              },
+              "sm": 12,
+              "hidden": "!data.influxEnabled",
+              "help": {
+                "en": "Needs write access to the bucket above.",
+                "de": "Benötigt Schreibrechte auf den obigen Bucket."
+              }
+            },
+            "influxMeasurement": {
+              "type": "text",
+              "label": {
+                "en": "Measurement name",
+                "de": "Measurement-Name"
+              },
+              "sm": 6,
+              "default": "zendure",
+              "hidden": "!data.influxEnabled",
+              "help": {
+                "en": "All exported values are written under this one measurement.",
+                "de": "Alle exportierten Werte landen unter diesem einen Measurement."
+              }
+            },
+            "influxIntervalSec": {
+              "type": "number",
+              "label": {
+                "en": "Write interval (s)",
+                "de": "Schreib-Intervall (s)"
+              },
+              "sm": 6,
+              "min": 10,
+              "default": 60,
+              "hidden": "!data.influxEnabled"
+            },
+            "influxIncludeTelemetry": {
+              "type": "checkbox",
+              "label": {
+                "en": "Export telemetry (daily counters)",
+                "de": "Telemetrie exportieren (Tageszähler)"
+              },
+              "sm": 6,
+              "default": true,
+              "hidden": "!data.influxEnabled"
+            },
+            "influxIncludeStatus": {
+              "type": "checkbox",
+              "label": {
+                "en": "Export status (mode, power, SOC, ...)",
+                "de": "Status exportieren (Modus, Leistung, SOC, ...)"
+              },
+              "sm": 6,
+              "default": true,
+              "hidden": "!data.influxEnabled"
+            }
+          }
         }
       }
     },
@@ -1596,6 +1704,20 @@
           "help": {
             "en": "Datapoint with current PV production in W. Adds a PV node to the flow diagram.",
             "de": "Datenpunkt mit aktueller PV-Produktion in W. Ergänzt einen PV-Knoten im Flussdiagramm."
+          }
+        },
+        "influxHistoryUiEnabled": {
+          "type": "checkbox",
+          "label": {
+            "en": "Show History view (needs InfluxDB export enabled)",
+            "de": "Historie-Ansicht anzeigen (benötigt aktivierten InfluxDB-Export)"
+          },
+          "sm": 12,
+          "default": false,
+          "hidden": "!data.influxEnabled",
+          "help": {
+            "en": "Adds a History entry to the dashboard menu that charts data read back from InfluxDB.",
+            "de": "Ergänzt einen Historie-Punkt im Dashboard-Menü, der Daten aus InfluxDB als Graph anzeigt."
           }
         }
       }
