@@ -44,6 +44,12 @@ Steuert deine Zendure Solarflow Batterie vollautomatisch für **Null-Einspeisung
 - **10W Safe-Switch** – Relais schaltet nur bei minimalem Strom (~0.04A)
 - **Operating Deadband (neu)** – hält bei ±5W für 1 Tick vor Nulldurchgang
 
+### 🖥️ Web-Dashboard
+- **Eigenständig, keine vis-Einrichtung nötig** – Live-Flussdiagramm (Netz/PV/Haus/Batterie), Steuerelemente, Hell-/Dunkelmodus, als PWA installierbar
+- **Tagesansicht** – Verlaufs-Graphen für Hausverbrauch/Netz/PV/Batterie über 1h/2h, ohne History-Adapter
+- **Historie (optional)** – bei aktiviertem InfluxDB-Export: frei wählbarer Zeitraum, bis zu zwei überlagerte Felder, Fadenkreuz-Tooltip
+- **Optionaler InfluxDB-v2-Export** – periodischer Snapshot von Telemetrie-/Status-Daten in einen eigenen Bucket, Token verschlüsselt gespeichert
+
 ### 🏗️ Moderne Architektur
 - **Modulare Struktur** – main.js orchestriert nur noch, die eigentliche Logik lebt in fokussierten, einzeln testbaren `lib/`-Modulen (Regelung, Sicherheit, Validierung, Multi-Device-Verteilung, Dashboard)
 - **Controller-basiert** – SingleDeviceController & MultiDeviceController
