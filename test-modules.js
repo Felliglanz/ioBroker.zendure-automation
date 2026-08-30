@@ -1299,6 +1299,125 @@ async function testModules() {
         assertEqual(validationService.getDeviceState(deviceId).zeroPendingValidation, false, 'Validation stands down instead of failing forever');
     });
 
+    await runTest('[4.6i] A safety-forced 0W never leaves a stale keep-alive direction for the next non-bypass 0W (2026-08-30 flicker)', async () => {
+        // Real-world incident: battery in SOC/minSoc recovery (discharge blocked by
+        // SafetyLimiter, written via the bypass path - config omitted - which never touches
+        // the zero-avoidance state machine, only lastWrittenLimit). Morning PV ramp: grid
+        // hovers near 0, occasionally dips slightly negative but never sustains past
+        // feedInThresholdW, so RelayProtection legitimately resolves the charge attempt to
+        // exactly 0 every cycle (not a safety bypass - this 0 goes through the normal,
+        // avoidZeroSetpoint-enabled path). Before the fix, that 0 was laundered by
+        // _resolveZeroAvoidance into a 10W keep-alive in whatever direction was active
+        // *before* recovery started (here: discharge, +1) - a real, non-zero discharge pulse
+        // sent straight into a device SafetyLimiter is actively blocking from discharging.
+        initializeMockStates();
+        const validationService = new ValidationService(mockAdapter);
+        const avoidZeroConfig = { ...mockConfig, avoidZeroSetpoint: true, standbyKeepAliveW: 10, smartModeIdleTimeoutSec: 300, zeroHoldOffSec: 8 };
+        const deviceId = 'dev1';
+        const basePath = 'test.0.device1';
+        const dp = `${basePath}.control.setDeviceAutomationInOutLimit`;
+
+        // Device was genuinely discharging right before recovery kicked in.
+        await validationService.writePowerSetpoint(deviceId, basePath, 150, avoidZeroConfig);
+        assertEqual(getMockState(dp).val, 150, 'Sanity: device was actively discharging');
+
+        // SafetyLimiter now blocks discharge (recovery) - written via the bypass path
+        // (no config), exactly like SingleDeviceController does when safetyActive is true.
+        await validationService.writePowerSetpoint(deviceId, basePath, 0);
+        assertEqual(getMockState(dp).val, 0, 'Safety-forced 0W lands immediately, bypassing zero-avoidance');
+
+        // Next cycles: still in recovery (discharge blocked), but the *charge* side isn't
+        // blocked - RelayProtection resolves the non-sustained feed-in to exactly 0 each
+        // cycle. This now goes through the normal (config-enabled) path.
+        for (let i = 0; i < 5; i++) {
+            await validationService.writePowerSetpoint(deviceId, basePath, 0, avoidZeroConfig);
+            assertEqual(getMockState(dp).val, 0, `Cycle ${i}: must stay at literal 0W, never a keep-alive pulse in the blocked (discharge) direction`);
+        }
+
+        const state = validationService.getDeviceState(deviceId);
+        assertEqual(state.committedZero, true, 'Already-at-rest 0W is treated as committed immediately, no idle timer needed');
+    });
+
+    await runTest('[4.6j] Keep-alive direction still mirrors a genuine prior direction correctly (regression guard for 4.6i fix)', async () => {
+        // The 4.6i fix must not break the ordinary case: a real, uninterrupted transition
+        // from active to standby should still hold the keep-alive floor in the direction
+        // the device actually came from, for both charge and discharge.
+        initializeMockStates();
+        const validationService = new ValidationService(mockAdapter);
+        const avoidZeroConfig = { ...mockConfig, avoidZeroSetpoint: true, standbyKeepAliveW: 10, smartModeIdleTimeoutSec: 300, zeroHoldOffSec: 8 };
+
+        // Discharge -> standby: keep-alive holds positive.
+        const dischargeId = 'dev-discharge';
+        const dischargeBasePath = 'test.0.device-discharge';
+        await validationService.writePowerSetpoint(dischargeId, dischargeBasePath, 200, avoidZeroConfig);
+        await validationService.writePowerSetpoint(dischargeId, dischargeBasePath, 0, avoidZeroConfig);
+        assertEqual(
+            getMockState(`${dischargeBasePath}.control.setDeviceAutomationInOutLimit`).val, 10,
+            'Coming from real discharge, the keep-alive holds at +standbyKeepAliveW'
+        );
+
+        // Charge -> standby: keep-alive holds negative.
+        const chargeId = 'dev-charge';
+        const chargeBasePath = 'test.0.device-charge';
+        await validationService.writePowerSetpoint(chargeId, chargeBasePath, -300, avoidZeroConfig);
+        await validationService.writePowerSetpoint(chargeId, chargeBasePath, 0, avoidZeroConfig);
+        assertEqual(
+            getMockState(`${chargeBasePath}.control.setDeviceAutomationInOutLimit`).val, -10,
+            'Coming from real charge, the keep-alive holds at -standbyKeepAliveW'
+        );
+    });
+
+    await runTest('[4.6k] validateZeroSetpoint keeps monitoring after confirmation and catches the device drifting away on its own', async () => {
+        // The user's explicit ask (2026-08-30): the adapter should notice if a device it
+        // believes is at rest actually isn't anymore - e.g. someone changed the setpoint
+        // manually via the Zendure app - and correct it, not just confirm once and stop
+        // looking. This is deliberately continuous, not a one-shot check.
+        initializeMockStates();
+        const validationService = new ValidationService(mockAdapter);
+        const deviceId = 'dev1';
+        const basePath = 'test.0.device1';
+        const dp = `${basePath}.control.setDeviceAutomationInOutLimit`;
+
+        // Commit and confirm a genuine 0W, same as [4.6d].
+        await validationService.writePowerSetpoint(deviceId, basePath, 0);
+        setMockState(`${basePath}.outputLimit`, 0);
+        setMockState(`${basePath}.inputLimit`, 0);
+        await validationService.validateZeroSetpoint(deviceId, basePath, mockConfig, 0);
+
+        const state = validationService.getDeviceState(deviceId);
+        assertEqual(state.zeroPendingValidation, false, 'Confirmed and quiesced, exactly like 4.6d');
+
+        // A few more confirmed cycles must stay silent (steady-state, no log noise).
+        let warnCount = 0;
+        const originalWarn = mockAdapter.log.warn;
+        mockAdapter.log.warn = (msg) => { warnCount++; originalWarn(msg); };
+        try {
+            for (let i = 0; i < 3; i++) {
+                await validationService.validateZeroSetpoint(deviceId, basePath, mockConfig, 0);
+            }
+            assertEqual(warnCount, 0, 'Steady confirmed standby produces no warnings');
+
+            // Now something external changes the device's own registers - manual tampering
+            // or another automation - while our own target is still 0W.
+            setMockState(`${basePath}.outputLimit`, 300);
+            setMockState(`${basePath}.inputLimit`, 0);
+
+            await validationService.validateZeroSetpoint(deviceId, basePath, mockConfig, 300);
+            assertEqual(warnCount, 1, 'Drift away from a previously-confirmed 0W is flagged immediately');
+            assertEqual(state.zeroPendingValidation, true, 'Re-armed for the retry/resend machinery below');
+
+            // Reach the retry threshold - the existing resend path takes over from here.
+            await validationService.validateZeroSetpoint(deviceId, basePath, mockConfig, 300);
+            await validationService.validateZeroSetpoint(deviceId, basePath, mockConfig, 300);
+            assertEqual(state.zeroValidationRetryCount, 3, 'Retry counter reached the threshold');
+
+            await validationService.writePowerSetpoint(deviceId, basePath, 0);
+            assertEqual(getMockState(dp).val, 0, 'Our own target (0W) is resent to reassert control over the manually-changed device');
+        } finally {
+            mockAdapter.log.warn = originalWarn;
+        }
+    });
+
     await runTest('[4.7] Waterfill uses sticky device and redistributes capped power', async () => {
         const distributor = new WaterfillDistributor();
         const devices = [
@@ -2010,6 +2129,81 @@ async function testModules() {
             lastSetPowerW: 10, newBatteryPowerW: -500
         });
         assertEqual(stillUnsafe.powerW, 20, 'A genuinely unsafe reading (30W) still holds at +operatingDeadbandW');
+    });
+
+    await runTest('[4.21c] Full pipeline (RelayProtection + SafetyLimiter + ValidationService): SOC recovery never leaks a discharge pulse through a non-sustained charge attempt near grid=0 (2026-08-30 flicker)', async () => {
+        // End-to-end reproduction of the real-world incident: morning PV ramp, grid hovering
+        // near 0 (sometimes briefly negative, never sustaining past feedInThresholdW), battery
+        // in SOC recovery so discharge is blocked but charge is not. Every cycle where the
+        // I-Regulator wants a small negative (charge) correction, RelayProtection correctly
+        // resolves it to exactly 0 (feed-in not sustained) - and that 0 must never come out
+        // the other end as a keep-alive pulse, since SafetyLimiter would otherwise let it
+        // straight through (a genuinely-zero input never enters either of its >0/<0 branches).
+        initializeMockStates();
+        const relayProtection = new RelayProtection(mockAdapter);
+        const safetyLimiter = new SafetyLimiter(mockAdapter, 'test.0.device1');
+        const emergencyMgr = new EmergencyManager(mockAdapter, 'test.0.device1');
+        const validationService = new ValidationService(mockAdapter);
+
+        const deviceId = 'dev1';
+        const basePath = 'test.0.device1';
+        const dp = `${basePath}.control.setDeviceAutomationInOutLimit`;
+        const config = {
+            ...mockConfig,
+            avoidZeroSetpoint: true, standbyKeepAliveW: 10, smartModeIdleTimeoutSec: 300, zeroHoldOffSec: 8,
+            dischargeProtectionMode: 'soc', minBatterySoc: 10, socRecoveryHysteresis: 5,
+            feedInThresholdW: -150, feedInDelayTicks: 5,
+            operatingDeadbandW: 10, deadbandHoldTicks: 3,
+            enableCharge: true, enableDischarge: true
+        };
+        const batterySoc = 10; // at the recovery floor for the whole test
+
+        let lastSetPowerW = 150;
+        const runCycle = async (gridPowerW, currentBatteryPowerW) => {
+            const dischargeBlocked = !config.enableDischarge || emergencyMgr.inEmergencyRecovery ||
+                emergencyMgr.inVoltageRecovery || emergencyMgr.inSocRecovery || emergencyMgr.inMinSocRecovery;
+            const chargeBlocked = !config.enableCharge || batterySoc >= (config.maxBatterySoc ?? 100) || emergencyMgr.inMaxSocRecovery;
+
+            const rawTargetW = lastSetPowerW + (gridPowerW - 0); // I-Regulator, target=0W, gain=1
+            const relayResult = relayProtection.applyProtection({
+                config, gridPowerW, currentBatteryPowerW, lastSetPowerW,
+                newBatteryPowerW: rawTargetW, dischargeBlocked, chargeBlocked
+            });
+            let powerW = relayResult.powerW;
+
+            const safetyResult = await safetyLimiter.applySafetyLimits({
+                config, emergencyManager: emergencyMgr, batterySoc, minPackVoltageV: null, powerW
+            });
+            powerW = safetyResult.powerW;
+
+            await validationService.writePowerSetpoint(
+                deviceId, basePath, powerW, safetyResult.safetyActive ? undefined : config
+            );
+            lastSetPowerW = powerW;
+            return powerW;
+        };
+
+        // Cycle 0: genuinely discharging, before anything happens.
+        await validationService.writePowerSetpoint(deviceId, basePath, lastSetPowerW, config);
+        assertEqual(getMockState(dp).val, 150, 'Sanity: device starts out genuinely discharging');
+
+        // Cycle 1: SOC has now hit the recovery floor - SafetyLimiter activates SOC recovery
+        // and forces 0W this same cycle (the bypass path, since it's newly detected here).
+        const written = await runCycle(80, 150);
+        assertEqual(written, 0, 'Cycle 1: SOC recovery blocks discharge, forced to 0W immediately');
+        assert(emergencyMgr.inSocRecovery, 'SOC recovery is now active');
+
+        // Cycles 2-6: PV ramp - grid hovers near 0, dipping slightly negative sometimes,
+        // never sustaining past feedInThresholdW (-150W) for feedInDelayTicks. Discharge
+        // stays blocked (recovery hysteresis keeps SOC recovery active) throughout; charge
+        // is not blocked, so these cycles are exactly the "resolves to 0 through the normal
+        // path" case that used to leak a keep-alive pulse.
+        const gridSamples = [20, -30, 10, -15, 5];
+        for (const gridPowerW of gridSamples) {
+            const w = await runCycle(gridPowerW, 0);
+            assertEqual(w, 0, `Grid=${gridPowerW}W: must resolve to literal 0W, never a keep-alive pulse, while discharge is blocked`);
+            assertEqual(getMockState(dp).val, 0, 'Device itself never receives a non-zero pulse either');
+        }
     });
 
     await runTest('[4.22] MultiDeviceController.calculateTargetPower: sustained heavy feed-in reaches 0W instead of oscillating at hysteresis (issue #21, reporter\'s exact config)', async () => {
