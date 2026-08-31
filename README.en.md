@@ -338,6 +338,16 @@ packPower = API setpoint + PV input + AC charging
 - **AC+ / Hyper** without PV → `packPower` (default)
 - If unsure → test `packPower`, if validation errors occur → switch to `gridInputPower`
 
+### ⚠️ Ignore State Freshness Check (Legacy/Non-ZenSDK Devices)
+
+**Problem:** The adapter excludes a device from a cycle if `packPower`, `gridInputPower`, or `electricLevel` hasn't been updated for more than 3 minutes (frozen-state watchdog, protects against trusting a frozen value from a dead/offline device). For devices without ZenSDK support (e.g. Hyper 2000, connected via cloud-MQTT instead of the local API), the Zendure cloud may only republish a value when it changes - if the value legitimately stays constant for longer than 3 minutes (e.g. in standby), the watchdog falsely trips and the device gets excluded despite a working connection.
+
+**Solution:** "Ignore state freshness check" checkbox (intended only for legacy/non-ZenSDK devices):
+- **Single-Device Mode:** Checkbox under device settings
+- **Multi-Device Mode:** Per device as a column in the devices table
+
+**Warning:** This disables the protection for this device only - a genuinely frozen/dead value (e.g. the device actually offline) will also no longer be detected, and the adapter may keep computing with stale values. Only enable it if the device demonstrably trips the watchdog falsely.
+
 ### 🚨 Emergency & Recovery
 
 **Emergency Charging** (highest priority):

@@ -111,6 +111,7 @@
   "native": {
     "zendureSolarflowInstance": "zendure-solarflow.0",
     "deviceProductKey": "",
+    "ignoreStateFreshness": false,
     "deviceKey": "",
     "powerMeterDp": "",
     "updateIntervalSec": 5,

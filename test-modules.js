@@ -245,6 +245,22 @@ async function testModules() {
         assertEqual(await dataReader.getCurrentBatteryPowerW(), 100, 'Fresh battery power is trusted again');
     });
 
+    await runTest('[1.4c] DataReader trusts a frozen value when ignoreStateFreshness bypass is set (issue #16)', async () => {
+        initializeMockStates();
+        const staleTs = Date.now() - (4 * 60 * 1000); // older than the 3-minute staleness window
+        mockStates.set('test.0.device1.electricLevel', { val: 50, ack: true, ts: staleTs });
+        mockStates.set('test.0.device1.packPower', { val: -100, ack: true, ts: staleTs });
+
+        const dataReader = new DataReader(mockAdapter, deviceBasePath);
+        // Default (no bypass) behavior is unchanged - still treated as stale
+        assertEqual(await dataReader.getBatterySoc(), null, 'Without bypass, stale SOC still returns null');
+        assertEqual(await dataReader.getCurrentBatteryPowerW(), null, 'Without bypass, stale battery power still returns null');
+
+        // With the bypass, the same frozen values are trusted
+        assertEqual(await dataReader.getBatterySoc(true), 50, 'With bypass, frozen SOC is trusted');
+        assertEqual(await dataReader.getCurrentBatteryPowerW(true), 100, 'With bypass, frozen battery power is trusted');
+    });
+
     await runTest('[1.5] MultiDeviceController rejects invalid grid power values', async () => {
         initializeMockStates();
         const MultiDeviceController = require('./lib/MultiDeviceController');
@@ -329,6 +345,31 @@ async function testModules() {
 
         assertEqual(dev1.available, true, 'Device1 with a fresh reading stays available');
         assertEqual(dev2.available, false, 'Device2 with a frozen packPower reading is excluded, not trusted');
+    });
+
+    await runTest('[2.2c] Multi-Device keeps a device with a frozen packPower available when ignoreStateFreshness is set (issue #16)', async () => {
+        initializeMockStates();
+
+        const devices = [
+            { productKey: 'device1', deviceKey: 'pk1', name: 'Device 1', enabled: true },
+            // Legacy/non-ZenSDK device (e.g. Hyper 2000 via cloud-MQTT) that only republishes
+            // packPower on change - opts out of the frozen-state watchdog for itself only.
+            { productKey: 'device2', deviceKey: 'pk2', name: 'Device 2', enabled: true, ignoreStateFreshness: true }
+        ];
+
+        const multiDeviceMgr = new MultiDeviceManager(mockAdapter, 'test.0', devices);
+
+        const staleTs = Date.now() - (4 * 60 * 1000);
+        mockStates.set('test.0.device2.pk2.packPower', { val: -50, ack: true, ts: staleTs });
+
+        const aggregated = await multiDeviceMgr.aggregateDeviceStates();
+
+        const dev1 = aggregated.devices.find(d => d.id === 'pk1');
+        const dev2 = aggregated.devices.find(d => d.id === 'pk2');
+
+        assertEqual(dev1.available, true, 'Device1 (no bypass) with a fresh reading stays available');
+        assertEqual(dev2.available, true, 'Device2 with ignoreStateFreshness stays available despite a frozen packPower reading');
+        assertEqual(dev2.powerW, 50, 'Device2 still reports the (frozen) power value, not null');
     });
 
     await runTest('[2.3] Multi-Device safety limiters block discharge at low voltage', async () => {
