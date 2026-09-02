@@ -1856,6 +1856,11 @@ async function testModules() {
         // Force a large spike into spread mode, then vary the magnitude within
         // spread while the same two devices stay eligible - again, no blend
         // should ever engage, only waterfill()'s direct SOC-weighted split.
+        // The spike itself now holds a ramp-in blend for MODE_TRANSITION_HOLD_CYCLES
+        // (issue #40 - see [4.29]), so run it out here first; this test is
+        // specifically about steady-state magnitude changes, not the join itself.
+        distributor.distribute(1500, devices, config);
+        distributor.distribute(1500, devices, config);
         distributor.distribute(1500, devices, config);
         for (const targetW of [1300, 1250, 1400]) {
             const result = distributor.distribute(targetW, devices, config);
@@ -1863,6 +1868,67 @@ async function testModules() {
             assertEqual(total, targetW, `Spread mode answers ${targetW}W immediately with the full target`);
             assert(result.every(item => item.reason === 'Waterfill spread'), `No blend reason appears while spread stays spread at ${targetW}W`);
         }
+    });
+
+    // ------------------------------------------------------------------
+    // Issue #40: a load spike that pushes a single active device straight into
+    // spread mode used to commit both devices to their final SOC-weighted
+    // split instantly. The newly-joining device has no way to actually deliver
+    // that share yet (relay closing, inverter start), so the I-Regulator saw
+    // the shortfall as grid error, overcorrected, then overshot once the
+    // joiner caught up - a visible grid-power spike followed by a dip into
+    // feed-in. Fix: blend the joiner in over MODE_TRANSITION_HOLD_CYCLES,
+    // mirroring the existing spread -> single concentrate blend ([4.19]) but
+    // for the opposite direction - the already-running device keeps covering
+    // the load while the joiner ramps up.
+    // ------------------------------------------------------------------
+
+    await runTest('[4.29] Waterfill ramps a joining device in gradually on a single -> spread transition (issue #40)', async () => {
+        const distributor = new WaterfillDistributor();
+        const devices = [
+            { id: 'device1', name: 'Device 1', soc: 50, minSoc: 10, maxSoc: 100, maxChargePowerW: 2000, maxDischargePowerW: 2000, chargeAllowed: true, dischargeAllowed: true },
+            { id: 'device2', name: 'Device 2', soc: 50, minSoc: 10, maxSoc: 100, maxChargePowerW: 2000, maxDischargePowerW: 2000, chargeAllowed: true, dischargeAllowed: true }
+        ];
+        const config = {
+            minBatterySoc: 10, maxBatterySoc: 100, updateIntervalSec: 5,
+            waterfillConcentrateHoldMinutes: 0,
+            waterfillDischargeConcentrateBelowW: 600,
+            waterfillDischargeSpreadAboveW: 1200,
+            waterfillSocMargin: 10
+        };
+
+        // Settle into single-device mode on device1 (cold start, per [4.7]).
+        distributor.distribute(400, devices, config);
+
+        // A load spike crosses waterfillDischargeSpreadAboveW. Both devices have
+        // equal SOC (equal final weight), so the eventual split is 750/750 -
+        // but on this exact cycle device1 (already running) covers the whole
+        // request alone; device2 hasn't been asked for anything yet.
+        const trigger = distributor.distribute(1500, devices, config);
+        assertEqual(trigger.find(item => item.deviceId === 'device1').powerW, 1500, 'Trigger cycle: already-running device covers the full spike');
+        assertEqual(trigger.find(item => item.deviceId === 'device2').powerW, 0, 'Trigger cycle: joining device has not ramped in yet');
+        assert(trigger.every(item => item.reason === 'Waterfill spread (ramp-in)'), 'Trigger cycle is flagged as a ramp-in, not a plain spread split');
+
+        // Over the 2 mode-transition-hold cycles, power blends linearly from
+        // the anchor (device1) down to its 750W target while device2 ramps
+        // up from 0 to its 750W target, taking whatever the anchor gives up.
+        const expectedSteps = [
+            { device1: 1125, device2: 375 },
+            { device1: 750, device2: 750 }
+        ];
+        for (let cycle = 0; cycle < 2; cycle++) {
+            const held = distributor.distribute(1500, devices, config);
+            const step = expectedSteps[cycle];
+            assertEqual(held.find(item => item.deviceId === 'device1').powerW, step.device1, `Ramp-in step ${cycle + 1} reduces the anchor towards its target`);
+            assertEqual(held.find(item => item.deviceId === 'device2').powerW, step.device2, `Ramp-in step ${cycle + 1} increases the joiner towards its target`);
+        }
+
+        // Once the hold window is spent, further cycles at the same magnitude
+        // are answered immediately with the plain SOC-weighted split again.
+        const afterHold = distributor.distribute(1500, devices, config);
+        assertEqual(afterHold.find(item => item.deviceId === 'device1').powerW, 750, 'Spread settles at the plain SOC-weighted split after the ramp-in');
+        assertEqual(afterHold.find(item => item.deviceId === 'device2').powerW, 750, 'Spread settles at the plain SOC-weighted split after the ramp-in');
+        assert(afterHold.every(item => item.reason === 'Waterfill spread'), 'Ramp-in reason no longer appears once the hold window is spent');
     });
 
     // ------------------------------------------------------------------
