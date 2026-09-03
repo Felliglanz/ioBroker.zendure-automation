@@ -401,6 +401,16 @@ packPower = API-Setpoint + PV-Einspeisung + AC-Ladung
 - **AC+ / Hyper** ohne PV → `packPower` (Standard)
 - Bei Unsicherheit → `packPower` testen, bei Validation-Fehlern → `gridInputPower`
 
+### ⚠️ State-Freshness-Prüfung ignorieren (Legacy-/Nicht-ZenSDK-Geräte)
+
+**Problem:** Der Adapter schließt ein Gerät aus einem Zyklus aus, wenn `packPower`, `gridInputPower` oder `electricLevel` seit mehr als 3 Minuten nicht mehr aktualisiert wurden (Frozen-State-Watchdog, schützt vor eingefrorenen Werten bei einem toten/offline Gerät). Bei Geräten ohne ZenSDK-Unterstützung (z.B. Hyper 2000, angebunden über Cloud-MQTT statt lokaler API) sendet die Zendure-Cloud einen Wert mitunter nur bei Änderung neu - bleibt der Wert länger als 3 Minuten legitim konstant (z.B. im Standby), schlägt der Watchdog fälschlich an und das Gerät wird trotz funktionierender Verbindung ausgeschlossen.
+
+**Lösung:** Checkbox "State-Freshness-Prüfung ignorieren" (nur für Legacy-/Nicht-ZenSDK-Geräte gedacht):
+- **Single-Device Mode:** Checkbox unter Device-Einstellungen
+- **Multi-Device Mode:** Pro Device als Spalte in der Devices-Table
+
+**Achtung:** Das deaktiviert den Schutz nur für dieses eine Gerät - ein wirklich eingefrorener/toter Wert (z.B. Gerät tatsächlich offline) wird dann ebenfalls nicht mehr erkannt und der Adapter rechnet ggf. mit veralteten Werten weiter. Nur aktivieren, wenn das Gerät den Watchdog nachweislich fälschlich auslöst.
+
 **Wann anpassen?**
 - **Zu träge?** → Alpha erhöhen (z.B. 0.5 → 0.7)
 - **Zu zappelig?** → Alpha verringern (z.B. 0.5 → 0.3)

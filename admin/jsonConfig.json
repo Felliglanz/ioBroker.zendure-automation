@@ -127,6 +127,19 @@
                 "de": "Wähle Validierungsquelle: packPower beinhaltet Gesamtleistung (API + PV), gridInputPower zeigt nur AC-Ladung (API-Setpoint). Nutze gridInputPower wenn PV-Module am Gerät verbaut sind, um falsche Validierungsfehler zu vermeiden."
               }
             },
+            "ignoreStateFreshness": {
+              "type": "checkbox",
+              "label": {
+                "en": "Ignore state freshness check (legacy/non-ZenSDK devices)",
+                "de": "State-Freshness-Prüfung ignorieren (Legacy-/Nicht-ZenSDK-Geräte)"
+              },
+              "sm": 12,
+              "hidden": "data.multiDeviceEnabled",
+              "help": {
+                "en": "For devices without ZenSDK support (e.g. Hyper 2000 via cloud-MQTT), whose source adapter may only republish a value when it changes: the freshness watchdog can then falsely treat a legitimately unchanged reading as frozen and exclude the device. Enabling this disables that protection for this device - a genuinely frozen/dead value would no longer be caught either.",
+                "de": "Für Geräte ohne ZenSDK-Unterstützung (z.B. Hyper 2000 via Cloud-MQTT), deren Quell-Adapter einen Wert eventuell nur bei Änderung neu sendet: Der Freshness-Watchdog kann dann einen legitim unveränderten Wert fälschlich als eingefroren behandeln und das Gerät ausschließen. Diese Option deaktiviert diesen Schutz für dieses Gerät - ein wirklich eingefrorener/toter Wert wird dann ebenfalls nicht mehr erkannt."
+              }
+            },
             "_deviceHint": {
               "type": "staticText",
               "text": {
@@ -279,6 +292,20 @@
                   "tooltip": {
                     "en": "packPower=total (API+PV), gridInputPower=AC only (use if PV attached), none=disabled. Auto-forced to gridInputPower when PV is checked.",
                     "de": "packPower=gesamt (API+PV), gridInputPower=nur AC (nutzen wenn PV verbaut), none=deaktiviert. Wird bei aktiviertem PV automatisch auf gridInputPower gesetzt."
+                  }
+                },
+                {
+                  "type": "checkbox",
+                  "attr": "ignoreStateFreshness",
+                  "title": {
+                    "en": "Ignore Freshness",
+                    "de": "Freshness ignor."
+                  },
+                  "width": "8%",
+                  "default": false,
+                  "tooltip": {
+                    "en": "For legacy/non-ZenSDK devices (e.g. cloud-MQTT) whose source may only update a value on change - disables the frozen-state watchdog for this device only",
+                    "de": "Für Legacy-/Nicht-ZenSDK-Geräte (z.B. Cloud-MQTT), deren Quelle einen Wert evtl. nur bei Änderung aktualisiert - deaktiviert den Frozen-State-Watchdog nur für dieses Gerät"
                   }
                 },
                 {
