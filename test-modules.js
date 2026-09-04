@@ -2131,6 +2131,73 @@ async function testModules() {
     });
 
     // ------------------------------------------------------------------
+    // Issue #26: a PV-equipped device sitting near maxBatterySoc is about to
+    // curtail its own solar (nothing left to charge into) - an AC-only device
+    // at the same SOC loses nothing by staying full. A small discharge-weight
+    // bonus nudges Waterfill to prefer the PV device in that narrow window,
+    // creating headroom exactly where it's worth something. Deliberately
+    // doesn't look at live solar production at all: gating on that would fail
+    // for non-bypass devices, whose own curtailment (the very thing we're
+    // trying to fix) drives solarInputPowerW to ~0 right when it matters most.
+    // The SOC-band gate alone bounds the risk instead - narrow, and it fades
+    // on its own the moment the device drops out of the near-full window.
+    // ------------------------------------------------------------------
+
+    await runTest('[4.30] Waterfill nudges discharge priority towards a near-full PV device, without overriding a real SOC gap (issue #26)', async () => {
+        const distributor = new WaterfillDistributor();
+        const config = {
+            minBatterySoc: 10, maxBatterySoc: 100, updateIntervalSec: 5,
+            waterfillConcentrateHoldMinutes: 0,
+            waterfillDischargeConcentrateBelowW: 600,
+            waterfillDischargeSpreadAboveW: 1200,
+            waterfillSocMargin: 10
+        };
+
+        // Both devices genuinely tied on SOC (97%, within the 5%-of-maxSoc band) -
+        // without the bonus, the non-PV device (listed first) would win the tie.
+        // The PV bonus flips it: creating headroom on the PV device is worth
+        // more here than on the AC-only one sitting at the same charge level.
+        const tied = distributor.distribute(400, [
+            { id: 'acOnly', name: 'AC-only', soc: 97, minSoc: 10, maxSoc: 100, maxDischargePowerW: 800, dischargeAllowed: true },
+            { id: 'pv', name: 'PV device', soc: 97, minSoc: 10, maxSoc: 100, maxDischargePowerW: 800, dischargeAllowed: true, hasPv: true }
+        ], config);
+        assertEqual(tied.find(item => item.deviceId === 'pv').powerW, 400, 'Near-full tie goes to the PV device');
+        assertEqual(tied.find(item => item.deviceId === 'acOnly').powerW, 0, 'AC-only device rests while tied with a near-full PV device');
+
+        // Discharge weight favors the fuller battery (soc - minSoc: prefer
+        // draining the device with more charge stored), so the bonus can only
+        // ever matter between two devices close enough to be a real tie - here
+        // neither device is near maxSoc, so the PV device gets no bonus and a
+        // genuinely lower SOC must lose on its own merits, un-helped.
+        const distributor2 = new WaterfillDistributor();
+        const realGap = distributor2.distribute(400, [
+            { id: 'acOnly', name: 'AC-only', soc: 44, minSoc: 10, maxSoc: 100, maxDischargePowerW: 800, dischargeAllowed: true },
+            { id: 'pv', name: 'PV device', soc: 40, minSoc: 10, maxSoc: 100, maxDischargePowerW: 800, dischargeAllowed: true, hasPv: true }
+        ], config);
+        assertEqual(realGap.find(item => item.deviceId === 'acOnly').powerW, 400, 'A real (if small) SOC lead wins outright when the PV device is nowhere near full');
+        assertEqual(realGap.find(item => item.deviceId === 'pv').powerW, 0, 'PV device with genuinely less charge stored rests, ungated bonus would have wrongly flipped this');
+
+        // Bonus fades once the PV device drops out of the near-full band (below
+        // maxSoc - 5%) - back to a plain tie, first-listed device wins again,
+        // exactly like before the PV device was ever near full.
+        const distributor3 = new WaterfillDistributor();
+        const outOfBand = distributor3.distribute(400, [
+            { id: 'acOnly', name: 'AC-only', soc: 90, minSoc: 10, maxSoc: 100, maxDischargePowerW: 800, dischargeAllowed: true },
+            { id: 'pv', name: 'PV device', soc: 90, minSoc: 10, maxSoc: 100, maxDischargePowerW: 800, dischargeAllowed: true, hasPv: true }
+        ], config);
+        assertEqual(outOfBand.find(item => item.deviceId === 'acOnly').powerW, 400, 'No bonus once the PV device is out of the near-full band - plain tie behavior');
+
+        // The bonus is discharge-only: a charge request must split purely by
+        // charge weight (maxSoc - soc), completely unaffected by hasPv.
+        const distributor4 = new WaterfillDistributor();
+        const charging = distributor4.distribute(-400, [
+            { id: 'acOnly', name: 'AC-only', soc: 97, minSoc: 10, maxSoc: 100, maxChargePowerW: 800, chargeAllowed: true },
+            { id: 'pv', name: 'PV device', soc: 97, minSoc: 10, maxSoc: 100, maxChargePowerW: 800, chargeAllowed: true, hasPv: true }
+        ], config);
+        assertEqual(charging.find(item => item.deviceId === 'acOnly').powerW, -400, 'Charging ignores the discharge-only PV bonus - plain tie behavior');
+    });
+
+    // ------------------------------------------------------------------
     // Issue #21: sustained heavy feed-in never reached charge mode because
     // RelayProtection's deliberate relay-safety setpoints (0W, or exactly
     // ±operatingDeadbandW) were smaller than hysteresisW, so
