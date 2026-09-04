@@ -1964,12 +1964,14 @@ async function testModules() {
         // Hold window complete: this cycle starts the (separate, shorter)
         // mode-transition blend rather than jumping straight to single - see
         // [4.19] for that transition in detail. It settles into pure single
-        // MODE_TRANSITION_HOLD_CYCLES (2) cycles later.
+        // MODE_TRANSITION_HOLD_CYCLES (4) cycles later.
+        distributor.distribute(400, devices, config);
+        distributor.distribute(400, devices, config);
         distributor.distribute(400, devices, config);
         distributor.distribute(400, devices, config);
         const settled = distributor.distribute(400, devices, config);
         assertEqual(settled.filter(item => item.powerW > 0).length, 1,
-            `Hold window and mode-transition blend complete: pure single-device mode by cycle ${holdCycles + 2}`);
+            `Hold window and mode-transition blend complete: pure single-device mode by cycle ${holdCycles + 4}`);
         assertEqual(settled.find(item => item.powerW > 0).deviceId, 'device1', 'Highest SOC device becomes sticky');
     });
 
@@ -2010,15 +2012,23 @@ async function testModules() {
         assertEqual(transitionStart.find(item => item.deviceId === 'device1').powerW, 280, 'Mode-transition step 1: incoming device keeps its real previous share, no jump');
         assertEqual(transitionStart.find(item => item.deviceId === 'device2').powerW, 120, 'Mode-transition step 1: outgoing device keeps its real previous share, no jump');
 
+        const transitionStep2 = distributor.distribute(400, devices, config);
+        assertEqual(transitionStep2.find(item => item.deviceId === 'device1').powerW, 310, 'Mode-transition step 2: power blends a quarter-step from device1\'s real 280W start to the 400W target');
+        assertEqual(transitionStep2.find(item => item.deviceId === 'device2').powerW, 90, 'Mode-transition step 2: power blends a quarter-step away from device2\'s real 120W start');
+
         const transitionMid = distributor.distribute(400, devices, config);
-        assertEqual(transitionMid.find(item => item.deviceId === 'device1').powerW, 340, 'Mode-transition step 2: power is half-way blended from device1\'s real 280W start to the 400W target');
-        assertEqual(transitionMid.find(item => item.deviceId === 'device2').powerW, 60, 'Mode-transition step 2: power is half-way blended away from device2\'s real 120W start');
+        assertEqual(transitionMid.find(item => item.deviceId === 'device1').powerW, 340, 'Mode-transition step 3: power is half-way blended from device1\'s real 280W start to the 400W target');
+        assertEqual(transitionMid.find(item => item.deviceId === 'device2').powerW, 60, 'Mode-transition step 3: power is half-way blended away from device2\'s real 120W start');
+
+        const transitionStep4 = distributor.distribute(400, devices, config);
+        assertEqual(transitionStep4.find(item => item.deviceId === 'device1').powerW, 370, 'Mode-transition step 4: power blends three-quarters from device1\'s real 280W start to the 400W target');
+        assertEqual(transitionStep4.find(item => item.deviceId === 'device2').powerW, 30, 'Mode-transition step 4: power blends three-quarters away from device2\'s real 120W start');
 
         const transitionDone = distributor.distribute(400, devices, config);
-        assertEqual(transitionDone.find(item => item.deviceId === 'device1').powerW, 400, 'Mode-transition step 3: incoming device now carries the full load');
-        assertEqual(transitionDone.find(item => item.deviceId === 'device2').powerW, 0, 'Mode-transition step 3: outgoing device has fully ramped down');
+        assertEqual(transitionDone.find(item => item.deviceId === 'device1').powerW, 400, 'Mode-transition step 5: incoming device now carries the full load');
+        assertEqual(transitionDone.find(item => item.deviceId === 'device2').powerW, 0, 'Mode-transition step 5: outgoing device has fully ramped down');
 
-        const total = [transitionStart, transitionMid, transitionDone].map(
+        const total = [transitionStart, transitionStep2, transitionMid, transitionStep4, transitionDone].map(
             result => result.reduce((sum, item) => sum + item.powerW, 0)
         );
         assert(total.every(sum => sum === 400), 'Total power stays at the requested target throughout the blend - only its split moves');
@@ -2058,6 +2068,8 @@ async function testModules() {
         // The spike itself now holds a ramp-in blend for MODE_TRANSITION_HOLD_CYCLES
         // (issue #40 - see [4.29]), so run it out here first; this test is
         // specifically about steady-state magnitude changes, not the join itself.
+        distributor.distribute(1500, devices, config);
+        distributor.distribute(1500, devices, config);
         distributor.distribute(1500, devices, config);
         distributor.distribute(1500, devices, config);
         distributor.distribute(1500, devices, config);
@@ -2108,14 +2120,16 @@ async function testModules() {
         assertEqual(trigger.find(item => item.deviceId === 'device2').powerW, 0, 'Trigger cycle: joining device has not ramped in yet');
         assert(trigger.every(item => item.reason === 'Waterfill spread (ramp-in)'), 'Trigger cycle is flagged as a ramp-in, not a plain spread split');
 
-        // Over the 2 mode-transition-hold cycles, power blends linearly from
+        // Over the 4 mode-transition-hold cycles, power blends linearly from
         // the anchor (device1) down to its 750W target while device2 ramps
         // up from 0 to its 750W target, taking whatever the anchor gives up.
         const expectedSteps = [
+            { device1: 1313, device2: 188 },
             { device1: 1125, device2: 375 },
+            { device1: 938, device2: 563 },
             { device1: 750, device2: 750 }
         ];
-        for (let cycle = 0; cycle < 2; cycle++) {
+        for (let cycle = 0; cycle < 4; cycle++) {
             const held = distributor.distribute(1500, devices, config);
             const step = expectedSteps[cycle];
             assertEqual(held.find(item => item.deviceId === 'device1').powerW, step.device1, `Ramp-in step ${cycle + 1} reduces the anchor towards its target`);
