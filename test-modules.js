@@ -2197,6 +2197,47 @@ async function testModules() {
         assertEqual(charging.find(item => item.deviceId === 'acOnly').powerW, -400, 'Charging ignores the discharge-only PV bonus - plain tie behavior');
     });
 
+    await runTest('[4.31] Near-full PV discharge bonus uses enter/exit hysteresis, not one flappable cutoff (issue #26 follow-up)', async () => {
+        // A single shared threshold would flip the bonus on and off every time SOC
+        // ticks a fraction of a percent across it - and since the bonus (5) isn't
+        // reliably smaller than whatever waterfillSocMargin a user configures, that
+        // could genuinely flap the active device back and forth right at the line.
+        // Armed at maxSoc-5%, only disarmed again below maxSoc-10%: same
+        // WaterfillDistributor instance throughout, since the latch is state that
+        // must persist across cycles per device, not a fresh recompute every time.
+        const distributor = new WaterfillDistributor();
+        const config = { minBatterySoc: 10, maxBatterySoc: 100 };
+        const device = { id: 'pv', name: 'PV device', soc: 80, minSoc: 10, maxSoc: 100, maxDischargePowerW: 800, dischargeAllowed: true, hasPv: true };
+
+        device.soc = 80;
+        let candidates = distributor.buildCandidates([device], false, config);
+        assertEqual(candidates[0].weight, 70, 'Below the enter threshold: plain SOC weight, unarmed');
+
+        device.soc = 96;
+        candidates = distributor.buildCandidates([device], false, config);
+        assertEqual(candidates[0].weight, 91, 'At/above the enter threshold: arms, bonus applied (96 - 10 + 5)');
+
+        // Dead zone between the two thresholds - without hysteresis, a single
+        // shared cutoff would already have dropped the bonus here (92 < 96).
+        device.soc = 92;
+        candidates = distributor.buildCandidates([device], false, config);
+        assertEqual(candidates[0].weight, 87, 'In the dead zone: stays armed from before, bonus still applied (92 - 10 + 5)');
+
+        device.soc = 89;
+        candidates = distributor.buildCandidates([device], false, config);
+        assertEqual(candidates[0].weight, 79, 'Below the exit threshold: genuinely disarms, bonus gone (89 - 10)');
+
+        // Climbing back up through the dead zone while disarmed must not
+        // re-arm early - only once the enter threshold is actually reached again.
+        device.soc = 92;
+        candidates = distributor.buildCandidates([device], false, config);
+        assertEqual(candidates[0].weight, 82, 'Climbing back through the dead zone while disarmed: still no bonus (92 - 10)');
+
+        device.soc = 95;
+        candidates = distributor.buildCandidates([device], false, config);
+        assertEqual(candidates[0].weight, 90, 'Re-arms once the enter threshold is reached again (95 - 10 + 5)');
+    });
+
     // ------------------------------------------------------------------
     // Issue #21: sustained heavy feed-in never reached charge mode because
     // RelayProtection's deliberate relay-safety setpoints (0W, or exactly
