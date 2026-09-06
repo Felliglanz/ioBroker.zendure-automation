@@ -1964,12 +1964,14 @@ async function testModules() {
         // Hold window complete: this cycle starts the (separate, shorter)
         // mode-transition blend rather than jumping straight to single - see
         // [4.19] for that transition in detail. It settles into pure single
-        // MODE_TRANSITION_HOLD_CYCLES (2) cycles later.
+        // MODE_TRANSITION_HOLD_CYCLES (4) cycles later.
+        distributor.distribute(400, devices, config);
+        distributor.distribute(400, devices, config);
         distributor.distribute(400, devices, config);
         distributor.distribute(400, devices, config);
         const settled = distributor.distribute(400, devices, config);
         assertEqual(settled.filter(item => item.powerW > 0).length, 1,
-            `Hold window and mode-transition blend complete: pure single-device mode by cycle ${holdCycles + 2}`);
+            `Hold window and mode-transition blend complete: pure single-device mode by cycle ${holdCycles + 4}`);
         assertEqual(settled.find(item => item.powerW > 0).deviceId, 'device1', 'Highest SOC device becomes sticky');
     });
 
@@ -2010,15 +2012,23 @@ async function testModules() {
         assertEqual(transitionStart.find(item => item.deviceId === 'device1').powerW, 280, 'Mode-transition step 1: incoming device keeps its real previous share, no jump');
         assertEqual(transitionStart.find(item => item.deviceId === 'device2').powerW, 120, 'Mode-transition step 1: outgoing device keeps its real previous share, no jump');
 
+        const transitionStep2 = distributor.distribute(400, devices, config);
+        assertEqual(transitionStep2.find(item => item.deviceId === 'device1').powerW, 310, 'Mode-transition step 2: power blends a quarter-step from device1\'s real 280W start to the 400W target');
+        assertEqual(transitionStep2.find(item => item.deviceId === 'device2').powerW, 90, 'Mode-transition step 2: power blends a quarter-step away from device2\'s real 120W start');
+
         const transitionMid = distributor.distribute(400, devices, config);
-        assertEqual(transitionMid.find(item => item.deviceId === 'device1').powerW, 340, 'Mode-transition step 2: power is half-way blended from device1\'s real 280W start to the 400W target');
-        assertEqual(transitionMid.find(item => item.deviceId === 'device2').powerW, 60, 'Mode-transition step 2: power is half-way blended away from device2\'s real 120W start');
+        assertEqual(transitionMid.find(item => item.deviceId === 'device1').powerW, 340, 'Mode-transition step 3: power is half-way blended from device1\'s real 280W start to the 400W target');
+        assertEqual(transitionMid.find(item => item.deviceId === 'device2').powerW, 60, 'Mode-transition step 3: power is half-way blended away from device2\'s real 120W start');
+
+        const transitionStep4 = distributor.distribute(400, devices, config);
+        assertEqual(transitionStep4.find(item => item.deviceId === 'device1').powerW, 370, 'Mode-transition step 4: power blends three-quarters from device1\'s real 280W start to the 400W target');
+        assertEqual(transitionStep4.find(item => item.deviceId === 'device2').powerW, 30, 'Mode-transition step 4: power blends three-quarters away from device2\'s real 120W start');
 
         const transitionDone = distributor.distribute(400, devices, config);
-        assertEqual(transitionDone.find(item => item.deviceId === 'device1').powerW, 400, 'Mode-transition step 3: incoming device now carries the full load');
-        assertEqual(transitionDone.find(item => item.deviceId === 'device2').powerW, 0, 'Mode-transition step 3: outgoing device has fully ramped down');
+        assertEqual(transitionDone.find(item => item.deviceId === 'device1').powerW, 400, 'Mode-transition step 5: incoming device now carries the full load');
+        assertEqual(transitionDone.find(item => item.deviceId === 'device2').powerW, 0, 'Mode-transition step 5: outgoing device has fully ramped down');
 
-        const total = [transitionStart, transitionMid, transitionDone].map(
+        const total = [transitionStart, transitionStep2, transitionMid, transitionStep4, transitionDone].map(
             result => result.reduce((sum, item) => sum + item.powerW, 0)
         );
         assert(total.every(sum => sum === 400), 'Total power stays at the requested target throughout the blend - only its split moves');
@@ -2055,6 +2065,13 @@ async function testModules() {
         // Force a large spike into spread mode, then vary the magnitude within
         // spread while the same two devices stay eligible - again, no blend
         // should ever engage, only waterfill()'s direct SOC-weighted split.
+        // The spike itself now holds a ramp-in blend for MODE_TRANSITION_HOLD_CYCLES
+        // (issue #40 - see [4.29]), so run it out here first; this test is
+        // specifically about steady-state magnitude changes, not the join itself.
+        distributor.distribute(1500, devices, config);
+        distributor.distribute(1500, devices, config);
+        distributor.distribute(1500, devices, config);
+        distributor.distribute(1500, devices, config);
         distributor.distribute(1500, devices, config);
         for (const targetW of [1300, 1250, 1400]) {
             const result = distributor.distribute(targetW, devices, config);
@@ -2062,6 +2079,69 @@ async function testModules() {
             assertEqual(total, targetW, `Spread mode answers ${targetW}W immediately with the full target`);
             assert(result.every(item => item.reason === 'Waterfill spread'), `No blend reason appears while spread stays spread at ${targetW}W`);
         }
+    });
+
+    // ------------------------------------------------------------------
+    // Issue #40: a load spike that pushes a single active device straight into
+    // spread mode used to commit both devices to their final SOC-weighted
+    // split instantly. The newly-joining device has no way to actually deliver
+    // that share yet (relay closing, inverter start), so the I-Regulator saw
+    // the shortfall as grid error, overcorrected, then overshot once the
+    // joiner caught up - a visible grid-power spike followed by a dip into
+    // feed-in. Fix: blend the joiner in over MODE_TRANSITION_HOLD_CYCLES,
+    // mirroring the existing spread -> single concentrate blend ([4.19]) but
+    // for the opposite direction - the already-running device keeps covering
+    // the load while the joiner ramps up.
+    // ------------------------------------------------------------------
+
+    await runTest('[4.29] Waterfill ramps a joining device in gradually on a single -> spread transition (issue #40)', async () => {
+        const distributor = new WaterfillDistributor();
+        const devices = [
+            { id: 'device1', name: 'Device 1', soc: 50, minSoc: 10, maxSoc: 100, maxChargePowerW: 2000, maxDischargePowerW: 2000, chargeAllowed: true, dischargeAllowed: true },
+            { id: 'device2', name: 'Device 2', soc: 50, minSoc: 10, maxSoc: 100, maxChargePowerW: 2000, maxDischargePowerW: 2000, chargeAllowed: true, dischargeAllowed: true }
+        ];
+        const config = {
+            minBatterySoc: 10, maxBatterySoc: 100, updateIntervalSec: 5,
+            waterfillConcentrateHoldMinutes: 0,
+            waterfillDischargeConcentrateBelowW: 600,
+            waterfillDischargeSpreadAboveW: 1200,
+            waterfillSocMargin: 10
+        };
+
+        // Settle into single-device mode on device1 (cold start, per [4.7]).
+        distributor.distribute(400, devices, config);
+
+        // A load spike crosses waterfillDischargeSpreadAboveW. Both devices have
+        // equal SOC (equal final weight), so the eventual split is 750/750 -
+        // but on this exact cycle device1 (already running) covers the whole
+        // request alone; device2 hasn't been asked for anything yet.
+        const trigger = distributor.distribute(1500, devices, config);
+        assertEqual(trigger.find(item => item.deviceId === 'device1').powerW, 1500, 'Trigger cycle: already-running device covers the full spike');
+        assertEqual(trigger.find(item => item.deviceId === 'device2').powerW, 0, 'Trigger cycle: joining device has not ramped in yet');
+        assert(trigger.every(item => item.reason === 'Waterfill spread (ramp-in)'), 'Trigger cycle is flagged as a ramp-in, not a plain spread split');
+
+        // Over the 4 mode-transition-hold cycles, power blends linearly from
+        // the anchor (device1) down to its 750W target while device2 ramps
+        // up from 0 to its 750W target, taking whatever the anchor gives up.
+        const expectedSteps = [
+            { device1: 1313, device2: 188 },
+            { device1: 1125, device2: 375 },
+            { device1: 938, device2: 563 },
+            { device1: 750, device2: 750 }
+        ];
+        for (let cycle = 0; cycle < 4; cycle++) {
+            const held = distributor.distribute(1500, devices, config);
+            const step = expectedSteps[cycle];
+            assertEqual(held.find(item => item.deviceId === 'device1').powerW, step.device1, `Ramp-in step ${cycle + 1} reduces the anchor towards its target`);
+            assertEqual(held.find(item => item.deviceId === 'device2').powerW, step.device2, `Ramp-in step ${cycle + 1} increases the joiner towards its target`);
+        }
+
+        // Once the hold window is spent, further cycles at the same magnitude
+        // are answered immediately with the plain SOC-weighted split again.
+        const afterHold = distributor.distribute(1500, devices, config);
+        assertEqual(afterHold.find(item => item.deviceId === 'device1').powerW, 750, 'Spread settles at the plain SOC-weighted split after the ramp-in');
+        assertEqual(afterHold.find(item => item.deviceId === 'device2').powerW, 750, 'Spread settles at the plain SOC-weighted split after the ramp-in');
+        assert(afterHold.every(item => item.reason === 'Waterfill spread'), 'Ramp-in reason no longer appears once the hold window is spent');
     });
 
     // ------------------------------------------------------------------
@@ -2355,7 +2435,128 @@ async function testModules() {
         assertEqual(regResult.powerW, 500, 'Hysteresis still suppresses a 20W jitter below the 30W threshold');
     });
 
-    await runTest('[4.24] Waterfill sticky single-device mode marks the resting (but still eligible) device excluded, not just 0W', async () => {
+    // ------------------------------------------------------------------
+    // Issue #26 (PV headroom): a PV-equipped device's own solar production
+    // occupies part of its charge capacity, but the waterfall previously had
+    // no awareness of this - it could ask the device for more AC-side charge
+    // power than it could actually accept, and the shortfall was never
+    // redistributed to the other device within the same cycle, causing
+    // persistent setpoint-validation retries/errors.
+    // ------------------------------------------------------------------
+
+    await runTest('[4.24] computeEffectiveChargeLimitW: non-PV unaffected, PV subtracts live solar, AC-only cap and unset-AC-limit fallback both honored', async () => {
+        const { computeEffectiveChargeLimitW } = require('./lib/pvChargeLimit');
+
+        assertEqual(
+            computeEffectiveChargeLimitW({ maxChargePowerW: 1600 }),
+            1600,
+            'Non-PV device: raw maxChargePowerW passes through unchanged'
+        );
+
+        assertEqual(
+            computeEffectiveChargeLimitW({ hasPv: true, maxChargePowerW: 2000, maxAcChargePowerW: 2000, solarInputPowerW: 1200 }),
+            800,
+            'PV device: combined limit minus live solar production'
+        );
+
+        assertEqual(
+            computeEffectiveChargeLimitW({ hasPv: true, maxChargePowerW: 1500, maxAcChargePowerW: 1500, solarInputPowerW: 1600 }),
+            0,
+            'PV device: solar exceeding the combined limit floors at 0, never negative'
+        );
+
+        assertEqual(
+            computeEffectiveChargeLimitW({ hasPv: true, maxChargePowerW: 2000, maxAcChargePowerW: 600, solarInputPowerW: 200 }),
+            600,
+            'PV device: a tighter separate AC-only cap binds even when combined-minus-solar is higher'
+        );
+
+        assertEqual(
+            computeEffectiveChargeLimitW({ hasPv: true, maxChargePowerW: 2000, solarInputPowerW: 500 }),
+            1500,
+            'PV device: unset maxAcChargePowerW degrades gracefully to the combined-only formula'
+        );
+    });
+
+    await runTest('[4.25] PV headroom: waterfill caps a PV device to its live effective AC limit and redistributes the rest in the same cycle', async () => {
+        const distributor = new WaterfillDistributor();
+        const devices = [
+            {
+                id: 'pro', name: 'Pro (PV)', soc: 50,
+                hasPv: true, maxChargePowerW: 2400, maxAcChargePowerW: 2400, solarInputPowerW: 1500,
+                maxDischargePowerW: 1600, chargeAllowed: true, dischargeAllowed: true
+            },
+            {
+                id: 'acplus', name: 'AC+', soc: 60,
+                maxChargePowerW: 1600, maxDischargePowerW: 1600,
+                chargeAllowed: true, dischargeAllowed: true
+            }
+        ];
+        const waterfillConfig = {
+            minBatterySoc: 10,
+            maxBatterySoc: 100,
+            updateIntervalSec: 5,
+            waterfillConcentrateHoldMinutes: 0,
+            waterfillChargeConcentrateBelowW: 600,
+            waterfillChargeSpreadAboveW: 1200,
+            waterfillSocMargin: 10
+        };
+
+        // Pro's raw maxChargePowerW (2400) minus its live 1500W solar leaves only 900W of AC
+        // headroom - reproduces the cliffsolar scenario (a PV-unaware waterfall would have
+        // handed Pro the full 2400W share; AC+ must pick up the rest in the SAME cycle).
+        const result = distributor.distribute(-2500, devices, waterfillConfig);
+
+        assertEqual(result.find(d => d.deviceId === 'pro').powerW, -900, "PV device is capped to its live effective AC limit (2400 - 1500 solar), not the raw 2400W");
+        assertEqual(result.find(d => d.deviceId === 'acplus').powerW, -1600, 'Non-PV device absorbs the remainder in the same cycle - no leftover, no separate priority pass needed');
+        assertEqual(result.reduce((sum, d) => sum + d.powerW, 0), -2500, 'Full requested charge power is delivered');
+    });
+
+    await runTest('[4.26] Multi-Device reads live solarInputPower for PV devices, degrading to 0 (not exclusion) when stale/missing', async () => {
+        initializeMockStates();
+        const devices = [
+            { productKey: 'device1', deviceKey: 'pk1', name: 'PV Device', enabled: true, hasPv: true, maxChargePowerW: 2000, maxAcChargePowerW: 2000 },
+            { productKey: 'device2', deviceKey: 'pk2', name: 'Non-PV Device', enabled: true }
+        ];
+        const multiDeviceMgr = new MultiDeviceManager(mockAdapter, 'test.0', devices);
+
+        // Fresh solar reading for the PV device
+        setMockState('test.0.device1.pk1.solarInputPower', 1234);
+
+        const aggregated = await multiDeviceMgr.aggregateDeviceStates();
+        const pv = aggregated.devices.find(d => d.id === 'pk1');
+        const nonPv = aggregated.devices.find(d => d.id === 'pk2');
+
+        assertEqual(pv.solarInputPowerW, 1234, 'PV device reports live solar production');
+        assertEqual(pv.available, true, 'Fresh solar reading does not affect availability');
+        assertEqual(nonPv.solarInputPowerW, 0, 'Non-PV device is never read/never affected');
+
+        // Now go stale
+        const staleTs = Date.now() - (4 * 60 * 1000);
+        mockStates.set('test.0.device1.pk1.solarInputPower', { val: 1234, ack: true, ts: staleTs });
+
+        const aggregatedStale = await multiDeviceMgr.aggregateDeviceStates();
+        const pvStale = aggregatedStale.devices.find(d => d.id === 'pk1');
+
+        assertEqual(pvStale.solarInputPowerW, 0, 'Stale solar reading degrades to 0 (no PV credit), not the frozen value');
+        assertEqual(pvStale.available, true, 'Stale solar reading does NOT exclude the device (unlike packPower/SOC staleness)');
+    });
+
+    await runTest('[4.27] hasPv forces validationSource to gridInputPower, overriding any configured value', async () => {
+        const devices = [
+            { productKey: 'device1', deviceKey: 'pk1', name: 'PV Device', enabled: true, hasPv: true, validationSource: 'packPower' },
+            { productKey: 'device2', deviceKey: 'pk2', name: 'Non-PV Device', enabled: true, validationSource: 'packPower' }
+        ];
+        const multiDeviceMgr = new MultiDeviceManager(mockAdapter, 'test.0', devices);
+
+        const pv = multiDeviceMgr.devices.find(d => d.id === 'pk1');
+        const nonPv = multiDeviceMgr.devices.find(d => d.id === 'pk2');
+
+        assertEqual(pv.validationSource, 'gridInputPower', 'PV device validation source is forced to gridInputPower even though packPower was configured');
+        assertEqual(nonPv.validationSource, 'packPower', 'Non-PV device keeps its configured validation source unchanged');
+    });
+
+    await runTest('[4.28] Waterfill sticky single-device mode marks the resting (but still eligible) device excluded, not just 0W', async () => {
         // Regression guard for the SF2400 Pro relay-chatter report: the #28 fix only
         // taught MultiDeviceManager to bypass zero-avoidance for items the *distributor*
         // already flagged excluded:true (SOC/emergency-excluded devices). But Waterfill's

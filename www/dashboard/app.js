@@ -208,6 +208,10 @@
     }
   }
 
+  // Below this, a device's own PV production is "not currently flowing" - matches the flow
+  // diagram's own THRESHOLD (render()), so both stay in sync about what counts as active.
+  const DEVICE_PV_THRESHOLD_W = 5;
+
   function renderDeviceCards(devices, waterfillActive) {
     if (!devices || devices.length === 0) {
       deviceCards.hidden = true;
@@ -228,13 +232,23 @@
       const socPct = Math.max(0, Math.min(100, soc));
       const barClass = socPct < 15 ? 'low' : socPct < 30 ? 'mid' : '';
 
+      // A device with its own PV only reconciles with the flow diagram's totals if you can see
+      // that its battery reading is just part of the picture - PV covers some of the output
+      // directly, never touching the battery. Shown as "PV + Batterie" (no computed sum) so the
+      // viewer adds the two themselves, only while that device's PV is actually producing.
+      const pvActive = dev.hasPv && typeof dev.solarInputPowerW === 'number' && dev.solarInputPowerW > DEVICE_PV_THRESHOLD_W;
+      const batteryClass = dev.powerW < -DEVICE_PV_THRESHOLD_W ? 'charging' : dev.powerW > DEVICE_PV_THRESHOLD_W ? 'discharging' : '';
+      const powerCell = pvActive
+        ? `<span class="device-power-pv"><span class="pv-part">☀ ${fmtWAuto(dev.solarInputPowerW)}</span><span class="pv-plus">+</span><span class="battery-part ${batteryClass}">🔋 ${fmtWAuto(dev.powerW)}</span></span>`
+        : `<span class="${batteryClass}">${fmtWAuto(dev.powerW)}</span>`;
+
       card.classList.add('clickable');
       card.innerHTML = `
         <div class="name">
           <span class="dot"></span>${escapeHtml(dev.name || dev.id)}
           <button type="button" class="gear-btn" title="Geräte-Limits" aria-label="Geräte-Limits">⚙</button>
         </div>
-        <div class="metrics"><span>${fmtWAuto(dev.powerW)}</span><span>${soc}%</span></div>
+        <div class="metrics">${powerCell}<span>${soc}%</span></div>
         <div class="bar-track"><div class="bar-fill ${barClass}" style="width:${socPct}%"></div></div>
       `;
       card.addEventListener('click', () => openDetails(dev.id));

@@ -105,6 +105,18 @@ class ZendureAutomation extends utils.Adapter {
                     this.config.devices || []
                 );
 
+                // PV headroom (hasPv) only takes effect in the Waterfill distributor - the
+                // legacy Equal Split strategy has no per-device capacity redistribution at all,
+                // so a PV device configured there would silently get no benefit from this setting.
+                if (this.config.multiDeviceDistributionStrategy !== 'waterfill' &&
+                    this.multiDeviceMgr.devices.some(d => d.hasPv)) {
+                    this.log.warn(
+                        '☀️ One or more devices have "PV" enabled, but the distribution strategy is not ' +
+                        '"Waterfill" - PV headroom has no effect under Legacy Equal Split. Switch the ' +
+                        'strategy to Waterfill to use it.'
+                    );
+                }
+
                 // Initialize per-device Emergency Managers
                 // Each device gets its own persisted recovery states under status.devices.<id>.*
                 // instead of sharing the single-device global status.* keys (see #restoreRecoveryStates).
@@ -848,6 +860,20 @@ class ZendureAutomation extends utils.Adapter {
                     unit: 'W',
                     read: true,
                     write: false
+                },
+                native: {}
+            });
+
+            await this.setObjectNotExistsAsync(`status.devices.${device.id}.solarInputPowerW`, {
+                type: 'state',
+                common: {
+                    name: 'Live PV production at this device (0 for non-PV/stale)',
+                    type: 'number',
+                    role: 'value.power',
+                    unit: 'W',
+                    read: true,
+                    write: false,
+                    def: 0
                 },
                 native: {}
             });

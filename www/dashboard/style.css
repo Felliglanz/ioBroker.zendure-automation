@@ -337,7 +337,21 @@ body.fullscreen-active { overflow: hidden; }
   color: var(--text-muted);
   display: flex;
   justify-content: space-between;
+  align-items: baseline;
 }
+
+.device-card .metrics .charging { color: var(--accent-charge); }
+.device-card .metrics .discharging { color: var(--accent-discharge); }
+
+.device-power-pv {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.3rem;
+  flex-wrap: wrap;
+}
+.device-power-pv .pv-plus { color: var(--text-muted); }
+.device-power-pv .battery-part.charging { color: var(--accent-charge); }
+.device-power-pv .battery-part.discharging { color: var(--accent-discharge); }
 
 .device-card .bar-track {
   margin-top: 0.4rem;
