@@ -49,6 +49,7 @@ Steuert deine Zendure Solarflow Batterie vollautomatisch für **Null-Einspeisung
 - **Tagesansicht** – Verlaufs-Graphen für Hausverbrauch/Netz/PV/Batterie über 1h/2h, ohne History-Adapter
 - **Historie (optional)** – bei aktiviertem InfluxDB-Export: frei wählbarer Zeitraum, bis zu zwei überlagerte Felder, Fadenkreuz-Tooltip
 - **Optionaler InfluxDB-v2-Export** – periodischer Snapshot von Telemetrie-/Status-Daten in einen eigenen Bucket, Token verschlüsselt gespeichert
+- **PV-Anteil pro Gerät (Multi-Device)** – Gerätekarten zeigen bei aktiver Solarproduktion den PV- und Batterie-Anteil getrennt an
 
 ### 🏗️ Moderne Architektur
 - **Modulare Struktur** – main.js orchestriert nur noch, die eigentliche Logik lebt in fokussierten, einzeln testbaren `lib/`-Modulen (Regelung, Sicherheit, Validierung, Multi-Device-Verteilung, Dashboard)
@@ -116,6 +117,7 @@ https://github.com/Felliglanz/iobroker.zendure-automation
 **Power Distribution:**
 - **Equal Split** – Leistung wird gleichmäßig auf alle aktiven Geräte verteilt
 - **Waterfill + Sticky Device (optional)** – verteilt die Leistung anhand individueller Geräte-Limits und SoC-Gewichtung; bei kleiner Leistung kann ein geeignetes Gerät bevorzugt werden
+- **PV-Ladefreigabe (optional, Waterfill)** – bei Geräten mit eigenem Solareingang gilt `maxChargePowerW` als PV+AC-Gesamtgrenze; die aktuelle Solarleistung wird automatisch abgezogen, der Rest verteilt sich auf die anderen Geräte
 - **Dynamische Exclusion** – Geräte an Limits werden automatisch ausgeschlossen
 - **Pro-Device Tracking** – Jedes Gerät hat eigene States im Object-Tree
 
@@ -127,7 +129,7 @@ Waterfill verteilt die angeforderte Leistung zunächst anhand der verfügbaren S
 
 Equal Split bleibt die Standardstrategie. Im Waterfill-Modus bleiben die globalen SOC-Schutzgrenzen aktiv. Die Leistungsgrenzen und Lade-/Entladefreigaben kommen zusätzlich pro Gerät aus der Tabelle; Spannungs-, Emergency- und Recovery-Schutz bleiben aktiv.
 
-> **⚠️ Hinweis:** Waterfill ist eine zusätzliche Multi-Device-Strategie und sollte zunächst mit den eigenen Gerätegrenzen und einem kleinen Testaufbau geprüft werden. PV-Headroom und eine automatische Bypass-Steuerung sind in dieser Version noch nicht Bestandteil der Strategie.
+> **⚠️ Hinweis:** Waterfill ist eine zusätzliche Multi-Device-Strategie und sollte zunächst mit den eigenen Gerätegrenzen und einem kleinen Testaufbau geprüft werden. Eine automatische Bypass-Steuerung ist in dieser Version noch nicht Bestandteil der Strategie.
 
 **Beispiel mit 2x Solarflow 2400:**
 ```

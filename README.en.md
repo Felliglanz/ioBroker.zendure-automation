@@ -42,12 +42,14 @@ Automatically controls your Zendure Solarflow battery for **zero feed-in** and *
 - **Daily view** – history graphs for house consumption/grid/PV/battery over the last 1h/2h, no history adapter needed
 - **History (optional)** – with InfluxDB export enabled: freely selectable time range, up to two overlaid fields, crosshair tooltip
 - **Optional InfluxDB v2 export** – periodic snapshot of telemetry/status data to your own bucket, token stored encrypted
+- **Per-device PV share (Multi-Device)** – device cards show the PV and battery share separately whenever that device's solar is producing
 
 ### How it Works
 
 **Power Distribution:**
 - **Equal Split** – power is distributed evenly across all active devices
 - **Waterfill + Sticky Device (optional)** – distributes power using individual device limits and SOC weighting; low demand can be concentrated on one suitable device
+- **PV charge headroom (optional, Waterfill)** – for devices with their own solar input, `maxChargePowerW` is treated as the combined PV+AC ceiling; live solar production is subtracted automatically and the rest is redistributed to the other devices
 - **Dynamic Exclusion** – devices at limits are automatically excluded
 - **Per-Device Tracking** – each device has its own states in the object tree
 
@@ -59,7 +61,7 @@ Waterfill first distributes the requested power according to each device's avail
 
 Equal Split remains the default strategy. In Waterfill mode, the global SOC protection limits remain active. Power limits and charge/discharge permissions are configured per device in the table; voltage, emergency, and recovery protection remain active.
 
-> **⚠️ Note:** Waterfill is an additional Multi-Device strategy and should initially be checked with the configured device limits and a small test setup. PV headroom and automatic bypass control are not part of this version yet.
+> **⚠️ Note:** Waterfill is an additional Multi-Device strategy and should initially be checked with the configured device limits and a small test setup. Automatic bypass control is not part of this version yet.
 
 **Example with 2x Solarflow 2400:**
 ```
