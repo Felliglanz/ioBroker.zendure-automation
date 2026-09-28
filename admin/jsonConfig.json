@@ -140,6 +140,32 @@
                 "de": "Für Geräte ohne ZenSDK-Unterstützung (z.B. Hyper 2000 via Cloud-MQTT), deren Quell-Adapter einen Wert eventuell nur bei Änderung neu sendet: Der Freshness-Watchdog kann dann einen legitim unveränderten Wert fälschlich als eingefroren behandeln und das Gerät ausschließen. Diese Option deaktiviert diesen Schutz für dieses Gerät - ein wirklich eingefrorener/toter Wert wird dann ebenfalls nicht mehr erkannt."
               }
             },
+            "softBypassEnabled": {
+              "type": "checkbox",
+              "label": {
+                "en": "Soft bypass (experimental, PV device only)",
+                "de": "Soft-Bypass (experimentell, nur Gerät mit PV)"
+              },
+              "sm": 8,
+              "hidden": "data.multiDeviceEnabled",
+              "default": false,
+              "help": {
+                "en": "When the battery is full, the device outputs its available PV instead of curtailing it (0W). Keep the device's own bypass switched off in the Zendure app. Discharge demand always takes precedence. Ends when PV stays below the threshold or SOC drops out of the max-SOC hysteresis.",
+                "de": "Ist der Akku voll, gibt das Gerät seine verfügbare PV-Leistung ab, statt sie abzuregeln (0W). Den geräteeigenen Bypass in der Zendure-App ausgeschaltet lassen. Entladebedarf hat immer Vorrang. Endet, wenn die PV-Leistung unter der Schwelle bleibt oder der SOC die Max-SOC-Hysterese verlässt."
+              }
+            },
+            "softBypassMinSolarW": {
+              "type": "number",
+              "label": {
+                "en": "Soft bypass exit below PV (W)",
+                "de": "Soft-Bypass beenden unter PV (W)"
+              },
+              "sm": 4,
+              "min": 0,
+              "max": 3000,
+              "default": 200,
+              "hidden": "data.multiDeviceEnabled || !data.softBypassEnabled"
+            },
             "_deviceHint": {
               "type": "staticText",
               "text": {
@@ -171,7 +197,7 @@
                     "en": "ProductKey",
                     "de": "ProductKey"
                   },
-                  "width": "15%"
+                  "width": "11%"
                 },
                 {
                   "type": "text",
@@ -180,7 +206,7 @@
                     "en": "DeviceKey",
                     "de": "DeviceKey"
                   },
-                  "width": "15%"
+                  "width": "11%"
                 },
                 {
                   "type": "text",
@@ -233,6 +259,36 @@
                   "tooltip": {
                     "en": "Device has PV panels attached. Charge W is then read as combined PV+AC max; live solar production is subtracted each cycle. Forces Validation to gridInputPower. Only effective with the Waterfill distribution strategy.",
                     "de": "Gerät hat PV-Module angeschlossen. Laden W wird dann als kombiniertes PV+AC-Maximum interpretiert; die aktuelle Solarleistung wird pro Zyklus abgezogen. Erzwingt Validierung = gridInputPower. Wirkt nur mit der Waterfill-Verteilstrategie."
+                  }
+                },
+                {
+                  "type": "checkbox",
+                  "attr": "softBypass",
+                  "title": {
+                    "en": "Soft bypass",
+                    "de": "Soft-Bypass"
+                  },
+                  "width": "6%",
+                  "default": false,
+                  "tooltip": {
+                    "en": "Experimental, requires PV: when full, output available PV instead of curtailing it. Keep the device's own bypass off in the Zendure app.",
+                    "de": "Experimentell, erfordert PV: bei vollem Akku verfügbare PV abgeben statt abregeln. Geräteeigenen Bypass in der Zendure-App aus lassen."
+                  }
+                },
+                {
+                  "type": "number",
+                  "attr": "softBypassMinSolarW",
+                  "title": {
+                    "en": "Bypass exit W",
+                    "de": "Bypass Ende W"
+                  },
+                  "width": "7%",
+                  "min": 0,
+                  "max": 3000,
+                  "default": 200,
+                  "tooltip": {
+                    "en": "Soft bypass ends when this device's PV stays below this value",
+                    "de": "Soft-Bypass endet, wenn die PV-Leistung dieses Geräts unter diesem Wert bleibt"
                   }
                 },
                 {

@@ -12,6 +12,7 @@ const ValidationService = require('./lib/ValidationService');
 const MultiDeviceManager = require('./lib/MultiDeviceManager');
 const SingleDeviceController = require('./lib/SingleDeviceController');
 const MultiDeviceController = require('./lib/MultiDeviceController');
+const SoftBypassController = require('./lib/SoftBypassController');
 const DashboardServer = require('./lib/DashboardServer');
 const Telemetry = require('./lib/Telemetry');
 const HousePower = require('./lib/HousePower');
@@ -147,10 +148,21 @@ class ZendureAutomation extends utils.Adapter {
                         safetyLimiters: this.safetyLimiters,
                         relayProtection: this.relayProtection,
                         powerRegulator: this.powerRegulator,
-                        validationService: this.validationService
+                        validationService: this.validationService,
+                        softBypass: new SoftBypassController(this)
                     }
                 );
-                
+
+                const softBypassDevices = this.multiDeviceMgr.devices.filter(d => d.softBypassEnabled);
+                if (softBypassDevices.length > 0) {
+                    this.log.info(
+                        `☀️ Soft bypass (experimental) enabled for: ${softBypassDevices.map(d => `${d.name} (<${d.softBypassMinSolarW}W PV exits)`).join(', ')}`
+                    );
+                }
+                if ((this.config.devices || []).some(d => d.enabled && d.softBypass === true && d.hasPv !== true)) {
+                    this.log.warn('☀️ Soft bypass is only available for devices with "PV" checked - ignored for the others');
+                }
+
                 this.log.info('✓ Multi-Device components initialized');
 
                 // Initialize control states
@@ -230,11 +242,18 @@ class ZendureAutomation extends utils.Adapter {
                     relayProtection: this.relayProtection,
                     safetyLimiter: this.safetyLimiter,
                     powerRegulator: this.powerRegulator,
-                    validationService: this.validationService
+                    validationService: this.validationService,
+                    softBypass: new SoftBypassController(this)
                 },
                 this._deviceBasePath
             );
-            
+
+            if (this.config.softBypassEnabled === true) {
+                this.log.info(
+                    `☀️ Soft bypass (experimental) enabled - exits below ${SoftBypassController.parseMinSolarW(this.config.softBypassMinSolarW)}W PV`
+                );
+            }
+
             this.log.info('✓ Modular components initialized');
 
             // Create single-device-only global states (no longer in io-package.json
@@ -261,6 +280,20 @@ class ZendureAutomation extends utils.Adapter {
                     read: true,
                     write: false,
                     unit: '%'
+                },
+                native: {}
+            });
+
+            await this.setObjectNotExistsAsync('status.softBypassFloorW', {
+                type: 'state',
+                common: {
+                    name: 'Soft bypass floor (W, 0 = inactive) - experimental',
+                    type: 'number',
+                    role: 'value.power',
+                    read: true,
+                    write: false,
+                    unit: 'W',
+                    def: 0
                 },
                 native: {}
             });
@@ -863,6 +896,20 @@ class ZendureAutomation extends utils.Adapter {
                 type: 'state',
                 common: {
                     name: 'Live PV production at this device (0 for non-PV/stale)',
+                    type: 'number',
+                    role: 'value.power',
+                    unit: 'W',
+                    read: true,
+                    write: false,
+                    def: 0
+                },
+                native: {}
+            });
+
+            await this.setObjectNotExistsAsync(`status.devices.${device.id}.softBypassFloorW`, {
+                type: 'state',
+                common: {
+                    name: 'Soft bypass floor (W, 0 = inactive) - experimental',
                     type: 'number',
                     role: 'value.power',
                     unit: 'W',

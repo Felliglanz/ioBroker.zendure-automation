@@ -2699,6 +2699,244 @@ async function testModules() {
         assertEqual(belowResult, 500, 'Raw error 20W < 50W hysteresis: still suppressed, holds at 500W');
     });
 
+    await runTest('[4.30] SoftBypassController: entry, perturb & observe tracking, probe hold, non-binding freeze (issue #43)', async () => {
+        const SoftBypassController = require('./lib/SoftBypassController');
+        const { SETTLE_MS, PROBE_HOLD_MS } = SoftBypassController;
+        const sb = new SoftBypassController(mockAdapter);
+        const base = {
+            enabled: true, blocked: false, soc: 100, maxSoc: 100, maxSocHysteresis: 4,
+            solarInputW: 1000, batteryPowerW: 0, maxDischargePowerW: 2400, minSolarW: 200
+        };
+
+        assertEqual(sb.update('d', { ...base, soc: 99, now: 0 }).active, false, 'Not entered below maxSoc');
+        assertEqual(sb.update('d', { ...base, solarInputW: 220, now: 0 }).active, false, 'Not entered below threshold + entry hysteresis');
+
+        let r = sb.update('d', { ...base, now: 0 });
+        assertEqual(r.active, true, 'Entered at maxSoc with enough PV');
+        assertEqual(r.floorW, 990, 'Starts at measured PV minus margin');
+        sb.recordWrite('d', r.floorW, 0);
+
+        r = sb.update('d', { ...base, now: 5000 });
+        assertEqual(r.floorW, 990, 'No probing before the device settled');
+
+        r = sb.update('d', { ...base, now: SETTLE_MS });
+        assertEqual(r.floorW, 1015, 'Battery idle after settle: probe up by the minimum step');
+        sb.recordWrite('d', r.floorW, SETTLE_MS);
+
+        r = sb.update('d', { ...base, now: 2 * SETTLE_MS });
+        assertEqual(r.floorW, 1065, 'PV kept following: step doubled');
+        sb.recordWrite('d', r.floorW, 2 * SETTLE_MS);
+
+        r = sb.update('d', { ...base, batteryPowerW: 60, now: 3 * SETTLE_MS });
+        assertEqual(r.floorW, 995, 'Battery discharging 60W: back off by exactly that plus margin');
+        sb.recordWrite('d', r.floorW, 3 * SETTLE_MS);
+
+        r = sb.update('d', { ...base, now: 4 * SETTLE_MS });
+        assertEqual(r.floorW, 995, 'No probing during the hold time after hitting the PV ceiling');
+
+        r = sb.update('d', { ...base, now: 3 * SETTLE_MS + PROBE_HOLD_MS });
+        assertEqual(r.floorW, 1020, 'Probing resumes after the hold time, step reset to minimum');
+        sb.recordWrite('d', r.floorW, 3 * SETTLE_MS + PROBE_HOLD_MS);
+
+        // Stale discharge reading repeated (slow telemetry): back-off bounded by uncurtailed PV
+        const t = 10 * PROBE_HOLD_MS;
+        r = sb.update('d', { ...base, solarInputW: 400, batteryPowerW: 1500, now: t });
+        assertEqual(r.floorW, 350, 'Big discharge (cloud): floor drops to the PV estimate, not below');
+        sb.recordWrite('d', r.floorW, t);
+        r = sb.update('d', { ...base, solarInputW: 400, batteryPowerW: 1500, now: t + SETTLE_MS });
+        assertEqual(r.floorW, 350, 'Same stale reading again: no compounding collapse');
+
+        // Regulator demand above the floor was written: the battery reading still says how
+        // much of it the PV covered (1800 - 1000), bounded below by the uncurtailed PV estimate
+        sb.recordWrite('d', 1800, t + 2 * SETTLE_MS);
+        r = sb.update('d', { ...base, batteryPowerW: 1000, now: t + 4 * SETTLE_MS });
+        assertEqual(r.floorW, 890, 'Floor follows the PV-covered share of a higher regulator demand');
+    });
+
+    await runTest('[4.30b] SoftBypassController: collapsed floor below house load recovers; below maxSoc it steps back to refill (sim findings)', async () => {
+        const SoftBypassController = require('./lib/SoftBypassController');
+        const { SETTLE_MS, PROBE_HOLD_MS } = SoftBypassController;
+        const base = {
+            enabled: true, blocked: false, soc: 100, maxSoc: 100, maxSocHysteresis: 4,
+            solarInputW: 1000, batteryPowerW: 0, maxDischargePowerW: 2400, minSolarW: 200
+        };
+
+        // Cloud collapsed the floor to ~275W, house load keeps the regulator at 340W with the
+        // battery idle: PV demonstrably covers 340W, so the floor must climb, not stay stuck
+        const sb = new SoftBypassController(mockAdapter);
+        sb.update('d', { ...base, now: 0 });
+        sb.recordWrite('d', 990, 0);
+        let r = sb.update('d', { ...base, solarInputW: 300, batteryPowerW: 1000, now: SETTLE_MS });
+        assertEqual(r.floorW, 260, 'Cloud: floor drops to the PV estimate');
+        sb.recordWrite('d', 340, SETTLE_MS); // house load above the floor
+        r = sb.update('d', { ...base, solarInputW: 358, batteryPowerW: 0, now: 2 * SETTLE_MS + PROBE_HOLD_MS });
+        assert(r.floorW > 340, `Battery idle at 340W written: floor raised to at least that, then probed (got ${r.floorW}W)`);
+
+        // Below maxSoc, battery neither charging nor meaningfully discharging: step back
+        const sbRefill = new SoftBypassController(mockAdapter);
+        sbRefill.update('d', { ...base, now: 0 });
+        sbRefill.recordWrite('d', 990, 0);
+        r = sbRefill.update('d', { ...base, soc: 99, batteryPowerW: 18, now: SETTLE_MS });
+        assertEqual(r.floorW, 965, 'SOC 99%, 18W drain below tolerance: step back so PV refills first');
+        sbRefill.recordWrite('d', 965, SETTLE_MS);
+        r = sbRefill.update('d', { ...base, soc: 99, batteryPowerW: -40, now: 3 * SETTLE_MS });
+        assertEqual(r.floorW, 965, 'Refilling: hold, no probing and no following below full');
+    });
+
+    await runTest('[4.31] SoftBypassController: exit on PV debounce, SOC drop and safety block; never above discharge limit', async () => {
+        const SoftBypassController = require('./lib/SoftBypassController');
+        const { EXIT_DEBOUNCE_MS } = SoftBypassController;
+        const base = {
+            enabled: true, blocked: false, soc: 100, maxSoc: 100, maxSocHysteresis: 4,
+            solarInputW: 1000, batteryPowerW: 0, maxDischargePowerW: 2400, minSolarW: 200
+        };
+
+        const sb = new SoftBypassController(mockAdapter);
+        sb.update('d', { ...base, now: 0 });
+        assertEqual(sb.update('d', { ...base, solarInputW: 150, now: 1000 }).active, true, 'PV dip below threshold does not exit immediately');
+        assertEqual(sb.update('d', { ...base, solarInputW: 300, now: 2000 }).active, true, 'PV recovered');
+        assertEqual(sb.update('d', { ...base, solarInputW: 150, now: 3000 }).active, true, 'Debounce restarts after recovery');
+        assertEqual(sb.update('d', { ...base, solarInputW: 150, now: 3000 + EXIT_DEBOUNCE_MS - 1 }).active, true, 'Still inside debounce');
+        const exited = sb.update('d', { ...base, solarInputW: 150, now: 3000 + EXIT_DEBOUNCE_MS });
+        assertEqual(exited.active, false, 'Exits once PV stayed below threshold for the debounce time');
+        assertEqual(exited.floorW, 0, 'Floor released on exit');
+
+        const sbSoc = new SoftBypassController(mockAdapter);
+        sbSoc.update('d', { ...base, now: 0 });
+        assertEqual(sbSoc.update('d', { ...base, soc: 97, now: 1000 }).active, true, 'Stays active inside the maxSoc hysteresis band');
+        assertEqual(sbSoc.update('d', { ...base, soc: 96, now: 2000 }).active, false, 'Exits at maxSoc - hysteresis');
+
+        const sbBlocked = new SoftBypassController(mockAdapter);
+        sbBlocked.update('d', { ...base, now: 0 });
+        assertEqual(sbBlocked.update('d', { ...base, blocked: true, now: 1000 }).active, false, 'Discharge block ends soft bypass immediately');
+        assertEqual(sbBlocked.update('d', { ...base, enabled: false, now: 2000 }).active, false, 'Disabled stays inactive');
+
+        const sbCap = new SoftBypassController(mockAdapter);
+        assertEqual(sbCap.update('d', { ...base, solarInputW: 3000, maxDischargePowerW: 800, now: 0 }).floorW, 800, 'Floor capped to the device discharge limit');
+    });
+
+    await runTest('[4.32] Single-device: soft bypass writes the PV floor instead of 0W at full SOC, regulator demand still wins upwards', async () => {
+        const SingleDeviceController = require('./lib/SingleDeviceController');
+        const SoftBypassController = require('./lib/SoftBypassController');
+        const basePath = 'test.0.device1';
+        const limitId = `${basePath}.control.setDeviceAutomationInOutLimit`;
+
+        const makeController = () => new SingleDeviceController(mockAdapter, {
+            dataReader: new DataReader(mockAdapter, basePath),
+            emergencyMgr: new EmergencyManager(mockAdapter, basePath),
+            relayProtection: new RelayProtection(mockAdapter),
+            safetyLimiter: new SafetyLimiter(mockAdapter, basePath),
+            powerRegulator: new PowerRegulator(mockAdapter),
+            validationService: new ValidationService(mockAdapter),
+            softBypass: new SoftBypassController(mockAdapter)
+        }, basePath);
+
+        const config = {
+            ...mockConfig,
+            maxBatterySoc: 100,
+            maxDischargePowerW: 2400,
+            validationSource: 'none',
+            softBypassEnabled: true,
+            softBypassMinSolarW: 200
+        };
+
+        // Baseline: feature off → full battery + export curtails with 0W (pre-#43 behavior unchanged)
+        initializeMockStates();
+        setMockState(`${basePath}.electricLevel`, 100);
+        setMockState(`${basePath}.packPower`, 0);
+        setMockState(`${basePath}.solarInputPower`, 1200);
+        setMockState('test.0.gridPower', -800);
+        await makeController().runCycle({ ...config, softBypassEnabled: false });
+        assertEqual(getMockState(limitId).val, 0, 'Feature disabled: 0W as before');
+
+        initializeMockStates();
+        setMockState(`${basePath}.electricLevel`, 100);
+        setMockState(`${basePath}.packPower`, 0);
+        setMockState(`${basePath}.solarInputPower`, 1200);
+        setMockState('test.0.gridPower', -800);
+        const controller = makeController();
+
+        await controller.runCycle(config);
+        assertEqual(getMockState(limitId).val, 1190, 'Full + export: PV floor written instead of 0W');
+        assertEqual(getMockState('status.softBypassFloorW').val, 1190, 'Floor exposed in status');
+
+        setMockState('test.0.gridPower', 2000);
+        await controller.runCycle(config);
+        assert(getMockState(limitId).val > 1190, `Large consumer: regulator demand above the floor wins (got ${getMockState(limitId).val}W)`);
+
+        setMockState('test.0.gridPower', -1500);
+        await controller.runCycle(config);
+        await controller.runCycle(config);
+        assertEqual(getMockState(limitId).val, 1190, 'Consumer gone, export again: back to the floor, never below');
+    });
+
+    await runTest('[4.33] Multi-device: soft bypass device never charges, gets floor + discharge share, safety veto respected', async () => {
+        const devices = [
+            { productKey: 'device1', deviceKey: 'pro', name: 'Pro', enabled: true, hasPv: true, softBypass: true, softBypassMinSolarW: '', maxChargePowerW: 2400, maxDischargePowerW: 2400 },
+            { productKey: 'device2', deviceKey: 'acplus', name: 'AC+', enabled: true, softBypass: true, maxChargePowerW: 2400, maxDischargePowerW: 2400 }
+        ];
+        const multiDeviceMgr = new MultiDeviceManager(mockAdapter, 'test.0', devices);
+        const pro = multiDeviceMgr.devices.find(d => d.id === 'pro');
+        const acplus = multiDeviceMgr.devices.find(d => d.id === 'acplus');
+        assertEqual(pro.softBypassEnabled, true, 'PV device with soft bypass checked is enabled');
+        assertEqual(pro.softBypassMinSolarW, 200, 'Empty threshold cell falls back to 200W');
+        assertEqual(acplus.softBypassEnabled, false, 'Soft bypass without PV is ignored');
+
+        const aggregated = {
+            devices: [
+                { id: 'pro', name: 'Pro', available: true, soc: 100, powerW: 0, minPackVoltageV: 3.4 },
+                { id: 'acplus', name: 'AC+', available: true, soc: 60, powerW: 0, minPackVoltageV: 3.4 }
+            ]
+        };
+        const config = { ...mockConfig, multiDeviceDistributionStrategy: 'equalSplit', maxChargePowerW: 2400, maxDischargePowerW: 2400 };
+        const floors = new Map([['pro', 1100]]);
+
+        // Export: AC+ takes the whole charge, Pro keeps delivering its PV floor
+        const chargeDist = multiDeviceMgr.applySoftBypassFloors(
+            await multiDeviceMgr.distributePower(-1000, aggregated, config, new Map(), new Map(), floors), floors, -1000);
+        const proCharge = chargeDist.find(d => d.deviceId === 'pro');
+        assertEqual(chargeDist.find(d => d.deviceId === 'acplus').powerW, -1000, 'Other device absorbs the full charge');
+        assertEqual(proCharge.powerW, 1100, 'Soft bypass device outputs its floor, not a charge share and not 0W');
+        assertEqual(proCharge.excluded, false, 'Written as a normal setpoint (zero-avoidance path untouched)');
+        assertEqual(proCharge.softBypassFloorW, 1100, 'Floor tagged so it stays out of the regulated total');
+
+        // Import beyond the floors: floor + regulated share on top
+        const dischargeDist = multiDeviceMgr.applySoftBypassFloors(
+            await multiDeviceMgr.distributePower(600, aggregated, config, new Map(), new Map(), floors), floors, 600);
+        assertEqual(dischargeDist.find(d => d.deviceId === 'pro').powerW, 1400, 'Floor 1100W + 300W equal share');
+        assertEqual(dischargeDist.find(d => d.deviceId === 'acplus').powerW, 300, 'Other device keeps its share');
+        const regulatedTotal = dischargeDist.filter(d => !d.excluded).reduce((s, d) => s + d.powerW - (d.softBypassFloorW || 0), 0);
+        assertEqual(regulatedTotal, 600, 'Regulated total excludes the floor');
+
+        // Discharge vetoed by safety/config: no floor sneaks through
+        const vetoed = multiDeviceMgr.applySoftBypassFloors(
+            [{ deviceId: 'pro', deviceName: 'Pro', powerW: 0, reason: 'Safety limit active', excluded: true }], floors, 600);
+        assertEqual(vetoed[0].powerW, 0, 'Safety veto on discharge is respected');
+        assertEqual(vetoed[0].excluded, true, 'Stays excluded');
+
+        // Waterfill sticky resting side is a distribution choice, not a veto: floor still applies
+        const resting = multiDeviceMgr.applySoftBypassFloors(
+            [{ deviceId: 'pro', deviceName: 'Pro', powerW: 0, reason: 'Waterfill: single-device mode, resting', excluded: true }], floors, 300);
+        assertEqual(resting[0].powerW, 1100, 'Resting in sticky mode still delivers the PV floor');
+        assertEqual(resting[0].excluded, false, 'Written as a normal setpoint');
+    });
+
+    await runTest('[4.34] Multi-device: waterfill system limits exclude soft bypass charge capacity and the floor itself', async () => {
+        const MultiDeviceController = require('./lib/MultiDeviceController');
+        const controller = new MultiDeviceController(mockAdapter, {
+            multiDeviceMgr: { devices: [
+                { id: 'pro', maxChargePowerW: 2400, maxDischargePowerW: 2400 },
+                { id: 'acplus', maxChargePowerW: 2400, maxDischargePowerW: 2400 }
+            ] }
+        });
+        const limits = controller.getWaterfillSystemLimits(
+            [{ id: 'pro' }, { id: 'acplus' }],
+            new Map([['pro', 1100]])
+        );
+        assertEqual(limits.maxChargePowerW, 2400, 'Only the non-bypass device counts for charge');
+        assertEqual(limits.maxDischargePowerW, 3700, 'Pro contributes only its headroom above the floor (1300W)');
+    });
+
     console.log('\n' + '='.repeat(70));
     console.log('SECTION 5: PACKAGE & CONFIG CONSISTENCY');
     console.log('='.repeat(70));

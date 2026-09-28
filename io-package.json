@@ -116,6 +116,8 @@
     "zendureSolarflowInstance": "zendure-solarflow.0",
     "deviceProductKey": "",
     "ignoreStateFreshness": false,
+    "softBypassEnabled": false,
+    "softBypassMinSolarW": 200,
     "deviceKey": "",
     "powerMeterDp": "",
     "updateIntervalSec": 5,
