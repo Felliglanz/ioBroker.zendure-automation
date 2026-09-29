@@ -2709,7 +2709,6 @@ async function testModules() {
         };
 
         assertEqual(sb.update('d', { ...base, soc: 99, now: 0 }).active, false, 'Not entered below maxSoc');
-        assertEqual(sb.update('d', { ...base, solarInputW: 220, now: 0 }).active, false, 'Not entered below threshold + entry hysteresis');
 
         let r = sb.update('d', { ...base, now: 0 });
         assertEqual(r.active, true, 'Entered at maxSoc with enough PV');
@@ -2781,6 +2780,34 @@ async function testModules() {
         sbRefill.recordWrite('d', 965, SETTLE_MS);
         r = sbRefill.update('d', { ...base, soc: 99, batteryPowerW: -40, now: 3 * SETTLE_MS });
         assertEqual(r.floorW, 965, 'Refilling: hold, no probing and no following below full');
+    });
+
+    await runTest('[4.30c] SoftBypassController: enters on reaching full even with throttled PV (nudge), once per charge-up (issue #43 log 2026-09-29)', async () => {
+        const SoftBypassController = require('./lib/SoftBypassController');
+        const { EXIT_DEBOUNCE_MS } = SoftBypassController;
+        const base = {
+            enabled: true, blocked: false, soc: 100, maxSoc: 100, maxSocHysteresis: 4,
+            solarInputW: 0, batteryPowerW: 0, maxDischargePowerW: 2400, minSolarW: 200
+        };
+        const sb = new SoftBypassController(mockAdapter);
+
+        sb.update('d', { ...base, soc: 99, now: 0 });
+        const entered = sb.update('d', { ...base, now: 1000 });
+        assertEqual(entered.active, true, 'Reaching full enters even though the PV reading is already ~0 (standby/taper)');
+        assertEqual(entered.floorW, 50, 'Starts from the 50W nudge, probing takes it from there');
+
+        assertEqual(sb.update('d', { ...base, now: 2000 }).active, true, 'Debounce running');
+        assertEqual(sb.update('d', { ...base, now: 2000 + EXIT_DEBOUNCE_MS }).active, false, 'No PV follows: normal PV exit after the debounce');
+        assertEqual(sb.update('d', { ...base, now: 3000 + EXIT_DEBOUNCE_MS }).active, false, 'Still full, no PV: no second nudge (e.g. battery full overnight)');
+        assertEqual(sb.update('d', { ...base, solarInputW: 220, now: 4000 + EXIT_DEBOUNCE_MS }).active, false, 'Nudge used: PV entry needs threshold + hysteresis again');
+        assertEqual(sb.update('d', { ...base, solarInputW: 300, now: 5000 + EXIT_DEBOUNCE_MS }).active, true, 'Enough uncurtailed PV re-enters without a nudge');
+
+        const sbRearm = new SoftBypassController(mockAdapter);
+        sbRearm.update('d', { ...base, now: 0 });
+        sbRearm.update('d', { ...base, now: 1000 });
+        sbRearm.update('d', { ...base, now: 1000 + EXIT_DEBOUNCE_MS });
+        sbRearm.update('d', { ...base, soc: 96, now: 2000 + EXIT_DEBOUNCE_MS });
+        assertEqual(sbRearm.update('d', { ...base, now: 3000 + EXIT_DEBOUNCE_MS }).active, true, 'SOC left the top band and came back: next charge-up nudges again');
     });
 
     await runTest('[4.31] SoftBypassController: exit on PV debounce, SOC drop and safety block; never above discharge limit', async () => {
