@@ -2810,6 +2810,58 @@ async function testModules() {
         assertEqual(sbRearm.update('d', { ...base, now: 3000 + EXIT_DEBOUNCE_MS }).active, true, 'SOC left the top band and came back: next charge-up nudges again');
     });
 
+    await runTest('[4.30d] SoftBypassController: device bypass (pass) holds the 50W nudge, tracking resumes once it drops (issue #43 Grafana 2026-09-29)', async () => {
+        const SoftBypassController = require('./lib/SoftBypassController');
+        const { SETTLE_MS, PROBE_HOLD_MS, parseBypassState } = SoftBypassController;
+        const base = {
+            enabled: true, blocked: false, soc: 100, maxSoc: 100, maxSocHysteresis: 4,
+            solarInputW: 700, batteryPowerW: 0, maxDischargePowerW: 2400, minSolarW: 200
+        };
+
+        assertEqual(parseBypassState(true), true, 'boolean true');
+        assertEqual(parseBypassState('on'), true, "'on'");
+        assertEqual(parseBypassState(1), true, '1');
+        assertEqual(parseBypassState('off'), false, "'off'");
+        assertEqual(parseBypassState(false), false, 'boolean false');
+        assertEqual(parseBypassState(null), null, 'missing state');
+        assertEqual(parseBypassState(undefined), null, 'no state object');
+
+        const sb = new SoftBypassController(mockAdapter);
+        sb.update('d', { ...base, soc: 99, now: 0 });
+        let r = sb.update('d', { ...base, solarInputW: 0, now: 1000 });
+        assertEqual(r.floorW, 50, 'Enters with the nudge');
+        sb.recordWrite('d', r.floorW, 1000);
+
+        // Device bypass engages: full PV comes out, battery idle - must NOT probe upwards
+        for (let t = 6000; t <= 10 * PROBE_HOLD_MS; t += 5000) {
+            r = sb.update('d', { ...base, hardwareBypassActive: true, now: t });
+            sb.recordWrite('d', r.floorW, t);
+        }
+        assertEqual(r.active, true, 'Still active');
+        assertEqual(r.floorW, 50, 'Holds the nudge for as long as the device bypass is engaged');
+
+        // Regulator demand above the nudge (large consumer) still wins upwards - caller's max()
+        // is untouched; the floor itself stays put while pass is true
+        sb.recordWrite('d', 1500, 10 * PROBE_HOLD_MS + 5000);
+        r = sb.update('d', { ...base, hardwareBypassActive: true, batteryPowerW: 800, now: 10 * PROBE_HOLD_MS + 10000 });
+        assertEqual(r.floorW, 50, 'Battery discharge for a large consumer does not move the held floor');
+
+        // Bypass drops (no hardware bypass anymore): fallback tracking after a settle window
+        const tDrop = 11 * PROBE_HOLD_MS;
+        sb.recordWrite('d', 50, tDrop);
+        r = sb.update('d', { ...base, hardwareBypassActive: false, now: tDrop });
+        assertEqual(r.floorW, 50, 'Right after the bypass drops: no immediate probe');
+        r = sb.update('d', { ...base, hardwareBypassActive: false, now: tDrop + SETTLE_MS });
+        assert(r.floorW > 50, `Settled without bypass: PV tracking resumes (got ${r.floorW}W)`);
+
+        // Devices without a pass state (null) keep the original tracking behaviour
+        const sbNoPass = new SoftBypassController(mockAdapter);
+        sbNoPass.update('d', { ...base, now: 0 });
+        sbNoPass.recordWrite('d', 690, 0);
+        r = sbNoPass.update('d', { ...base, hardwareBypassActive: null, now: SETTLE_MS });
+        assertEqual(r.floorW, 715, 'No pass state: probing as before');
+    });
+
     await runTest('[4.31] SoftBypassController: exit on PV debounce, SOC drop and safety block; never above discharge limit', async () => {
         const SoftBypassController = require('./lib/SoftBypassController');
         const { EXIT_DEBOUNCE_MS } = SoftBypassController;
@@ -2895,6 +2947,12 @@ async function testModules() {
         await controller.runCycle(config);
         await controller.runCycle(config);
         assertEqual(getMockState(limitId).val, 1190, 'Consumer gone, export again: back to the floor, never below');
+
+        // Device reports its own bypass ('on' as some sources publish it): hold the 50W nudge
+        setMockState(`${basePath}.pass`, 'on');
+        await controller.runCycle(config);
+        assertEqual(getMockState(limitId).val, 50, 'pass=on: floor drops to the 50W nudge, the device passes the PV itself');
+        assertEqual(getMockState('status.softBypassFloorW').val, 50, 'Held floor exposed in status');
     });
 
     await runTest('[4.33] Multi-device: soft bypass device never charges, gets floor + discharge share, safety veto respected', async () => {
