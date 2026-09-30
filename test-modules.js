@@ -2810,7 +2810,7 @@ async function testModules() {
         assertEqual(sbRearm.update('d', { ...base, now: 3000 + EXIT_DEBOUNCE_MS }).active, true, 'SOC left the top band and came back: next charge-up nudges again');
     });
 
-    await runTest('[4.30d] SoftBypassController: device bypass (pass) holds the 50W nudge, tracking resumes once it drops (issue #43 Grafana 2026-09-29)', async () => {
+    await runTest('[4.30d] SoftBypassController: device bypass (pass) holds the 50W nudge, also when it drops again later; no-pass devices keep tracking (issue #43)', async () => {
         const SoftBypassController = require('./lib/SoftBypassController');
         const { SETTLE_MS, PROBE_HOLD_MS, parseBypassState } = SoftBypassController;
         const base = {
@@ -2846,13 +2846,17 @@ async function testModules() {
         r = sb.update('d', { ...base, hardwareBypassActive: true, batteryPowerW: 800, now: 10 * PROBE_HOLD_MS + 10000 });
         assertEqual(r.floorW, 50, 'Battery discharge for a large consumer does not move the held floor');
 
-        // Bypass drops (no hardware bypass anymore): fallback tracking after a settle window
+        // Bypass drops later in the session (house needs more than the ~100W PV, log
+        // 2026-09-29 17:45): regulator covers that on top - the floor must not start probing
+        // and fold the demand in (was 50→110→154→94W with pass flipping)
         const tDrop = 11 * PROBE_HOLD_MS;
-        sb.recordWrite('d', 50, tDrop);
-        r = sb.update('d', { ...base, hardwareBypassActive: false, now: tDrop });
-        assertEqual(r.floorW, 50, 'Right after the bypass drops: no immediate probe');
-        r = sb.update('d', { ...base, hardwareBypassActive: false, now: tDrop + SETTLE_MS });
-        assert(r.floorW > 50, `Settled without bypass: PV tracking resumes (got ${r.floorW}W)`);
+        for (const [dt, written, battery] of [[0, 110, 5], [SETTLE_MS, 129, 24], [2 * SETTLE_MS, 154, 50], [4 * SETTLE_MS, 125, 20]]) {
+            sb.recordWrite('d', written, tDrop + dt);
+            r = sb.update('d', { ...base, solarInputW: 104, batteryPowerW: battery, hardwareBypassActive: false, now: tDrop + dt + SETTLE_MS });
+            assertEqual(r.floorW, 50, `Bypass dropped (written ${written}W, battery ${battery}W): floor stays at the nudge`);
+        }
+        r = sb.update('d', { ...base, hardwareBypassActive: true, now: tDrop + 6 * SETTLE_MS });
+        assertEqual(r.floorW, 50, 'Bypass back: still the nudge');
 
         // Devices without a pass state (null) keep the original tracking behaviour
         const sbNoPass = new SoftBypassController(mockAdapter);
