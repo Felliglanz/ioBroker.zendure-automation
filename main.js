@@ -17,6 +17,7 @@ const Telemetry = require('./lib/Telemetry');
 const HousePower = require('./lib/HousePower');
 const InfluxWriter = require('./lib/InfluxWriter');
 const { deviceStateId } = require('./lib/deviceId');
+const { effectiveUpdateIntervalSec } = require('./lib/updateInterval');
 
 /**
  * Battery Automation Engine
@@ -189,11 +190,6 @@ class ZendureAutomation extends utils.Adapter {
                 // Subscribe to control states
                 this.subscribeStates('control.*');
 
-                // Subscribe to grid power meter
-                if (this.config.powerMeterDp) {
-                    await this.subscribeForeignStatesAsync(this.config.powerMeterDp);
-                }
-
                 // Subscribe to all device states
                 await this.multiDeviceMgr.subscribeToDevices();
 
@@ -298,11 +294,6 @@ class ZendureAutomation extends utils.Adapter {
 
             // Subscribe to control states
             this.subscribeStates('control.*');
-
-            // Subscribe to foreign states (grid power and battery power)
-            if (this.config.powerMeterDp) {
-                await this.subscribeForeignStatesAsync(this.config.powerMeterDp);
-            }
 
             // Subscribe to device states to track current power
             await this.subscribeForeignStatesAsync(`${this._deviceBasePath}.packPower`);
@@ -411,7 +402,10 @@ class ZendureAutomation extends utils.Adapter {
      * Start the automation control loop
      */
     startAutomation() {
-        this.log.info(`Starting automation with ${this.config.updateIntervalSec}s interval`);
+        // Grid power is no longer event-driven (see #42) - the automation cycle runs
+        // purely on this tick, floored so a fast meter can never hammer the battery's relay.
+        const updateIntervalSec = effectiveUpdateIntervalSec(this.config);
+        this.log.info(`Starting automation with ${updateIntervalSec}s interval`);
         this._isRunning = true;
 
         // Run first cycle immediately
@@ -420,7 +414,7 @@ class ZendureAutomation extends utils.Adapter {
         });
 
         // Schedule periodic updates
-        const intervalMs = (this.config.updateIntervalSec || 5) * 1000;
+        const intervalMs = updateIntervalSec * 1000;
         this._updateTimer = this.setInterval(() => {
             this.runAutomationCycle().catch(err => {
                 this.log.error(`Automation cycle failed: ${err.message}`);
@@ -1221,14 +1215,6 @@ class ZendureAutomation extends utils.Adapter {
 
         if (id.endsWith('.control.regulatorGain')) {
             this.log.info(`I-Regulator gain changed to ${state.val} (only applied while enabled in settings)`);
-            this.runAutomationCycle().catch(err => {
-                this.log.error(`Automation cycle failed: ${err.message}`);
-            });
-        }
-
-        // React to grid power changes (faster response)
-        if (id === this.config.powerMeterDp) {
-            this.log.debug(`Grid power changed to ${state.val}W, triggering cycle`);
             this.runAutomationCycle().catch(err => {
                 this.log.error(`Automation cycle failed: ${err.message}`);
             });

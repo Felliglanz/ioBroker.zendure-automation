@@ -683,12 +683,12 @@
                 "de": "Update-Intervall (Sekunden)"
               },
               "sm": 6,
-              "min": 1,
+              "min": 3,
               "max": 300,
               "default": 5,
               "help": {
-                "en": "How often to adjust battery power (recommended: 5s)",
-                "de": "Wie oft Batterieleistung angepasst wird (empfohlen: 5s)"
+                "en": "How often to adjust battery power (recommended: 5s, minimum: 3s)",
+                "de": "Wie oft Batterieleistung angepasst wird (empfohlen: 5s, Minimum: 3s)"
               }
             },
             "setPowerMaxRetries": {

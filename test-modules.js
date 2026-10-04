@@ -1975,6 +1975,38 @@ async function testModules() {
         assertEqual(settled.find(item => item.powerW > 0).deviceId, 'device1', 'Highest SOC device becomes sticky');
     });
 
+    await runTest('[4.18b] Waterfill hold window uses the floored tick, not a stale stored 1s interval (#42 follow-up)', async () => {
+        const { effectiveUpdateIntervalSec } = require('./lib/updateInterval');
+        assertEqual(effectiveUpdateIntervalSec({ updateIntervalSec: 1 }), 3, 'Stored 1s is floored to 3s');
+        assertEqual(effectiveUpdateIntervalSec({ updateIntervalSec: 10 }), 10, 'Values above the floor are kept');
+        assertEqual(effectiveUpdateIntervalSec({}), 5, 'Unset falls back to the 5s default');
+        assertEqual(effectiveUpdateIntervalSec({ updateIntervalSec: '' }), 5, 'Empty admin field falls back to the default');
+
+        const distributor = new WaterfillDistributor();
+        const devices = [
+            { id: 'device1', name: 'Device 1', soc: 80, minSoc: 10, maxSoc: 100, maxChargePowerW: 1600, maxDischargePowerW: 800, chargeAllowed: true, dischargeAllowed: true },
+            { id: 'device2', name: 'Device 2', soc: 40, minSoc: 10, maxSoc: 100, maxChargePowerW: 1600, maxDischargePowerW: 1600, chargeAllowed: true, dischargeAllowed: true }
+        ];
+        const config = {
+            minBatterySoc: 10, maxBatterySoc: 100, updateIntervalSec: 1,
+            waterfillConcentrateHoldMinutes: 1,
+            waterfillDischargeConcentrateBelowW: 600,
+            waterfillDischargeSpreadAboveW: 1200,
+            waterfillSocMargin: 10
+        };
+        // 1 min at the real 3s tick = 20 cycles (a raw 1s value would wrongly demand 60)
+        const holdCycles = 20;
+        for (let cycle = 0; cycle < holdCycles - 1; cycle++) {
+            distributor.distribute(400, devices, config);
+        }
+        for (let i = 0; i < 5; i++) {
+            distributor.distribute(400, devices, config);
+        }
+        const settled = distributor.distribute(400, devices, config);
+        assertEqual(settled.filter(item => item.powerW > 0).length, 1,
+            'Single-device mode reached after 1 min of real (3s) cycles, not 3 min');
+    });
+
     await runTest('[4.19] Waterfill blends power gradually when concentrating out of spread mode', async () => {
         const distributor = new WaterfillDistributor();
         const devices = [
@@ -2540,6 +2572,11 @@ async function testModules() {
 
         assertEqual(pvStale.solarInputPowerW, 0, 'Stale solar reading degrades to 0 (no PV credit), not the frozen value');
         assertEqual(pvStale.available, true, 'Stale solar reading does NOT exclude the device (unlike packPower/SOC staleness)');
+
+        // Per-device freshness bypass (cloud-MQTT devices, issue #39/#16) applies to PV too
+        const bypassMgr = new MultiDeviceManager(mockAdapter, 'test.0', [{ ...devices[0], ignoreStateFreshness: true }]);
+        const pvBypass = (await bypassMgr.aggregateDeviceStates()).devices.find(d => d.id === 'pk1');
+        assertEqual(pvBypass.solarInputPowerW, 1234, 'ignoreStateFreshness: unchanged (old ts) PV reading is still used');
     });
 
     await runTest('[4.27] hasPv forces validationSource to gridInputPower, overriding any configured value', async () => {
