@@ -2540,6 +2540,11 @@ async function testModules() {
 
         assertEqual(pvStale.solarInputPowerW, 0, 'Stale solar reading degrades to 0 (no PV credit), not the frozen value');
         assertEqual(pvStale.available, true, 'Stale solar reading does NOT exclude the device (unlike packPower/SOC staleness)');
+
+        // Per-device freshness bypass (cloud-MQTT devices, issue #39/#16) applies to PV too
+        const bypassMgr = new MultiDeviceManager(mockAdapter, 'test.0', [{ ...devices[0], ignoreStateFreshness: true }]);
+        const pvBypass = (await bypassMgr.aggregateDeviceStates()).devices.find(d => d.id === 'pk1');
+        assertEqual(pvBypass.solarInputPowerW, 1234, 'ignoreStateFreshness: unchanged (old ts) PV reading is still used');
     });
 
     await runTest('[4.27] hasPv forces validationSource to gridInputPower, overriding any configured value', async () => {
