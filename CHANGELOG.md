@@ -2,6 +2,18 @@
 
 All notable changes to this project are documented in this file.
 
+## v1.2.1 (2026-10-04)
+
+### English
+- **Timer-only automation cycle with a 3 s minimum (issue #42):** the "react to grid power changes" trigger could never fire for a real meter push (those always arrive acknowledged and were dropped before reaching it), so the cycle already ran purely on `updateIntervalSec` in practice. The dead code is removed and the interval now has a hardcoded floor of 3 s (admin minimum raised from 1 to 3) so a fast meter can never hammer the battery relay. **Installs with 1-2 s configured now run at 3 s.**
+- **Fixed a stretched Waterfill hold time:** Waterfill converted its "concentrate hold time" into cycles using the raw stored interval instead of the floored one. With an old 1 s value still stored, a 3 min setting took 9 min of real time. Both now share the same effective interval.
+- **Multi-device: freshness bypass also covers the PV reading:** the per-device "ignore state freshness" option (issue #39/#16) didn't apply to `solarInputPower`, so on cloud-MQTT PV devices an unchanged PV value dropped to 0 W after 3 minutes and the PV charge headroom (#26) silently stopped working.
+
+### Deutsch
+- **Regelzyklus nur noch über den Timer, mindestens 3 s (Issue #42):** Der Auslöser „bei Änderung der Netzleistung“ konnte bei echten Zählerwerten nie greifen (die kommen immer bestätigt an und wurden vorher verworfen), der Zyklus lief also schon bisher nur über `updateIntervalSec`. Der tote Code ist entfernt, und das Intervall hat jetzt eine feste Untergrenze von 3 s (Admin-Minimum von 1 auf 3 angehoben), damit ein schneller Zähler das Batterie-Relais nie überlastet. **Installationen mit eingestellten 1-2 s laufen jetzt mit 3 s.**
+- **Gestreckte Waterfill-Haltezeit behoben:** Waterfill hat die „Haltezeit Einzelgerät“ mit dem roh gespeicherten Intervall statt mit dem begrenzten in Zyklen umgerechnet. War noch ein alter Wert von 1 s gespeichert, dauerte eine Einstellung von 3 min real 9 min. Beide nutzen jetzt dasselbe wirksame Intervall.
+- **Multi-Device: Freshness-Option gilt auch für den PV-Messwert:** Die Geräte-Option „State-Freshness ignorieren“ (Issue #39/#16) galt nicht für `solarInputPower`. Bei Cloud-MQTT-Geräten mit PV fiel ein unveränderter PV-Wert daher nach 3 Minuten auf 0 W, und die PV-Ladefreigabe (#26) funktionierte unbemerkt nicht mehr.
+
 ## v1.2.0 (2026-09-06)
 
 ### English
