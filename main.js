@@ -17,6 +17,7 @@ const Telemetry = require('./lib/Telemetry');
 const HousePower = require('./lib/HousePower');
 const InfluxWriter = require('./lib/InfluxWriter');
 const { deviceStateId } = require('./lib/deviceId');
+const { effectiveUpdateIntervalSec } = require('./lib/updateInterval');
 
 /**
  * Battery Automation Engine
@@ -402,10 +403,8 @@ class ZendureAutomation extends utils.Adapter {
      */
     startAutomation() {
         // Grid power is no longer event-driven (see #42) - the automation cycle runs
-        // purely on this tick. Floor it at MIN_UPDATE_INTERVAL_SEC regardless of what's
-        // stored in config, so a fast meter can never hammer the battery's relay.
-        const MIN_UPDATE_INTERVAL_SEC = 3;
-        const updateIntervalSec = Math.max(MIN_UPDATE_INTERVAL_SEC, this.config.updateIntervalSec || 5);
+        // purely on this tick, floored so a fast meter can never hammer the battery's relay.
+        const updateIntervalSec = effectiveUpdateIntervalSec(this.config);
         this.log.info(`Starting automation with ${updateIntervalSec}s interval`);
         this._isRunning = true;
 
