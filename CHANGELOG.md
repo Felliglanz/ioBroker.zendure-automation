@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented in this file.
 
+## v1.2.2 (2026-10-08)
+
+### English
+- **Single-device: no more charging flicker during the emergency recovery phase:** once emergency charging reached the exit SOC and the adapter was waiting for the recovery SOC, it wrote a safety 0W at the start of every cycle before running normal regulation. That reset the last setpoint to 0 each time, so RelayProtection saw a fresh Standby→Charge transition every cycle and PV surplus charging alternated 0 W / -10 W / 0 W / full power for the whole phase. The 0W is now written once on entering the phase (to stop emergency charging); afterwards normal regulation runs and SafetyLimiter keeps blocking discharge. Multi-device mode has no separate phase and was not affected.
+
+### Deutsch
+- **Single-Device: kein Flackern der Ladeleistung mehr in der Emergency-Recovery-Phase:** Sobald die Notladung den Exit-SOC erreicht hatte und der Adapter auf den Recovery-SOC wartete, schrieb er zu Beginn jedes Zyklus ein Sicherheits-0W und ließ danach die normale Regelung laufen. Dadurch stand der letzte Sollwert jedes Mal wieder auf 0, RelayProtection sah in jedem Zyklus einen neuen Wechsel Standby→Laden, und das Laden aus PV-Überschuss pendelte die ganze Phase über zwischen 0 W / -10 W / 0 W / voller Leistung. Das 0W wird jetzt nur noch einmal beim Eintritt in die Phase geschrieben (um die Notladung zu beenden), danach regelt die normale Regelung und SafetyLimiter sperrt weiterhin das Entladen. Der Multi-Device-Modus hat keine eigene Phase und war nicht betroffen.
+
 ## v1.2.1 (2026-10-04)
 
 ### English
