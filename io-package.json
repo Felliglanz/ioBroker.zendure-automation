@@ -2,8 +2,12 @@
   "common": {
     "name": "zendure-automation",
     "title": "Zendure Automation",
-    "version": "1.2.1",
+    "version": "1.2.2",
     "news": {
+      "1.2.2": {
+        "en": "Single-device: fixed charging power flickering during the recovery phase after an emergency (exit SOC reached, waiting for the recovery SOC). The adapter wrote a safety 0W at the start of every cycle, so the relay protection saw a fresh standby-to-charge switch each time and PV surplus charging alternated between 0W, 10W and full power instead of charging steadily. The 0W is now written only once when the phase starts; discharge stays blocked as before. Multi-device mode was not affected.",
+        "de": "Single-Device: Flackernde Ladeleistung in der Recovery-Phase nach einem Notfall behoben (Exit-SOC erreicht, Warten auf den Recovery-SOC). Der Adapter schrieb zu Beginn jedes Zyklus ein Sicherheits-0W, wodurch der Relaisschutz jedes Mal einen neuen Wechsel von Standby zu Laden sah und das Laden aus PV-Überschuss zwischen 0W, 10W und voller Leistung pendelte, statt gleichmäßig zu laden. Das 0W wird jetzt nur noch einmal beim Eintritt in die Phase geschrieben, Entladen bleibt wie bisher gesperrt. Der Multi-Device-Modus war nicht betroffen."
+      },
       "1.2.1": {
         "en": "The automation cycle now runs purely on its timer with a minimum interval of 3 seconds: the old 'react to grid power changes' trigger could never fire in practice and was removed (issue #42), and installs that had 1-2s configured now run at 3s so a fast meter can't hammer the battery relay. Fixed Waterfill's 'concentrate hold time' being stretched when an old 1-2s interval was still stored (a 3 min setting could take 9 min). Multi-device: the per-device 'ignore state freshness' option now also applies to the PV reading (solarInputPower), so cloud-MQTT PV devices no longer lose their PV charge headroom after 3 minutes without a value change.",
         "de": "Der Regelzyklus läuft jetzt ausschließlich über den Timer mit einem Mindestintervall von 3 Sekunden: Der alte Auslöser 'bei Änderung der Netzleistung' konnte in der Praxis nie greifen und wurde entfernt (Issue #42), und Installationen mit eingestellten 1-2s laufen jetzt mit 3s, damit ein schneller Zähler das Batterie-Relais nicht überlastet. Behoben: Die Waterfill-'Haltezeit Einzelgerät' wurde gestreckt, wenn noch ein alter Wert von 1-2s gespeichert war (aus 3 min konnten 9 min werden). Multi-Device: Die Geräte-Option 'State-Freshness ignorieren' gilt jetzt auch für den PV-Messwert (solarInputPower), sodass Cloud-MQTT-Geräte mit PV ihre PV-Ladefreigabe nicht mehr nach 3 Minuten ohne Wertänderung verlieren."
