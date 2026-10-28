@@ -2,8 +2,12 @@
   "common": {
     "name": "zendure-automation",
     "title": "Zendure Automation",
-    "version": "1.2.2",
+    "version": "1.2.3",
     "news": {
+      "1.2.3": {
+        "en": "Devices with PV modules: the 0W setpoint check no longer reports false warnings while PV charges the battery directly. It always compared against packPower, which includes direct PV charging, so as soon as PV exceeded the tolerance it logged 'Device left the committed 0W setpoint' and resent 0W although both AC limits were correctly at 0 (issue #45). It now uses the configured validation source, like charge validation (gridInputPower for PV devices, set automatically in multi-device mode). The exact outputLimit/inputLimit check stays unchanged.",
+        "de": "Geräte mit PV-Modulen: Die Prüfung des 0W-Sollwerts meldet keine falschen Warnungen mehr, während PV die Batterie direkt lädt. Sie verglich immer mit packPower, das die direkte PV-Ladung enthält. Sobald PV über der Toleranz lag, kam deshalb 'Device left the committed 0W setpoint' samt erneutem 0W-Befehl, obwohl beide AC-Limits korrekt auf 0 standen (Issue #45). Jetzt wird wie bei der Lade-Validierung die eingestellte Validierungsquelle genutzt (gridInputPower für PV-Geräte, im Multi-Device-Modus automatisch). Der exakte Abgleich von outputLimit/inputLimit bleibt unverändert."
+      },
       "1.2.2": {
         "en": "Single-device: fixed charging power flickering during the recovery phase after an emergency (exit SOC reached, waiting for the recovery SOC). The adapter wrote a safety 0W at the start of every cycle, so the relay protection saw a fresh standby-to-charge switch each time and PV surplus charging alternated between 0W, 10W and full power instead of charging steadily. The 0W is now written only once when the phase starts; discharge stays blocked as before. Multi-device mode was not affected.",
         "de": "Single-Device: Flackernde Ladeleistung in der Recovery-Phase nach einem Notfall behoben (Exit-SOC erreicht, Warten auf den Recovery-SOC). Der Adapter schrieb zu Beginn jedes Zyklus ein Sicherheits-0W, wodurch der Relaisschutz jedes Mal einen neuen Wechsel von Standby zu Laden sah und das Laden aus PV-Überschuss zwischen 0W, 10W und voller Leistung pendelte, statt gleichmäßig zu laden. Das 0W wird jetzt nur noch einmal beim Eintritt in die Phase geschrieben, Entladen bleibt wie bisher gesperrt. Der Multi-Device-Modus war nicht betroffen."

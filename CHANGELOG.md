@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented in this file.
 
+## v1.2.3 (2026-10-28)
+
+### English
+- **PV devices: no more false 0W setpoint warnings during direct PV charging (issue #45):** the 0W setpoint check always compared measured power against packPower, ignoring the configured validation source. packPower includes direct PV charging, so once PV exceeded the tolerance (operatingDeadbandW + 5 W) the check failed although outputLimit and inputLimit were correctly at 0, logged "Device left the committed 0W setpoint" / "0W setpoint not confirmed" and resent a literal 0W. It now uses the same source as charge validation in single- and multi-device mode (multi-device PV devices are forced to gridInputPower). The exact outputLimit/inputLimit == 0 check is unchanged; with "none" only that check remains.
+
+### Deutsch
+- **PV-Geräte: keine falschen 0W-Warnungen mehr bei direkter PV-Ladung (Issue #45):** Die Prüfung des 0W-Sollwerts verglich die gemessene Leistung immer mit packPower und ignorierte die eingestellte Validierungsquelle. packPower enthält die direkte PV-Ladung, daher schlug die Prüfung fehl, sobald PV über der Toleranz lag (operatingDeadbandW + 5 W), obwohl outputLimit und inputLimit korrekt auf 0 standen. Die Folge waren die Meldungen "Device left the committed 0W setpoint" / "0W setpoint not confirmed" und ein erneuter 0W-Befehl. Jetzt wird im Single- und Multi-Device-Modus dieselbe Quelle wie bei der Lade-Validierung genutzt (PV-Geräte im Multi-Device-Modus sind fest auf gridInputPower). Der exakte Abgleich outputLimit/inputLimit == 0 bleibt unverändert, bei "none" bleibt nur dieser Abgleich.
+
 ## v1.2.2 (2026-10-08)
 
 ### English
