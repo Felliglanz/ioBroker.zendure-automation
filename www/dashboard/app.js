@@ -47,6 +47,8 @@
   const flowLineBatteryHub = document.getElementById('flowLineBatteryHub');
   const flowLinePvHouse = document.getElementById('flowLinePvHouse');
   const deviceCards = document.getElementById('deviceCards');
+  const calibValue = document.getElementById('calibValue');
+  const calibBtn = document.getElementById('calibBtn');
   const controlList = document.getElementById('controlList');
   const emergencyReason = document.getElementById('emergencyReason');
   const lastUpdate = document.getElementById('lastUpdate');
@@ -250,6 +252,7 @@
         </div>
         <div class="metrics">${powerCell}<span>${soc}%</span></div>
         <div class="bar-track"><div class="bar-fill ${barClass}" style="width:${socPct}%"></div></div>
+        <div class="calib-line ${fullChargeClass(dev.lastFullChargeTs)}">100%: ${fmtFullChargeAgo(dev.lastFullChargeTs)}</div>
       `;
       card.addEventListener('click', () => openDetails(dev.id));
       card.querySelector('.gear-btn').addEventListener('click', e => {
@@ -1368,7 +1371,67 @@
     }
   }
 
+  // Last time SOC reached 100% (status[.devices.<id>].lastFullChargeTs, discussion #46).
+  // Colors count down towards Zendure's forced recalibration after ~30 days without 100%.
+  function fullChargeDays(ts) {
+    return typeof ts === 'number' && ts > 0 ? (Date.now() - ts) / 86400000 : null;
+  }
+
+  function fullChargeClass(ts) {
+    const days = fullChargeDays(ts);
+    if (days === null) return 'calib-unknown';
+    return days >= 25 ? 'calib-warn' : days >= 14 ? 'calib-mid' : 'calib-ok';
+  }
+
+  function fmtFullChargeAgo(ts) {
+    const days = fullChargeDays(ts);
+    if (days === null) return 'noch nicht erfasst';
+    const date = new Date(ts).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' });
+    const n = Math.floor(days);
+    if (n <= 0) return `heute (${date})`;
+    if (n === 1) return `gestern (${date})`;
+    return `vor ${n} Tagen (${date})`;
+  }
+
+  let fullChargeActive = false;
+  let fullChargePowerW = null;
+
+  function renderFullCharge(data) {
+    let ts;
+    let suffix = '';
+    if (data.multiDevice) {
+      // The device that's been longest without 100% is the one that matters - one never seen
+      // at 100% yet counts as oldest.
+      const devices = data.devices || [];
+      const missing = devices.find(d => fullChargeDays(d.lastFullChargeTs) === null);
+      const oldest = missing || devices.reduce((a, b) => (a && a.lastFullChargeTs <= b.lastFullChargeTs ? a : b), null);
+      ts = oldest ? oldest.lastFullChargeTs : null;
+      if (oldest && devices.length > 1) suffix = ` · ${oldest.name || oldest.id}`;
+    } else {
+      ts = data.status.lastFullChargeTs;
+    }
+    calibValue.textContent = fmtFullChargeAgo(ts) + suffix;
+    calibValue.className = `calib-value ${fullChargeClass(ts)}`;
+
+    fullChargeActive = !!data.control.fullCharge;
+    fullChargePowerW = data.control.maxChargePowerW;
+    calibBtn.classList.toggle('active', fullChargeActive);
+    calibBtn.textContent = fullChargeActive ? '■ Vollladung läuft – abbrechen' : '🔋 Jetzt auf 100% laden';
+  }
+
+  calibBtn.addEventListener('click', () => {
+    if (!fullChargeActive) {
+      const power = Number.isFinite(fullChargePowerW) ? ` mit ${fmtWAuto(fullChargePowerW)}` : '';
+      if (!window.confirm(`Akkus jetzt${power} auf 100% laden (auch aus dem Netz)? Endet automatisch, sobald 100% erreicht sind.`)) return;
+    }
+    sendControl('fullCharge', !fullChargeActive);
+    fullChargeActive = !fullChargeActive;
+    calibBtn.classList.toggle('active', fullChargeActive);
+    calibBtn.textContent = fullChargeActive ? '■ Vollladung läuft – abbrechen' : '🔋 Jetzt auf 100% laden';
+  });
+
   function render(data) {
+    renderFullCharge(data);
     const mode = data.status.mode || 'idle';
     modeBadge.textContent = mode;
     modeBadge.className = `mode-badge ${mode}`;

@@ -50,6 +50,7 @@ Steuert deine Zendure Solarflow Batterie vollautomatisch für **Null-Einspeisung
 - **Historie (optional)** – bei aktiviertem InfluxDB-Export: frei wählbarer Zeitraum, bis zu zwei überlagerte Felder, Fadenkreuz-Tooltip
 - **Optionaler InfluxDB-v2-Export** – periodischer Snapshot von Telemetrie-/Status-Daten in einen eigenen Bucket, Token verschlüsselt gespeichert
 - **PV-Anteil pro Gerät (Multi-Device)** – Gerätekarten zeigen bei aktiver Solarproduktion den PV- und Batterie-Anteil getrennt an
+- **Letzte Vollladung + Vollladung per Klick** – zeigt, wann jedes Gerät zuletzt 100% SOC hatte (`status.lastFullChargeTs` bzw. `status.devices.<id>.lastFullChargeTs`), und lädt per Button mit `maxChargePowerW` auf 100% (auch aus dem Netz, `maxBatterySoc` wird dabei ignoriert). Endet automatisch, sobald alle Geräte 100% erreicht haben, danach regelt die Automatik normal weiter. Auch per Skript steuerbar über `control.fullCharge`
 
 ### 🏗️ Moderne Architektur
 - **Modulare Struktur** – main.js orchestriert nur noch, die eigentliche Logik lebt in fokussierten, einzeln testbaren `lib/`-Modulen (Regelung, Sicherheit, Validierung, Multi-Device-Verteilung, Dashboard)

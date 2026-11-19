@@ -174,7 +174,7 @@ class ZendureAutomation extends utils.Adapter {
                 // Remove single-device-only global states left over from a prior single-device
                 // run (see #27: they stayed forever frozen once Multi-Device Mode was enabled,
                 // since only status.totalPowerW/avgSoc get written here).
-                for (const staleId of ['currentPowerW', 'batterySoc']) {
+                for (const staleId of ['currentPowerW', 'batterySoc', 'lastFullChargeTs']) {
                     try {
                         await this.delObjectAsync(`status.${staleId}`);
                     } catch {
@@ -192,6 +192,7 @@ class ZendureAutomation extends utils.Adapter {
 
                 // Subscribe to all device states
                 await this.multiDeviceMgr.subscribeToDevices();
+                await this.seedFullChargeTracking();
 
             } catch (err) {
                 this.log.error(`Multi-Device initialization failed: ${err.message}`);
@@ -266,6 +267,18 @@ class ZendureAutomation extends utils.Adapter {
                 native: {}
             });
 
+            await this.setObjectNotExistsAsync('status.lastFullChargeTs', {
+                type: 'state',
+                common: {
+                    name: 'Last time SOC reached 100% (full charge / calibration)',
+                    type: 'number',
+                    role: 'value.time',
+                    read: true,
+                    write: false
+                },
+                native: {}
+            });
+
             // Remove multi-device-only global states left over from a prior multi-device run
             for (const staleId of ['totalPowerW', 'avgSoc']) {
                 try {
@@ -304,6 +317,8 @@ class ZendureAutomation extends utils.Adapter {
 
             // Subscribe to device protection flags
             await this.subscribeForeignStatesAsync(`${this._deviceBasePath}.control.lowVoltageBlock`);
+
+            await this.seedFullChargeTracking();
         }
 
         // Start standalone dashboard (opt-out via config)
@@ -482,10 +497,11 @@ class ZendureAutomation extends utils.Adapter {
 
             // Check for manual override modes (highest priority)
             const maxChargeState = await this.getStateAsync('control.maxCharge');
+            const fullChargeState = await this.getStateAsync('control.fullCharge');
             const maxDischargeState = await this.getStateAsync('control.maxDischarge');
 
-            if (maxChargeState?.val) {
-                await this.handleMaxChargeMode(effectiveConfig);
+            if (fullChargeState?.val || maxChargeState?.val) {
+                await this.handleMaxChargeMode(effectiveConfig, fullChargeState?.val === true);
                 await this.recordTelemetryTick();
                 return;
             }
@@ -558,12 +574,19 @@ class ZendureAutomation extends utils.Adapter {
      * Charges all eligible batteries at maximum configured power.
      * Each device is checked individually (availability, chargeAllowed, own SOC) so that one
      * fully-charged or disabled device never blocks the override for the others.
+     *
+     * With fullCharge (control.fullCharge, discussion #46) the target is a fixed 100% instead
+     * of maxBatterySoc, so a configured maxBatterySoc below 100 can't silently prevent the
+     * full charge the device needs to recalibrate its SOC. Each device stops on its own at 100%,
+     * the override ends once all of them are there.
      */
-    async handleMaxChargeMode(config) {
-        this.log.debug('Max Charge Override active');
-        await this.setStateAsync('status.mode', 'max-charging', true);
+    async handleMaxChargeMode(config, fullCharge = false) {
+        this.log.debug(`${fullCharge ? 'Full Charge' : 'Max Charge Override'} active`);
+        await this.setStateAsync('status.mode', fullCharge ? 'full-charging' : 'max-charging', true);
 
-        const maxBatterySoc = config.maxBatterySoc ?? 100;
+        const maxBatterySoc = fullCharge ? 100 : (config.maxBatterySoc ?? 100);
+        const overrideId = fullCharge ? 'control.fullCharge' : 'control.maxCharge';
+        const overrideName = fullCharge ? 'Full Charge' : 'Max Charge';
         const globalChargePowerW = Math.abs(config.maxChargePowerW || 1200);
 
         if (this._isMultiDevice) {
@@ -580,9 +603,10 @@ class ZendureAutomation extends utils.Adapter {
             });
 
             await Promise.all(setpoints.map(({ device, powerW }) => {
-                this.log.debug(`Max Charge: ${device.name} ${powerW}W`);
+                this.log.debug(`${overrideName}: ${device.name} ${powerW}W`);
                 return this.validationService.writePowerSetpoint(device.id, device.basePath, powerW, config);
             }));
+            this.syncMultiRegulatorBase(setpoints);
 
             // Re-read telemetry so status.* (and the dashboard) reflect the override too, not just
             // the normal automation cycle - this used to stay frozen at whatever it showed before
@@ -594,8 +618,8 @@ class ZendureAutomation extends utils.Adapter {
 
             const anyCharging = setpoints.some(({ allowed }) => allowed);
             if (!anyCharging) {
-                this.log.info(`Max SOC ${maxBatterySoc}% reached on all devices, disabling Max Charge mode`);
-                await this.setStateAsync('control.maxCharge', false, true);
+                this.log.info(`SOC ${maxBatterySoc}% reached on all eligible devices, disabling ${overrideName} mode`);
+                await this.setStateAsync(overrideId, false, true);
                 await this.setStateAsync('status.mode', 'idle', true);
             }
             return;
@@ -604,14 +628,14 @@ class ZendureAutomation extends utils.Adapter {
         // ========== SINGLE-DEVICE ==========
         const batterySoc = await this.dataReader.getBatterySoc();
         if (batterySoc !== null && batterySoc >= maxBatterySoc) {
-            this.log.info(`Max SOC ${maxBatterySoc}% reached, disabling Max Charge mode`);
-            await this.setStateAsync('control.maxCharge', false, true);
+            this.log.info(`SOC ${maxBatterySoc}% reached, disabling ${overrideName} mode`);
+            await this.setStateAsync(overrideId, false, true);
             await this.setStateAsync('status.mode', 'idle', true);
             await this.validationService.writePowerSetpoint(this._deviceBasePath, this._deviceBasePath, 0, config);
             return;
         }
 
-        this.log.debug(`Max Charge: ${-globalChargePowerW}W`);
+        this.log.debug(`${overrideName}: ${-globalChargePowerW}W`);
         await this.validationService.writePowerSetpoint(this._deviceBasePath, this._deviceBasePath, -globalChargePowerW, config);
 
         // Same as above: keep status.* live while the override is active, not just on the next
@@ -620,6 +644,81 @@ class ZendureAutomation extends utils.Adapter {
         const currentPowerW = await this.dataReader.getCurrentBatteryPowerW();
         const minPackVoltageV = await this.dataReader.getMinimumPackVoltageV();
         await this.singleDeviceController.updateStatusStates(gridPowerW, batterySoc, currentPowerW, minPackVoltageV);
+    }
+
+    /**
+     * Keep the multi-device I-regulator's integrator base in line with what an override (or
+     * stopping one) actually wrote. Single-device reads its base from ValidationService's
+     * lastWrittenLimit, which every write updates; multi-device keeps its own
+     * lastTotalWrittenPowerW that only the normal cycle updated, so the first normal cycle
+     * after an override started from the stale pre-override total instead of what the devices
+     * were really doing.
+     * @param {Array<{powerW: number}>} setpoints - setpoints just written, [] for "all 0W"
+     */
+    syncMultiRegulatorBase(setpoints) {
+        if (!this._isMultiDevice || !this.multiDeviceController) return;
+        this.multiDeviceController.lastTotalWrittenPowerW = setpoints.reduce((sum, { powerW }) => sum + powerW, 0);
+    }
+
+    /**
+     * Write 0W to every device (override switched off / automation disabled).
+     */
+    async stopAllDevices() {
+        if (this._isMultiDevice) {
+            for (const device of this.multiDeviceMgr.devices) {
+                await this.validationService.writePowerSetpoint(device.id, device.basePath, 0, this.config);
+            }
+            this.syncMultiRegulatorBase([]);
+        } else {
+            await this.validationService.writePowerSetpoint(this._deviceBasePath, this._deviceBasePath, 0, this.config);
+        }
+    }
+
+    /**
+     * Stamp the time a device's SOC reached 100% (discussion #46: "when was the last
+     * calibration"). Fed straight from the subscribed electricLevel state, so it also catches
+     * full charges while the automation is disabled. Stamped once on reaching 100%, re-armed as
+     * soon as SOC drops below it again.
+     */
+    async trackFullCharge(id, state) {
+        if (!id.endsWith('.electricLevel')) return;
+        let tsStateId = null;
+        if (this._isMultiDevice) {
+            const device = this.multiDeviceMgr?.devices.find(d => `${d.basePath}.electricLevel` === id);
+            if (device) tsStateId = `status.devices.${device.id}.lastFullChargeTs`;
+        } else if (id === `${this._deviceBasePath}.electricLevel`) {
+            tsStateId = 'status.lastFullChargeTs';
+        }
+        if (!tsStateId) return;
+
+        const soc = Number(state.val);
+        if (!Number.isFinite(soc)) return;
+        this._fullChargeLatched = this._fullChargeLatched || {};
+        if (soc < 100) {
+            this._fullChargeLatched[tsStateId] = false;
+            return;
+        }
+        if (this._fullChargeLatched[tsStateId]) return;
+        this._fullChargeLatched[tsStateId] = true;
+        await this.setStateAsync(tsStateId, state.lc || state.ts || Date.now(), true);
+    }
+
+    /**
+     * Seed full-charge tracking once at startup: a battery already sitting at 100% produces no
+     * electricLevel change event, so it would otherwise only be stamped after its next drop.
+     */
+    async seedFullChargeTracking() {
+        const ids = this._isMultiDevice
+            ? this.multiDeviceMgr.devices.map(d => `${d.basePath}.electricLevel`)
+            : [`${this._deviceBasePath}.electricLevel`];
+        for (const id of ids) {
+            try {
+                const state = await this.getForeignStateAsync(id);
+                if (state) await this.trackFullCharge(id, state);
+            } catch (err) {
+                this.log.debug(`Full-charge seed for ${id} failed: ${err.message}`);
+            }
+        }
     }
 
     /**
@@ -665,6 +764,7 @@ class ZendureAutomation extends utils.Adapter {
                 this.log.debug(`Max Discharge: ${device.name} ${powerW}W`);
                 return this.validationService.writePowerSetpoint(device.id, device.basePath, powerW, config);
             }));
+            this.syncMultiRegulatorBase(setpoints);
 
             // Re-read telemetry so status.* (and the dashboard) reflect the override too, not just
             // the normal automation cycle.
@@ -974,6 +1074,18 @@ class ZendureAutomation extends utils.Adapter {
                 native: {}
             });
 
+            await this.setObjectNotExistsAsync(`status.devices.${device.id}.lastFullChargeTs`, {
+                type: 'state',
+                common: {
+                    name: 'Last time SOC reached 100% (full charge / calibration)',
+                    type: 'number',
+                    role: 'value.time',
+                    read: true,
+                    write: false
+                },
+                native: {}
+            });
+
             await this.setObjectNotExistsAsync(`status.devices.${device.id}.effectiveMinSoc`, {
                 type: 'state',
                 common: {
@@ -1090,21 +1202,40 @@ class ZendureAutomation extends utils.Adapter {
      * Handle state changes
      */
     async onStateChange(id, state) {
-        if (!state || state.ack) return;
+        if (!state) return;
+
+        if (!id.startsWith(`${this.namespace}.`)) {
+            try {
+                await this.trackFullCharge(id, state);
+            } catch (err) {
+                this.log.warn(`Full-charge tracking failed: ${err.message}`);
+            }
+        }
+
+        if (state.ack) return;
 
         // Handle control state changes
         if (id.endsWith('.control.enabled')) {
             this.log.info(`Automation ${state.val ? 'enabled' : 'disabled'}`);
             if (!state.val) {
-                // Stop battery when disabled
-                if (this._isMultiDevice) {
-                    // Stop all devices
-                    for (const device of this.multiDeviceMgr.devices) {
-                        await this.validationService.writePowerSetpoint(device.id, device.basePath, 0, this.config);
-                    }
-                } else {
-                    await this.validationService.writePowerSetpoint(this._deviceBasePath, this._deviceBasePath, 0, this.config);
-                }
+                // Stop all devices (also resets the multi-device regulator base)
+                await this.stopAllDevices();
+                await this.setStateAsync('status.mode', 'idle', true);
+            }
+        }
+
+        if (id.endsWith('.control.fullCharge')) {
+            if (state.val) {
+                this.log.info('Full Charge (100%) enabled');
+                // Mutual exclusion: Disable the other overrides
+                await this.setStateAsync('control.maxCharge', false, true);
+                await this.setStateAsync('control.maxDischarge', false, true);
+                this.runAutomationCycle().catch(err => {
+                    this.log.error(`Automation cycle failed: ${err.message}`);
+                });
+            } else {
+                this.log.info('Full Charge (100%) disabled');
+                await this.stopAllDevices();
                 await this.setStateAsync('status.mode', 'idle', true);
             }
         }
@@ -1112,22 +1243,17 @@ class ZendureAutomation extends utils.Adapter {
         if (id.endsWith('.control.maxCharge')) {
             if (state.val) {
                 this.log.info('Max Charge Override enabled');
-                // Mutual exclusion: Disable maxDischarge
+                // Mutual exclusion: Disable the other overrides
                 await this.setStateAsync('control.maxDischarge', false, true);
+                await this.setStateAsync('control.fullCharge', false, true);
                 // Trigger immediate cycle
                 this.runAutomationCycle().catch(err => {
                     this.log.error(`Automation cycle failed: ${err.message}`);
                 });
             } else {
                 this.log.info('Max Charge Override disabled');
-                // Set all devices to 0W
-                if (this._isMultiDevice) {
-                    for (const device of this.multiDeviceMgr.devices) {
-                        await this.validationService.writePowerSetpoint(device.id, device.basePath, 0, this.config);
-                    }
-                } else {
-                    await this.validationService.writePowerSetpoint(this._deviceBasePath, this._deviceBasePath, 0, this.config);
-                }
+                // Stop all devices (also resets the multi-device regulator base)
+                await this.stopAllDevices();
                 await this.setStateAsync('status.mode', 'idle', true);
             }
         }
@@ -1135,22 +1261,17 @@ class ZendureAutomation extends utils.Adapter {
         if (id.endsWith('.control.maxDischarge')) {
             if (state.val) {
                 this.log.info('Max Discharge Override enabled');
-                // Mutual exclusion: Disable maxCharge
+                // Mutual exclusion: Disable the other overrides
                 await this.setStateAsync('control.maxCharge', false, true);
+                await this.setStateAsync('control.fullCharge', false, true);
                 // Trigger immediate cycle
                 this.runAutomationCycle().catch(err => {
                     this.log.error(`Automation cycle failed: ${err.message}`);
                 });
             } else {
                 this.log.info('Max Discharge Override disabled');
-                // Set all devices to 0W
-                if (this._isMultiDevice) {
-                    for (const device of this.multiDeviceMgr.devices) {
-                        await this.validationService.writePowerSetpoint(device.id, device.basePath, 0, this.config);
-                    }
-                } else {
-                    await this.validationService.writePowerSetpoint(this._deviceBasePath, this._deviceBasePath, 0, this.config);
-                }
+                // Stop all devices (also resets the multi-device regulator base)
+                await this.stopAllDevices();
                 await this.setStateAsync('status.mode', 'idle', true);
             }
         }

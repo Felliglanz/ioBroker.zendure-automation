@@ -43,6 +43,7 @@ Automatically controls your Zendure Solarflow battery for **zero feed-in** and *
 - **History (optional)** – with InfluxDB export enabled: freely selectable time range, up to two overlaid fields, crosshair tooltip
 - **Optional InfluxDB v2 export** – periodic snapshot of telemetry/status data to your own bucket, token stored encrypted
 - **Per-device PV share (Multi-Device)** – device cards show the PV and battery share separately whenever that device's solar is producing
+- **Last full charge + one-click full charge** – shows when each device last reached 100% SOC (`status.lastFullChargeTs` or `status.devices.<id>.lastFullChargeTs`), and a button charges to 100% at `maxChargePowerW` (from the grid too, ignoring `maxBatterySoc`). Ends automatically once all devices are at 100%, then normal regulation resumes. Also scriptable via `control.fullCharge`
 
 ### How it Works
 

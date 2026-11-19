@@ -261,6 +261,19 @@
       "native": {}
     },
     {
+      "_id": "control.fullCharge",
+      "type": "state",
+      "common": {
+        "name": "Full Charge to 100% (SOC calibration) - charges at max charge power until all devices reach 100%, ignores maxBatterySoc",
+        "type": "boolean",
+        "role": "switch",
+        "read": true,
+        "write": true,
+        "def": false
+      },
+      "native": {}
+    },
+    {
       "_id": "control.maxDischarge",
       "type": "state",
       "common": {
@@ -416,6 +429,7 @@
           "emergency-charging": "Emergency Charging",
           "recovery": "Recovery Mode",
           "max-charging": "Max Charge Override",
+          "full-charging": "Full Charge (100%)",
           "max-discharging": "Max Discharge Override",
           "error": "Error"
         }
