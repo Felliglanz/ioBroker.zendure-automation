@@ -680,7 +680,7 @@ class ZendureAutomation extends utils.Adapter {
 
             await Promise.all(setpoints.map(({ device, powerW }) => {
                 this.log.debug(`${overrideName}: ${device.name} ${powerW}W`);
-                return this.validationService.writePowerSetpoint(device.id, device.basePath, powerW, config);
+                return this.writeOverrideSetpoint(device.id, device.basePath, powerW, config);
             }));
             this.syncMultiRegulatorBase(setpoints);
 
@@ -712,7 +712,7 @@ class ZendureAutomation extends utils.Adapter {
         }
 
         this.log.debug(`${overrideName}: ${-globalChargePowerW}W`);
-        await this.validationService.writePowerSetpoint(this._deviceBasePath, this._deviceBasePath, -globalChargePowerW, config);
+        await this.writeOverrideSetpoint(this._deviceBasePath, this._deviceBasePath, -globalChargePowerW, config);
 
         // Same as above: keep status.* live while the override is active, not just on the next
         // normal cycle.
@@ -720,6 +720,15 @@ class ZendureAutomation extends utils.Adapter {
         const currentPowerW = await this.dataReader.getCurrentBatteryPowerW();
         const minPackVoltageV = await this.dataReader.getMinimumPackVoltageV();
         await this.singleDeviceController.updateStatusStates(gridPowerW, batterySoc, currentPowerW, minPackVoltageV);
+    }
+
+    /**
+     * Setpoint write for override modes: re-checks the device's own limits first and resends
+     * the unchanged value if the device dropped it (see ValidationService.verifyOverrideLimit).
+     */
+    async writeOverrideSetpoint(deviceId, basePath, powerW, config) {
+        const forceResend = await this.validationService.verifyOverrideLimit(deviceId, basePath);
+        return this.validationService.writePowerSetpoint(deviceId, basePath, powerW, config, { forceResend });
     }
 
     /**
@@ -847,7 +856,7 @@ class ZendureAutomation extends utils.Adapter {
 
             await Promise.all(setpoints.map(({ device, powerW }) => {
                 this.log.debug(`Max Discharge: ${device.name} ${powerW}W`);
-                return this.validationService.writePowerSetpoint(device.id, device.basePath, powerW, config);
+                return this.writeOverrideSetpoint(device.id, device.basePath, powerW, config);
             }));
             this.syncMultiRegulatorBase(setpoints);
 
@@ -905,7 +914,7 @@ class ZendureAutomation extends utils.Adapter {
         }
 
         this.log.debug(`Max Discharge: ${globalDischargePowerW}W`);
-        await this.validationService.writePowerSetpoint(this._deviceBasePath, this._deviceBasePath, globalDischargePowerW, config);
+        await this.writeOverrideSetpoint(this._deviceBasePath, this._deviceBasePath, globalDischargePowerW, config);
 
         // Same as above: keep status.* live while the override is active, not just on the next
         // normal cycle.
@@ -1333,10 +1342,16 @@ class ZendureAutomation extends utils.Adapter {
         if (id.endsWith('.control.minSocTopUpAuto')) {
             this.log.info(`Automatic min-SOC top-up ${state.val ? 'enabled' : 'disabled'}`);
             await this.setStateAsync('control.minSocTopUpAuto', !!state.val, true);
-            const wasCharging = (await this.getStateAsync('control.minSocCharge'))?.val ||
-                (await this.getStateAsync('status.minSocTopUpActive'))?.val;
+            const manualRunning = (await this.getStateAsync('control.minSocCharge'))?.val === true;
+            const autoRunning = (await this.getStateAsync('status.minSocTopUpActive'))?.val === true;
             await this.clearMinSocTopUp();
-            if (wasCharging) {
+            if (state.val && manualRunning) {
+                // Switching the automatic on mid-top-up: let it finish the running top-up up to
+                // minBatterySoc instead of cutting it off just because SOC is already above the
+                // automatic start threshold (discussion #46)
+                this.log.info('Running manual min-SOC top-up handed over to the automatic top-up');
+                await this.setStateAsync('status.minSocTopUpActive', true, true);
+            } else if (!state.val && autoRunning) {
                 await this.stopAllDevices();
                 await this.setStateAsync('status.mode', 'idle', true);
             }
