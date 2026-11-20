@@ -115,11 +115,24 @@
         </svg>
 
         <div class="calib-bar" id="calibBar">
-          <div class="calib-info">
-            <span class="calib-label">Letzte Vollladung (100%)</span>
-            <span class="calib-value" id="calibValue">–</span>
+          <div class="calib-row">
+            <div class="calib-info">
+              <span class="calib-label">Letzte Vollladung (100%)</span>
+              <span class="calib-value" id="calibValue">–</span>
+            </div>
+            <button type="button" class="calib-btn" id="calibBtn">🔋 Jetzt auf 100% laden</button>
           </div>
-          <button type="button" class="calib-btn" id="calibBtn">🔋 Jetzt auf 100% laden</button>
+          <div class="calib-row calib-row-sep">
+            <div class="calib-info">
+              <span class="calib-label" id="topUpLabel">Min-SOC-Nachladung</span>
+              <span class="calib-value" id="topUpValue">–</span>
+            </div>
+            <button type="button" class="calib-btn" id="topUpBtn">⤒ Auf Min-SOC laden</button>
+          </div>
+          <label class="calib-auto">
+            <input type="checkbox" id="topUpAuto">
+            <span id="topUpAutoLabel">Automatisch nachladen</span>
+          </label>
         </div>
 
         <div class="device-cards" id="deviceCards" hidden></div>

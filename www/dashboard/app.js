@@ -49,6 +49,11 @@
   const deviceCards = document.getElementById('deviceCards');
   const calibValue = document.getElementById('calibValue');
   const calibBtn = document.getElementById('calibBtn');
+  const topUpLabel = document.getElementById('topUpLabel');
+  const topUpValue = document.getElementById('topUpValue');
+  const topUpBtn = document.getElementById('topUpBtn');
+  const topUpAuto = document.getElementById('topUpAuto');
+  const topUpAutoLabel = document.getElementById('topUpAutoLabel');
   const controlList = document.getElementById('controlList');
   const emergencyReason = document.getElementById('emergencyReason');
   const lastUpdate = document.getElementById('lastUpdate');
@@ -1400,13 +1405,19 @@
     let ts;
     let suffix = '';
     if (data.multiDevice) {
-      // The device that's been longest without 100% is the one that matters - one never seen
-      // at 100% yet counts as oldest.
+      // The device that's been longest without 100% is the one that matters - devices never
+      // seen at 100% yet count as oldest; with several of those, name all of them (or none if
+      // it's every device) instead of just the first.
       const devices = data.devices || [];
-      const missing = devices.find(d => fullChargeDays(d.lastFullChargeTs) === null);
-      const oldest = missing || devices.reduce((a, b) => (a && a.lastFullChargeTs <= b.lastFullChargeTs ? a : b), null);
-      ts = oldest ? oldest.lastFullChargeTs : null;
-      if (oldest && devices.length > 1) suffix = ` · ${oldest.name || oldest.id}`;
+      const missing = devices.filter(d => fullChargeDays(d.lastFullChargeTs) === null);
+      if (missing.length > 0) {
+        ts = null;
+        if (missing.length < devices.length) suffix = ` · ${missing.map(d => d.name || d.id).join(', ')}`;
+      } else {
+        const oldest = devices.reduce((a, b) => (a && a.lastFullChargeTs <= b.lastFullChargeTs ? a : b), null);
+        ts = oldest ? oldest.lastFullChargeTs : null;
+        if (oldest && devices.length > 1) suffix = ` · ${oldest.name || oldest.id}`;
+      }
     } else {
       ts = data.status.lastFullChargeTs;
     }
@@ -1418,6 +1429,78 @@
     calibBtn.classList.toggle('active', fullChargeActive);
     calibBtn.textContent = fullChargeActive ? '■ Vollladung läuft – abbrechen' : '🔋 Jetzt auf 100% laden';
   }
+
+  let topUpManualActive = false;
+  let topUpAutoOn = false;
+  let topUpTargetSoc = null;
+
+  function setTopUpBtn() {
+    topUpBtn.disabled = topUpAutoOn;
+    topUpBtn.classList.toggle('active', topUpManualActive && !topUpAutoOn);
+    const target = Number.isFinite(topUpTargetSoc) ? `${topUpTargetSoc}%` : 'Min-SOC';
+    topUpBtn.textContent = topUpManualActive && !topUpAutoOn ? '■ Nachladung abbrechen' : `⤒ Auf ${target} laden`;
+    topUpBtn.title = topUpAutoOn ? 'Automatik aktiv – manuelles Nachladen ist deaktiviert' : '';
+  }
+
+  // Min-SOC top-up (discussion #46): manual one-shot button, or opt-in automatic with hysteresis
+  function renderMinSocTopUp(data) {
+    topUpTargetSoc = Number(data.control.minBatterySoc);
+    const hysteresis = Number(data.minSocTopUpHysteresis);
+    topUpManualActive = !!data.control.minSocCharge;
+    topUpAutoOn = !!data.control.minSocTopUpAuto;
+    const autoRunning = topUpAutoOn && !!data.status.minSocTopUpActive;
+    const startSoc = Number.isFinite(topUpTargetSoc) && Number.isFinite(hysteresis) ? topUpTargetSoc - hysteresis : null;
+
+    topUpLabel.textContent = Number.isFinite(topUpTargetSoc) ? `Min-SOC-Nachladung (${topUpTargetSoc}%)` : 'Min-SOC-Nachladung';
+    if (document.activeElement !== topUpAuto) topUpAuto.checked = topUpAutoOn;
+    topUpAutoLabel.textContent = startSoc !== null
+      ? `Automatisch nachladen ab ${startSoc}% (bis ${topUpTargetSoc}%)`
+      : 'Automatisch nachladen';
+
+    // Lowest SOC is what decides whether a top-up is needed
+    let lowestSoc = null;
+    let lowestName = '';
+    if (data.multiDevice) {
+      for (const d of data.devices || []) {
+        if (typeof d.soc !== 'number' || d.available === false) continue;
+        if (lowestSoc === null || d.soc < lowestSoc) { lowestSoc = d.soc; lowestName = d.name || d.id; }
+      }
+      if ((data.devices || []).length < 2) lowestName = '';
+    } else {
+      lowestSoc = typeof data.status.batterySoc === 'number' ? data.status.batterySoc : null;
+    }
+
+    if (autoRunning || topUpManualActive) {
+      topUpValue.textContent = `läuft${autoRunning ? ' automatisch' : ''} – bis ${topUpTargetSoc}%`;
+      topUpValue.className = 'calib-value calib-ok';
+    } else if (lowestSoc !== null) {
+      topUpValue.textContent = `niedrigster SOC: ${Math.round(lowestSoc)}%${lowestName ? ` · ${lowestName}` : ''}`;
+      const below = Number.isFinite(topUpTargetSoc) && lowestSoc < topUpTargetSoc;
+      topUpValue.className = `calib-value ${below ? 'calib-mid' : 'calib-ok'}`;
+    } else {
+      topUpValue.textContent = '–';
+      topUpValue.className = 'calib-value calib-unknown';
+    }
+    setTopUpBtn();
+  }
+
+  topUpBtn.addEventListener('click', () => {
+    if (topUpAutoOn) return;
+    if (!topUpManualActive) {
+      const target = Number.isFinite(topUpTargetSoc) ? `${topUpTargetSoc}%` : 'Min-SOC';
+      if (!window.confirm(`Akkus unter ${target} jetzt aus dem Netz auf ${target} nachladen? Endet automatisch, sobald ${target} erreicht sind.`)) return;
+    }
+    sendControl('minSocCharge', !topUpManualActive);
+    topUpManualActive = !topUpManualActive;
+    setTopUpBtn();
+  });
+
+  topUpAuto.addEventListener('change', () => {
+    sendControl('minSocTopUpAuto', topUpAuto.checked);
+    topUpAutoOn = topUpAuto.checked;
+    if (topUpAutoOn) topUpManualActive = false;
+    setTopUpBtn();
+  });
 
   calibBtn.addEventListener('click', () => {
     if (!fullChargeActive) {
@@ -1432,6 +1515,7 @@
 
   function render(data) {
     renderFullCharge(data);
+    renderMinSocTopUp(data);
     const mode = data.status.mode || 'idle';
     modeBadge.textContent = mode;
     modeBadge.className = `mode-badge ${mode}`;

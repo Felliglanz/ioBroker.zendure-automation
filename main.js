@@ -501,13 +501,19 @@ class ZendureAutomation extends utils.Adapter {
             const maxDischargeState = await this.getStateAsync('control.maxDischarge');
 
             if (fullChargeState?.val || maxChargeState?.val) {
-                await this.handleMaxChargeMode(effectiveConfig, fullChargeState?.val === true);
+                await this.handleMaxChargeMode(effectiveConfig, fullChargeState?.val ? 'full' : 'max');
                 await this.recordTelemetryTick();
                 return;
             }
 
             if (maxDischargeState?.val) {
                 await this.handleMaxDischargeMode(effectiveConfig);
+                await this.recordTelemetryTick();
+                return;
+            }
+
+            // Min-SOC top-up (discussion #46): manual one-shot, or automatic with hysteresis
+            if (await this.runMinSocTopUp(effectiveConfig)) {
                 await this.recordTelemetryTick();
                 return;
             }
@@ -570,23 +576,93 @@ class ZendureAutomation extends utils.Adapter {
     }
 
     /**
-     * Handle Max Charge Override Mode
+     * Min-SOC top-up (discussion #46): brings devices that drifted below minBatterySoc (standby
+     * draw, no PV surplus for days) back up to it from the grid.
+     * - manual: control.minSocCharge, one-shot, charges every device below minBatterySoc
+     * - automatic: control.minSocTopUpAuto (opt-in, off by default). Starts only once a device is
+     *   at or below minBatterySoc - minSocTopUpHysteresis, so it doesn't kick in for every 1%
+     *   drift; status.minSocTopUpActive holds it until all devices are back at minBatterySoc.
+     *   While automatic is on, the manual switch is ignored (see onStateChange).
+     * @returns {Promise<boolean>} true if a top-up handled this cycle
+     */
+    async runMinSocTopUp(config) {
+        const autoState = await this.getStateAsync('control.minSocTopUpAuto');
+        if (!autoState?.val) {
+            const manualState = await this.getStateAsync('control.minSocCharge');
+            if (!manualState?.val) return false;
+            await this.handleMaxChargeMode(config, 'minSoc');
+            return true;
+        }
+
+        const activeState = await this.getStateAsync('status.minSocTopUpActive');
+        let active = activeState?.val === true;
+        if (!active) {
+            const hysteresis = Math.max(0, Number(config.minSocTopUpHysteresis ?? 5));
+            const startSoc = (config.minBatterySoc ?? 10) - hysteresis;
+            const lowest = await this.getLowestChargeableSoc();
+            if (lowest !== null && lowest <= startSoc) {
+                this.log.info(`Min-SOC top-up started automatically (SOC ${lowest}% <= ${startSoc}%), charging back to ${config.minBatterySoc ?? 10}%`);
+                await this.setStateAsync('status.minSocTopUpActive', true, true);
+                active = true;
+            }
+        }
+        if (!active) return false;
+        await this.handleMaxChargeMode(config, 'minSocAuto');
+        return true;
+    }
+
+    /**
+     * Lowest SOC among devices a top-up could actually charge (available, charging allowed).
+     * @returns {Promise<number|null>}
+     */
+    async getLowestChargeableSoc() {
+        if (this._isMultiDevice) {
+            const aggregated = await this.multiDeviceMgr.aggregateDeviceStates();
+            const socs = this.multiDeviceMgr.devices
+                .filter(device => device.chargeAllowed !== false)
+                .map(device => aggregated.devices.find(item => item.id === device.id))
+                .filter(state => state?.available && state.soc !== null && Number.isFinite(Number(state.soc)))
+                .map(state => Number(state.soc));
+            return socs.length ? Math.min(...socs) : null;
+        }
+        return this.dataReader.getBatterySoc();
+    }
+
+    /**
+     * Charge override modes, all sharing one code path:
+     * - max: control.maxCharge, up to maxBatterySoc
+     * - full: control.fullCharge, fixed 100% (discussion #46) so a maxBatterySoc below 100 can't
+     *   prevent the full charge the device needs to recalibrate its SOC
+     * - minSoc / minSocAuto: up to minBatterySoc, see runMinSocTopUp()
+     */
+    static CHARGE_MODES = {
+        max: { stateId: 'control.maxCharge', statusMode: 'max-charging', name: 'Max Charge' },
+        full: { stateId: 'control.fullCharge', statusMode: 'full-charging', name: 'Full Charge' },
+        minSoc: { stateId: 'control.minSocCharge', statusMode: 'min-soc-charging', name: 'Min-SOC top-up' },
+        minSocAuto: { stateId: 'status.minSocTopUpActive', statusMode: 'min-soc-charging', name: 'Min-SOC top-up (auto)' }
+    };
+
+    chargeModeTargetSoc(mode, config) {
+        if (mode === 'full') return 100;
+        if (mode === 'minSoc' || mode === 'minSocAuto') return config.minBatterySoc ?? 10;
+        return config.maxBatterySoc ?? 100;
+    }
+
+    /**
+     * Handle charge override modes (see CHARGE_MODES).
      * Charges all eligible batteries at maximum configured power.
      * Each device is checked individually (availability, chargeAllowed, own SOC) so that one
-     * fully-charged or disabled device never blocks the override for the others.
-     *
-     * With fullCharge (control.fullCharge, discussion #46) the target is a fixed 100% instead
-     * of maxBatterySoc, so a configured maxBatterySoc below 100 can't silently prevent the
-     * full charge the device needs to recalibrate its SOC. Each device stops on its own at 100%,
-     * the override ends once all of them are there.
+     * fully-charged or disabled device never blocks the override for the others; the override
+     * ends once no device is below the target anymore.
      */
-    async handleMaxChargeMode(config, fullCharge = false) {
-        this.log.debug(`${fullCharge ? 'Full Charge' : 'Max Charge Override'} active`);
-        await this.setStateAsync('status.mode', fullCharge ? 'full-charging' : 'max-charging', true);
+    async handleMaxChargeMode(config, mode = 'max') {
+        const chargeMode = ZendureAutomation.CHARGE_MODES[mode] || ZendureAutomation.CHARGE_MODES.max;
+        this.log.debug(`${chargeMode.name} active`);
+        await this.setStateAsync('status.mode', chargeMode.statusMode, true);
 
-        const maxBatterySoc = fullCharge ? 100 : (config.maxBatterySoc ?? 100);
-        const overrideId = fullCharge ? 'control.fullCharge' : 'control.maxCharge';
-        const overrideName = fullCharge ? 'Full Charge' : 'Max Charge';
+        const maxBatterySoc = this.chargeModeTargetSoc(mode, config);
+        const overrideId = chargeMode.stateId;
+        const overrideName = chargeMode.name;
         const globalChargePowerW = Math.abs(config.maxChargePowerW || 1200);
 
         if (this._isMultiDevice) {
@@ -658,6 +734,15 @@ class ZendureAutomation extends utils.Adapter {
     syncMultiRegulatorBase(setpoints) {
         if (!this._isMultiDevice || !this.multiDeviceController) return;
         this.multiDeviceController.lastTotalWrittenPowerW = setpoints.reduce((sum, { powerW }) => sum + powerW, 0);
+    }
+
+    /**
+     * End a running min-SOC top-up (manual or automatic) without touching the setpoints -
+     * used when another override takes over or the automatic mode is toggled.
+     */
+    async clearMinSocTopUp() {
+        await this.setStateAsync('control.minSocCharge', false, true);
+        await this.setStateAsync('status.minSocTopUpActive', false, true);
     }
 
     /**
@@ -1224,12 +1309,49 @@ class ZendureAutomation extends utils.Adapter {
             }
         }
 
+        if (id.endsWith('.control.minSocCharge')) {
+            const autoState = await this.getStateAsync('control.minSocTopUpAuto');
+            if (autoState?.val) {
+                // Automatic top-up owns this - the manual switch has no effect while it's on
+                this.log.info('Min-SOC top-up switch ignored: automatic top-up is enabled');
+                await this.setStateAsync('control.minSocCharge', false, true);
+            } else if (state.val) {
+                this.log.info('Min-SOC top-up enabled');
+                await this.setStateAsync('control.maxCharge', false, true);
+                await this.setStateAsync('control.fullCharge', false, true);
+                await this.setStateAsync('control.maxDischarge', false, true);
+                this.runAutomationCycle().catch(err => {
+                    this.log.error(`Automation cycle failed: ${err.message}`);
+                });
+            } else {
+                this.log.info('Min-SOC top-up disabled');
+                await this.stopAllDevices();
+                await this.setStateAsync('status.mode', 'idle', true);
+            }
+        }
+
+        if (id.endsWith('.control.minSocTopUpAuto')) {
+            this.log.info(`Automatic min-SOC top-up ${state.val ? 'enabled' : 'disabled'}`);
+            await this.setStateAsync('control.minSocTopUpAuto', !!state.val, true);
+            const wasCharging = (await this.getStateAsync('control.minSocCharge'))?.val ||
+                (await this.getStateAsync('status.minSocTopUpActive'))?.val;
+            await this.clearMinSocTopUp();
+            if (wasCharging) {
+                await this.stopAllDevices();
+                await this.setStateAsync('status.mode', 'idle', true);
+            }
+            this.runAutomationCycle().catch(err => {
+                this.log.error(`Automation cycle failed: ${err.message}`);
+            });
+        }
+
         if (id.endsWith('.control.fullCharge')) {
             if (state.val) {
                 this.log.info('Full Charge (100%) enabled');
                 // Mutual exclusion: Disable the other overrides
                 await this.setStateAsync('control.maxCharge', false, true);
                 await this.setStateAsync('control.maxDischarge', false, true);
+                await this.clearMinSocTopUp();
                 this.runAutomationCycle().catch(err => {
                     this.log.error(`Automation cycle failed: ${err.message}`);
                 });
@@ -1246,6 +1368,7 @@ class ZendureAutomation extends utils.Adapter {
                 // Mutual exclusion: Disable the other overrides
                 await this.setStateAsync('control.maxDischarge', false, true);
                 await this.setStateAsync('control.fullCharge', false, true);
+                await this.clearMinSocTopUp();
                 // Trigger immediate cycle
                 this.runAutomationCycle().catch(err => {
                     this.log.error(`Automation cycle failed: ${err.message}`);
@@ -1264,6 +1387,7 @@ class ZendureAutomation extends utils.Adapter {
                 // Mutual exclusion: Disable the other overrides
                 await this.setStateAsync('control.maxCharge', false, true);
                 await this.setStateAsync('control.fullCharge', false, true);
+                await this.clearMinSocTopUp();
                 // Trigger immediate cycle
                 this.runAutomationCycle().catch(err => {
                     this.log.error(`Automation cycle failed: ${err.message}`);

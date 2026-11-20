@@ -1341,6 +1341,22 @@
                 "de": "SOC muss min+Hysterese überschreiten vor erneuter Entladung (verhindert Oszillation)"
               }
             },
+            "minSocTopUpHysteresis": {
+              "type": "number",
+              "label": {
+                "en": "Automatic min-SOC top-up: hysteresis (%)",
+                "de": "Automatische Min-SOC-Nachladung: Hysterese (%)"
+              },
+              "sm": 6,
+              "min": 1,
+              "max": 20,
+              "step": 1,
+              "default": 5,
+              "help": {
+                "en": "Only if automatic top-up is switched on in the dashboard (control.minSocTopUpAuto): starts once SOC is at or below min-hysteresis, then charges from the grid back up to min SOC",
+                "de": "Nur wenn die automatische Nachladung im Dashboard eingeschaltet ist (control.minSocTopUpAuto): startet, sobald der SOC bei oder unter Min-Hysterese liegt, und lädt dann aus dem Netz zurück bis Min-SOC"
+              }
+            },
             "maxSocRecoveryHysteresis": {
               "type": "number",
               "label": {

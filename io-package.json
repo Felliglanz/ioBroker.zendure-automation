@@ -148,6 +148,7 @@
     "waterfillConcentrateHoldMinutes": 3,
     "waterfillSocMargin": 10,
     "minBatterySoc": 10,
+    "minSocTopUpHysteresis": 5,
     "maxBatterySoc": 100,
     "dischargeProtectionMode": "soc",
     "minBatteryVoltageV": 3.18,
@@ -267,6 +268,32 @@
         "name": "Full Charge to 100% (SOC calibration) - charges at max charge power until all devices reach 100%, ignores maxBatterySoc",
         "type": "boolean",
         "role": "switch",
+        "read": true,
+        "write": true,
+        "def": false
+      },
+      "native": {}
+    },
+    {
+      "_id": "control.minSocCharge",
+      "type": "state",
+      "common": {
+        "name": "Min-SOC top-up - charges devices below minBatterySoc back up to it at max charge power (no effect while control.minSocTopUpAuto is on)",
+        "type": "boolean",
+        "role": "switch",
+        "read": true,
+        "write": true,
+        "def": false
+      },
+      "native": {}
+    },
+    {
+      "_id": "control.minSocTopUpAuto",
+      "type": "state",
+      "common": {
+        "name": "Automatic min-SOC top-up - starts at minBatterySoc minus minSocTopUpHysteresis, charges back to minBatterySoc (kept across restarts)",
+        "type": "boolean",
+        "role": "switch.enable",
         "read": true,
         "write": true,
         "def": false
@@ -430,6 +457,7 @@
           "recovery": "Recovery Mode",
           "max-charging": "Max Charge Override",
           "full-charging": "Full Charge (100%)",
+          "min-soc-charging": "Min-SOC top-up",
           "max-discharging": "Max Discharge Override",
           "error": "Error"
         }
@@ -593,6 +621,19 @@
         "read": true,
         "write": false,
         "def": 0
+      },
+      "native": {}
+    },
+    {
+      "_id": "status.minSocTopUpActive",
+      "type": "state",
+      "common": {
+        "name": "Automatic min-SOC top-up currently running",
+        "type": "boolean",
+        "role": "indicator",
+        "read": true,
+        "write": false,
+        "def": false
       },
       "native": {}
     },

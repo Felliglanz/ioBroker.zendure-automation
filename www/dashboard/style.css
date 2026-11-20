@@ -102,7 +102,7 @@ body {
   letter-spacing: 0.02em;
   flex-shrink: 0;
 }
-.mode-badge.charging, .mode-badge.emergency-charging, .mode-badge.max-charging, .mode-badge.full-charging { background: var(--accent-charge); }
+.mode-badge.charging, .mode-badge.emergency-charging, .mode-badge.max-charging, .mode-badge.full-charging, .mode-badge.min-soc-charging { background: var(--accent-charge); }
 .mode-badge.discharging, .mode-badge.max-discharging { background: var(--accent-discharge); }
 .mode-badge.error { background: var(--accent-error); }
 
@@ -905,16 +905,32 @@ body.fullscreen-active { overflow: hidden; }
   width: 100%;
   max-width: 380px;
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-  flex-wrap: wrap;
+  flex-direction: column;
+  gap: 0.6rem;
   border: 1px solid var(--border);
   border-radius: 12px;
   padding: 0.6rem 0.75rem;
   background: var(--input-bg);
   margin-bottom: 0.75rem;
 }
+.calib-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+.calib-row-sep { border-top: 1px solid var(--border); padding-top: 0.6rem; }
+.calib-auto {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  cursor: pointer;
+  margin-top: -0.2rem;
+}
+.calib-auto input { accent-color: var(--accent-charge); margin: 0; }
 .calib-info { display: flex; flex-direction: column; gap: 0.1rem; min-width: 0; flex: 1 1 160px; }
 .calib-label { font-size: 0.72rem; color: var(--text-muted); }
 .calib-value { font-size: 0.85rem; font-weight: 600; }
@@ -933,5 +949,6 @@ body.fullscreen-active { overflow: hidden; }
   cursor: pointer;
   white-space: nowrap;
 }
-.calib-btn:hover, .calib-btn.active { background: var(--accent-charge); color: #fff; }
+.calib-btn:hover:not(:disabled), .calib-btn.active { background: var(--accent-charge); color: #fff; }
+.calib-btn:disabled { border-color: var(--border); color: var(--text-muted); cursor: not-allowed; opacity: 0.7; }
 .device-card .calib-line { margin-top: 0.35rem; font-size: 0.7rem; }
