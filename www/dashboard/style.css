@@ -911,7 +911,7 @@ body.fullscreen-active { overflow: hidden; }
   border-radius: 12px;
   padding: 0.6rem 0.75rem;
   background: var(--input-bg);
-  margin-bottom: 0.75rem;
+  margin-top: 0.75rem;
 }
 .calib-row {
   display: flex;

@@ -1392,7 +1392,9 @@
     const days = fullChargeDays(ts);
     if (days === null) return 'noch nicht erfasst';
     const date = new Date(ts).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' });
-    const n = Math.floor(days);
+    // Calendar days, not elapsed 24h blocks: 17:45 yesterday is "gestern" at 09:00 today.
+    const startOfDay = d => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+    const n = Math.round((startOfDay(new Date()) - startOfDay(new Date(ts))) / 86400000);
     if (n <= 0) return `heute (${date})`;
     if (n === 1) return `gestern (${date})`;
     return `vor ${n} Tagen (${date})`;
