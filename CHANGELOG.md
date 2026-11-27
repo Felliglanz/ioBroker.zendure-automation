@@ -2,6 +2,24 @@
 
 All notable changes to this project are documented in this file.
 
+## v1.3.0 (2026-11-27)
+
+### English
+- **Last full charge in the dashboard (discussion #46):** new states `status.lastFullChargeTs` (single-device) and `status.devices.<id>.lastFullChargeTs` (multi-device) record when SOC last reached 100%, also while automation is disabled. The dashboard shows it per device card and in a summary box that names the device longest without 100%, colored green / yellow from 14 days / red from 25 days (Zendure forces a recalibration after about 30 days). The age is counted in calendar days.
+- **One-click full charge to 100%:** new override `control.fullCharge` (button in the dashboard, also scriptable) charges from the grid with the configured max charge power to a fixed 100%, ignoring `maxBatterySoc`. In multi-device mode every device stops on its own at 100%, and the override switches itself off once all are full.
+- **Min-SOC top-up:** new override `control.minSocCharge` charges every device below `minBatterySoc` back to `minBatterySoc` from the grid with the max charge power. Emergency charging only triggers on cell voltage, so standby consumption could otherwise drain the battery below min SOC for days (e.g. snow on the modules).
+- **Optional automatic top-up:** `control.minSocTopUpAuto` (off by default, persistent) starts the top-up once the lowest device drops to `minBatterySoc` minus the new admin setting `minSocTopUpHysteresis` (default 5%) and stops at `minBatterySoc`. While it is on, the manual button is greyed out. Switching it on during a running manual top-up takes it over. It does not take PV forecasts into account.
+- **Override setpoints are verified:** max charge, max discharge, full charge and top-up used to write the setpoint once and never check it again. The adapter now compares `inputLimit`/`outputLimit` with the setpoint after a 10 s settle time and resends it up to 3 times if the device holds a different value ("not held by the device" in the log).
+- **Multi-device: correct regulator restart after overrides:** after an override or after disabling automation, the I-regulator restarted from a stale total setpoint instead of the value actually written. It is now synced to the real sum, and all stop paths share one 0 W stop.
+
+### Deutsch
+- **Letzte Vollladung im Dashboard (Discussion #46):** Neue Datenpunkte `status.lastFullChargeTs` (Single-Device) und `status.devices.<id>.lastFullChargeTs` (Multi-Device) halten fest, wann der SOC zuletzt 100% erreicht hat, auch bei deaktivierter Automatik. Das Dashboard zeigt das pro Gerätekarte und in einem Block, der das Gerät nennt, das am längsten nicht bei 100% war, grün / gelb ab 14 Tagen / rot ab 25 Tagen (Zendure erzwingt nach etwa 30 Tagen eine Kalibrierung). Gezählt wird in Kalendertagen.
+- **Vollladung auf 100% per Klick:** Neuer Override `control.fullCharge` (Knopf im Dashboard, auch per Skript) lädt mit der eingestellten max. Ladeleistung aus dem Netz auf feste 100% und ignoriert dabei `maxBatterySoc`. Im Multi-Device-Modus stoppt jedes Gerät für sich bei 100%, der Override schaltet sich ab, sobald alle voll sind.
+- **Min-SOC-Nachladung:** Neuer Override `control.minSocCharge` lädt jedes Gerät unter `minBatterySoc` mit der max. Ladeleistung aus dem Netz zurück auf `minBatterySoc`. Die Notladung greift nur über die Zellspannung, ohne Nachladung konnte der Standby-Verbrauch den Akku also tagelang unter den Min-SOC ziehen (z.B. bei Schnee auf den Modulen).
+- **Optionale automatische Nachladung:** `control.minSocTopUpAuto` (standardmäßig aus, bleibt gespeichert) startet die Nachladung, sobald das niedrigste Gerät auf `minBatterySoc` minus der neuen Admin-Einstellung `minSocTopUpHysteresis` (Standard 5%) fällt, und stoppt bei `minBatterySoc`. Solange sie an ist, ist der manuelle Knopf ausgegraut. Wird sie während einer laufenden manuellen Nachladung eingeschaltet, übernimmt sie diese. PV-Prognosen werden nicht berücksichtigt.
+- **Override-Sollwerte werden geprüft:** Max. Laden, max. Entladen, Vollladung und Nachladung haben den Sollwert bisher einmal geschrieben und danach nicht mehr geprüft. Jetzt vergleicht der Adapter nach 10 s Einschwingzeit `inputLimit`/`outputLimit` mit dem Sollwert und sendet ihn bis zu 3-mal erneut, falls das Gerät einen anderen Wert hält ("not held by the device" im Log).
+- **Multi-Device: richtiger Neustart der Regelung nach Overrides:** Nach einem Override oder nach dem Abschalten der Automatik startete der I-Regler von einem veralteten Gesamtsollwert statt vom tatsächlich geschriebenen Wert. Er wird jetzt auf die echte Summe gesetzt, und alle Stopp-Pfade nutzen denselben 0-W-Stopp.
+
 ## v1.2.3 (2026-10-28)
 
 ### English
