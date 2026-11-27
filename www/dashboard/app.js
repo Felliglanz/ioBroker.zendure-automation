@@ -47,6 +47,13 @@
   const flowLineBatteryHub = document.getElementById('flowLineBatteryHub');
   const flowLinePvHouse = document.getElementById('flowLinePvHouse');
   const deviceCards = document.getElementById('deviceCards');
+  const calibValue = document.getElementById('calibValue');
+  const calibBtn = document.getElementById('calibBtn');
+  const topUpLabel = document.getElementById('topUpLabel');
+  const topUpValue = document.getElementById('topUpValue');
+  const topUpBtn = document.getElementById('topUpBtn');
+  const topUpAuto = document.getElementById('topUpAuto');
+  const topUpAutoLabel = document.getElementById('topUpAutoLabel');
   const controlList = document.getElementById('controlList');
   const emergencyReason = document.getElementById('emergencyReason');
   const lastUpdate = document.getElementById('lastUpdate');
@@ -250,6 +257,7 @@
         </div>
         <div class="metrics">${powerCell}<span>${soc}%</span></div>
         <div class="bar-track"><div class="bar-fill ${barClass}" style="width:${socPct}%"></div></div>
+        <div class="calib-line ${fullChargeClass(dev.lastFullChargeTs)}">100%: ${fmtFullChargeAgo(dev.lastFullChargeTs)}</div>
       `;
       card.addEventListener('click', () => openDetails(dev.id));
       card.querySelector('.gear-btn').addEventListener('click', e => {
@@ -1368,7 +1376,148 @@
     }
   }
 
+  // Last time SOC reached 100% (status[.devices.<id>].lastFullChargeTs, discussion #46).
+  // Colors count down towards Zendure's forced recalibration after ~30 days without 100%.
+  function fullChargeDays(ts) {
+    return typeof ts === 'number' && ts > 0 ? (Date.now() - ts) / 86400000 : null;
+  }
+
+  function fullChargeClass(ts) {
+    const days = fullChargeDays(ts);
+    if (days === null) return 'calib-unknown';
+    return days >= 25 ? 'calib-warn' : days >= 14 ? 'calib-mid' : 'calib-ok';
+  }
+
+  function fmtFullChargeAgo(ts) {
+    const days = fullChargeDays(ts);
+    if (days === null) return 'noch nicht erfasst';
+    const date = new Date(ts).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' });
+    // Calendar days, not elapsed 24h blocks: 17:45 yesterday is "gestern" at 09:00 today.
+    const startOfDay = d => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+    const n = Math.round((startOfDay(new Date()) - startOfDay(new Date(ts))) / 86400000);
+    if (n <= 0) return `heute (${date})`;
+    if (n === 1) return `gestern (${date})`;
+    return `vor ${n} Tagen (${date})`;
+  }
+
+  let fullChargeActive = false;
+  let fullChargePowerW = null;
+
+  function renderFullCharge(data) {
+    let ts;
+    let suffix = '';
+    if (data.multiDevice) {
+      // The device that's been longest without 100% is the one that matters - devices never
+      // seen at 100% yet count as oldest; with several of those, name all of them (or none if
+      // it's every device) instead of just the first.
+      const devices = data.devices || [];
+      const missing = devices.filter(d => fullChargeDays(d.lastFullChargeTs) === null);
+      if (missing.length > 0) {
+        ts = null;
+        if (missing.length < devices.length) suffix = ` · ${missing.map(d => d.name || d.id).join(', ')}`;
+      } else {
+        const oldest = devices.reduce((a, b) => (a && a.lastFullChargeTs <= b.lastFullChargeTs ? a : b), null);
+        ts = oldest ? oldest.lastFullChargeTs : null;
+        if (oldest && devices.length > 1) suffix = ` · ${oldest.name || oldest.id}`;
+      }
+    } else {
+      ts = data.status.lastFullChargeTs;
+    }
+    calibValue.textContent = fmtFullChargeAgo(ts) + suffix;
+    calibValue.className = `calib-value ${fullChargeClass(ts)}`;
+
+    fullChargeActive = !!data.control.fullCharge;
+    fullChargePowerW = data.control.maxChargePowerW;
+    calibBtn.classList.toggle('active', fullChargeActive);
+    calibBtn.textContent = fullChargeActive ? '■ Vollladung läuft – abbrechen' : '🔋 Jetzt auf 100% laden';
+  }
+
+  let topUpManualActive = false;
+  let topUpAutoOn = false;
+  let topUpTargetSoc = null;
+
+  function setTopUpBtn() {
+    topUpBtn.disabled = topUpAutoOn;
+    topUpBtn.classList.toggle('active', topUpManualActive && !topUpAutoOn);
+    const target = Number.isFinite(topUpTargetSoc) ? `${topUpTargetSoc}%` : 'Min-SOC';
+    topUpBtn.textContent = topUpManualActive && !topUpAutoOn ? '■ Nachladung abbrechen' : `⤒ Auf ${target} laden`;
+    topUpBtn.title = topUpAutoOn ? 'Automatik aktiv – manuelles Nachladen ist deaktiviert' : '';
+  }
+
+  // Min-SOC top-up (discussion #46): manual one-shot button, or opt-in automatic with hysteresis
+  function renderMinSocTopUp(data) {
+    topUpTargetSoc = Number(data.control.minBatterySoc);
+    const hysteresis = Number(data.minSocTopUpHysteresis);
+    topUpManualActive = !!data.control.minSocCharge;
+    topUpAutoOn = !!data.control.minSocTopUpAuto;
+    const autoRunning = topUpAutoOn && !!data.status.minSocTopUpActive;
+    const startSoc = Number.isFinite(topUpTargetSoc) && Number.isFinite(hysteresis) ? topUpTargetSoc - hysteresis : null;
+
+    topUpLabel.textContent = Number.isFinite(topUpTargetSoc) ? `Min-SOC-Nachladung (${topUpTargetSoc}%)` : 'Min-SOC-Nachladung';
+    if (document.activeElement !== topUpAuto) topUpAuto.checked = topUpAutoOn;
+    topUpAutoLabel.textContent = startSoc !== null
+      ? `Automatisch nachladen ab ${startSoc}% (bis ${topUpTargetSoc}%)`
+      : 'Automatisch nachladen';
+
+    // Lowest SOC is what decides whether a top-up is needed
+    let lowestSoc = null;
+    let lowestName = '';
+    if (data.multiDevice) {
+      for (const d of data.devices || []) {
+        if (typeof d.soc !== 'number' || d.available === false) continue;
+        if (lowestSoc === null || d.soc < lowestSoc) { lowestSoc = d.soc; lowestName = d.name || d.id; }
+      }
+      if ((data.devices || []).length < 2) lowestName = '';
+    } else {
+      lowestSoc = typeof data.status.batterySoc === 'number' ? data.status.batterySoc : null;
+    }
+
+    if (autoRunning || topUpManualActive) {
+      topUpValue.textContent = `läuft${autoRunning ? ' automatisch' : ''} – bis ${topUpTargetSoc}%`;
+      topUpValue.className = 'calib-value calib-ok';
+    } else if (lowestSoc !== null) {
+      topUpValue.textContent = `niedrigster SOC: ${Math.round(lowestSoc)}%${lowestName ? ` · ${lowestName}` : ''}`;
+      const below = Number.isFinite(topUpTargetSoc) && lowestSoc < topUpTargetSoc;
+      topUpValue.className = `calib-value ${below ? 'calib-mid' : 'calib-ok'}`;
+    } else {
+      topUpValue.textContent = '–';
+      topUpValue.className = 'calib-value calib-unknown';
+    }
+    setTopUpBtn();
+  }
+
+  topUpBtn.addEventListener('click', () => {
+    if (topUpAutoOn) return;
+    if (!topUpManualActive) {
+      const target = Number.isFinite(topUpTargetSoc) ? `${topUpTargetSoc}%` : 'Min-SOC';
+      if (!window.confirm(`Akkus unter ${target} jetzt aus dem Netz auf ${target} nachladen? Endet automatisch, sobald ${target} erreicht sind.`)) return;
+    }
+    sendControl('minSocCharge', !topUpManualActive);
+    topUpManualActive = !topUpManualActive;
+    setTopUpBtn();
+  });
+
+  topUpAuto.addEventListener('change', () => {
+    sendControl('minSocTopUpAuto', topUpAuto.checked);
+    topUpAutoOn = topUpAuto.checked;
+    if (topUpAutoOn) topUpManualActive = false;
+    setTopUpBtn();
+  });
+
+  calibBtn.addEventListener('click', () => {
+    if (!fullChargeActive) {
+      const power = Number.isFinite(fullChargePowerW) ? ` mit ${fmtWAuto(fullChargePowerW)}` : '';
+      if (!window.confirm(`Akkus jetzt${power} auf 100% laden (auch aus dem Netz)? Endet automatisch, sobald 100% erreicht sind.`)) return;
+    }
+    sendControl('fullCharge', !fullChargeActive);
+    fullChargeActive = !fullChargeActive;
+    calibBtn.classList.toggle('active', fullChargeActive);
+    calibBtn.textContent = fullChargeActive ? '■ Vollladung läuft – abbrechen' : '🔋 Jetzt auf 100% laden';
+  });
+
   function render(data) {
+    renderFullCharge(data);
+    renderMinSocTopUp(data);
     const mode = data.status.mode || 'idle';
     modeBadge.textContent = mode;
     modeBadge.className = `mode-badge ${mode}`;
