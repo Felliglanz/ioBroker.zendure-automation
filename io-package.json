@@ -2,8 +2,12 @@
   "common": {
     "name": "zendure-automation",
     "title": "Zendure Automation",
-    "version": "1.2.3",
+    "version": "1.3.0",
     "news": {
+      "1.3.0": {
+        "en": "Dashboard (discussion #46): shows when each battery was last at 100% SOC, with a one-click full charge to 100% (control.fullCharge, each device stops on its own). New min-SOC top-up: a button charges devices below min SOC back to min SOC from the grid (control.minSocCharge), and an optional automatic mode (control.minSocTopUpAuto, off by default) starts once a device drops below min SOC minus a configurable hysteresis (default 5%). Max charge, max discharge, full charge and top-up now check every few seconds that the device actually keeps the setpoint and resend it if not. Multi-device: the regulator now restarts from the correct value after an override or after switching off automation.",
+        "de": "Dashboard (Discussion #46): zeigt, wann jede Batterie zuletzt bei 100% SOC war, mit Vollladung auf 100% per Klick (control.fullCharge, jedes Gerät stoppt für sich). Neue Min-SOC-Nachladung: ein Knopf lädt Geräte unter dem Min-SOC aus dem Netz zurück auf den Min-SOC (control.minSocCharge), optional automatisch (control.minSocTopUpAuto, standardmäßig aus) ab Min-SOC minus einstellbarer Hysterese (Standard 5%). Max. Laden, max. Entladen, Vollladung und Nachladung prüfen jetzt alle paar Sekunden, ob das Gerät den Sollwert hält, und senden ihn sonst erneut. Multi-Device: Die Regelung startet nach einem Override oder nach dem Abschalten der Automatik wieder vom richtigen Wert."
+      },
       "1.2.3": {
         "en": "Devices with PV modules: the 0W setpoint check no longer reports false warnings while PV charges the battery directly. It always compared against packPower, which includes direct PV charging, so as soon as PV exceeded the tolerance it logged 'Device left the committed 0W setpoint' and resent 0W although both AC limits were correctly at 0 (issue #45). It now uses the configured validation source, like charge validation (gridInputPower for PV devices, set automatically in multi-device mode). The exact outputLimit/inputLimit check stays unchanged.",
         "de": "Geräte mit PV-Modulen: Die Prüfung des 0W-Sollwerts meldet keine falschen Warnungen mehr, während PV die Batterie direkt lädt. Sie verglich immer mit packPower, das die direkte PV-Ladung enthält. Sobald PV über der Toleranz lag, kam deshalb 'Device left the committed 0W setpoint' samt erneutem 0W-Befehl, obwohl beide AC-Limits korrekt auf 0 standen (Issue #45). Jetzt wird wie bei der Lade-Validierung die eingestellte Validierungsquelle genutzt (gridInputPower für PV-Geräte, im Multi-Device-Modus automatisch). Der exakte Abgleich von outputLimit/inputLimit bleibt unverändert."
